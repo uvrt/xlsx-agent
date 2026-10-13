@@ -34,6 +34,10 @@ glance (:mod:`xlsx_agent.catalogue`)::
     wb.profile("t:Products")                           # every column's, in one pass
     wb.catalogue()                                     # what describe returns
 
+and where some words are (:mod:`xlsx_agent.find`)::
+
+    wb.find_text("Hardware", within="Stock!")          # Found(kind='cell', address='Stock!B7', ...)
+
 Transitional and strict packages (``purl.oclc.org`` namespaces) are read alike.
 """
 
@@ -41,6 +45,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections import OrderedDict
 from dataclasses import dataclass, field, replace
 from typing import BinaryIO, Iterator
@@ -54,6 +59,7 @@ from ooxml_edit.xml import Element
 from .address import (NameNotFound, RangeAddress, SheetRef, TableAddress, nearest,
                       parse_address, quote_sheet)
 from .catalogue import DEFAULT_TOKENS, catalogue
+from .find import Found, find_text
 from .package import OpenError, open_package, read_source, workbook_part
 from .profile import Column, ColumnStats, profile
 from .read.names import DefinedName, read_names
@@ -375,6 +381,17 @@ class Workbook:
         numbers."""
         region = address if isinstance(address, Region) else self.regions.region(address)
         return self.regions.key_columns(region)
+
+    # -- finding text ----------------------------------------------------------------------
+
+    def find_text(self, needle: "str | re.Pattern", *,
+                  within: "str | RangeAddress | TableAddress | None" = None) -> Iterator[Found]:
+        """Where ``needle`` (text, case counting, or a compiled pattern) is: text cells,
+        table and region names, table headers, comments and defined names, each match by
+        address and kind, sheet by sheet in reading order, streamed; ``within`` a sheet
+        (``Stock!``), range or table.  Formula text and non-text values are not searched;
+        see :mod:`xlsx_agent.find`."""
+        return find_text(self, needle, within)
 
     # -- the catalogue ---------------------------------------------------------------------
 
