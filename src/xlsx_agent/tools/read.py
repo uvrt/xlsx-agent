@@ -51,7 +51,8 @@ from ooxml_edit.charts.workbook import Area, Cell
 from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, boolean, integer,
                               string, tool)
 
-from ..address import RangeAddress, RefAddress, SheetRef, TableAddress, parse_address
+from ..address import (RangeAddress, RefAddress, SheetRef, TableAddress, parse_address,
+                       quote_sheet)
 from ..read.types import Value
 from .docformat import KIND, handler
 
@@ -139,7 +140,7 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     data: dict[str, Any] = {"target": found.text}
     if found.sheet is not None:
         data["sheet"] = found.sheet
-    data["range"] = RangeAddress(found.ref, area).text if area is not None else None
+    data["range"] = found.located(area)
     if found.requested is not None:
         data["requested"] = found.requested
     names_cut = 0
@@ -152,7 +153,6 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     if area is None and not found.rows:
         return Result(summary=f"{found.label}: no cells to read", data=data, total=0)
 
-    sheet = found.sheet_object
     if found.rows is not None:
         pages = found.rows[start_row:start_row + rows_limit]
         rows = workbook._read_rows([RangeAddress(found.ref, a) for a in pages],
@@ -166,10 +166,10 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
         rows = workbook.read(RangeAddress(found.ref, pages[0]), formats=formats)
         more = bottom < area.last.row
         single = area.first == area.last
-    annotate = _Annotations(workbook, sheet, comments=comments, hyperlinks=hyperlinks)
+    annotate = _Annotations(workbook, found.sheets, comments=comments, hyperlinks=hyperlinks)
     # What lies over the page besides its cells, as wide as the page can be: its length is
     # kept out of the budget for the cells, and only shrinks once the page is known.
-    extras = _extras(workbook, sheet, found.ref, pages, merges)
+    extras = _extras(workbook, found.places(pages), merges)
     budget = chars - _MARGIN - _size({**data, **extras, "cut": _CUT_ROOM}) \
         - len(_summary(found.label, 1, total, total, True))
     cap = None if single else TEXT_SHOWN
@@ -188,7 +188,7 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     else:
         covered = [Area(Cell(top, area.first.column),
                         Cell(top + given - 1, area.last.column))]
-    data.update(_extras(workbook, sheet, found.ref, covered, merges))
+    data.update(_extras(workbook, found.places(covered), merges))
     cut: dict[str, Any] = {}
     next_cursor = None
     if stop is not None:
@@ -257,7 +257,8 @@ class _Found:
     def __init__(self, text: str, ref: SheetRef, sheet: Any, sheet_object: Any,
                  area: Area | None, requested: str | None = None,
                  columns: list[str] | None = None, label: str | None = None,
-                 rows: list[Area] | None = None) -> None:
+                 rows: list[Area] | None = None, region: Any = None,
+                 workbook: Any = None) -> None:
         self.rows = rows
         self.text = text
         self.label = label or text
@@ -267,6 +268,29 @@ class _Found:
         self.area = area
         self.requested = requested
         self.columns = columns
+        #: A declared table read as one (its region has a span): ``ref`` and ``area`` are
+        #: its own, and :meth:`places` gives the sheets' cells.
+        self.region = region if region is not None and region.span is not None else None
+        if self.region is not None:
+            self.sheets = [workbook.sheet(part.sheet) for part in self.region.span.parts]
+        else:
+            self.sheets = [sheet_object]
+
+    def located(self, area: Area | None) -> str | None:
+        """``area`` as the sheets' range(s), as text."""
+        if area is None:
+            return None
+        if self.region is not None:
+            return self.region.located(area)
+        return RangeAddress(self.ref, area).text
+
+    def places(self, areas: list[Area]) -> list[tuple[Any, SheetRef, Area]]:
+        """``areas`` as each sheet's cells: the sheet, how to name it, the area."""
+        if self.region is None:
+            return [(self.sheet_object, self.ref, a) for a in areas]
+        by_name = {sheet.name: sheet for sheet in self.sheets}
+        return [(by_name[r.sheet.name], r.sheet, r.area)
+                for a in areas for r in self.region.span.locate(a)]
 
 
 def _cells(workbook: Any, target: str, key_column: str | None) -> _Found:
@@ -281,6 +305,19 @@ def _cells(workbook: Any, target: str, key_column: str | None) -> _Found:
     if isinstance(address, TableAddress):
         selection = workbook.resolve(address, key=key_column)
         region = selection.region
+        if region.span is not None:      # a declared table over several sheets
+            columns = list(region.columns) if selection.column is None else [selection.column]
+            label = selection.address
+            if address.key is not None:
+                label = f"a {selection.kind} by key of {region.address.text}"
+            rows = None
+            if address.keys is not None:
+                label = f"{len(address.keys)} {selection.kind} by key of {region.address.text}"
+                rows = [a.area for a in selection.areas]
+            area = selection.range.area if selection.range is not None else None
+            return _Found(selection.address, region.range.sheet, None, None, area,
+                          columns=columns, label=label, rows=rows, region=region,
+                          workbook=workbook)
         sheet = _sheet(workbook, workbook.sheet_of(region.range))
         columns = list(region.columns) if selection.column is None else [selection.column]
         area = selection.range.area if selection.range is not None else None
@@ -332,38 +369,63 @@ def _intersect(area: Area, used: Area | None) -> Area | None:
 
 
 class _Annotations:
-    """The comments and hyperlinks of a sheet, by cell, read only when asked for."""
+    """The comments and hyperlinks of the sheets read, by cell (each the sheet as an address
+    writes it, and the cell), read only when asked for; and the cells withheld, of columns
+    a declared table hides from the model (:mod:`xlsx_agent.declare`)."""
 
-    def __init__(self, workbook: Any, sheet: Any, *, comments: bool, hyperlinks: bool) -> None:
-        self.comments: dict[Cell, Any] = {}
-        self.links: dict[Cell, Any] = {}
-        self.spans: list[Any] = []
-        if comments:
-            for comment in workbook.comments(sheet):
-                self.comments.setdefault(comment.cell, comment)
-        if hyperlinks:
-            for link in workbook.hyperlinks(sheet):
-                if link.area.first == link.area.last:
-                    self.links.setdefault(link.area.first, link)
-                else:
-                    self.spans.append(link)
+    def __init__(self, workbook: Any, sheets: list, *, comments: bool,
+                 hyperlinks: bool) -> None:
+        self.comments: dict[tuple[str, Cell], Any] = {}
+        self.links: dict[tuple[str, Cell], Any] = {}
+        self.spans: list[tuple[str, Any]] = []
+        self.withheld: dict[str, list[Area]] = {}
+        for sheet in sheets:
+            if sheet is None:
+                continue
+            written = _written(sheet)
+            hidden = workbook.regions.withheld(sheet.name) if sheet.name else []
+            if hidden:
+                self.withheld[written] = hidden
+            if comments:
+                for comment in workbook.comments(sheet):
+                    self.comments.setdefault((written, comment.cell), comment)
+            if hyperlinks:
+                for link in workbook.hyperlinks(sheet):
+                    if link.area.first == link.area.last:
+                        self.links.setdefault((written, link.area.first), link)
+                    else:
+                        self.spans.append((written, link))
 
-    def link(self, cell: Cell) -> Any:
-        found = self.links.get(cell)
+    def hidden(self, place: tuple[str, int, int]) -> bool:
+        """Whether the cell is withheld: a column hidden from the model."""
+        areas = self.withheld.get(place[0])
+        return bool(areas) and any(a.first.row <= place[1] <= a.last.row
+                                   and a.first.column <= place[2] <= a.last.column
+                                   for a in areas)
+
+    def link(self, sheet: str, cell: Cell) -> Any:
+        found = self.links.get((sheet, cell))
         if found is not None or not self.spans:
             return found
-        for link in self.spans:
+        for written, link in self.spans:
             area = link.area
-            if area.first.row <= cell.row <= area.last.row \
+            if written == sheet and area.first.row <= cell.row <= area.last.row \
                     and area.first.column <= cell.column <= area.last.column:
                 return link
         return None
+
+
+def _written(sheet: Any) -> str:
+    return quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
 
 
 def _cell(value: Value, annotate: _Annotations, formulas: bool,
           cap: int | None) -> tuple[dict, list[str]]:
     """A value as the result gives it, its text cut at ``cap`` (``None``: not cut), and the
     address once if any of its text was cut."""
+    place = value.place
+    if annotate.withheld and annotate.hidden(place):
+        return {"a": value.a, "withheld": True}, []
     out = value.as_dict()
     cut = False
     if isinstance(out["v"], str) and cap is not None and len(out["v"]) > cap:
@@ -376,14 +438,14 @@ def _cell(value: Value, annotate: _Annotations, formulas: bool,
             out["f_length"] = len(text)
             text, cut = text[:cap], True
         out["f"] = text
-    position = Cell(value.row, value.column)
-    comment = annotate.comments.get(position) if annotate.comments else None
+    position = Cell(place[1], place[2])
+    comment = annotate.comments.get((place[0], position)) if annotate.comments else None
     if comment is not None:
         note: dict[str, Any] = {"author": comment.author, "text": comment.text}
         if cap is not None and len(comment.text) > cap:
             note["text"], note["length"], cut = comment.text[:cap], len(comment.text), True
         out["comment"] = note
-    link = annotate.link(position) if (annotate.links or annotate.spans) else None
+    link = annotate.link(place[0], position) if (annotate.links or annotate.spans) else None
     if link is not None:
         target: dict[str, Any] = {}
         if link.url is not None:
@@ -410,20 +472,26 @@ def _fit(value: Value, annotate: _Annotations, formulas: bool,
         cap = cap // 2 if cap > 64 else 0
 
 
-def _extras(workbook: Any, sheet: Any, ref: SheetRef, areas: list[Area], merges: bool) -> dict:
-    """The merged areas (when asked) and array blocks that overlap any of ``areas``."""
+def _extras(workbook: Any, places: list[tuple[Any, SheetRef, Area]], merges: bool) -> dict:
+    """The merged areas (when asked) and array blocks that overlap any of ``places`` (each a
+    sheet, how to name it, and an area of it)."""
     out: dict[str, Any] = {}
+    sheets: dict[str, tuple[Any, SheetRef, list[Area]]] = {}
+    for sheet, ref, area in places:
+        sheets.setdefault(ref.text, (sheet, ref, []))[2].append(area)
+    found: list[str] = []
+    blocks: list[str] = []
+    for sheet, ref, areas in sheets.values():
+        def over(block: Area, areas=areas) -> bool:
+            return any(_overlaps(block, area) for area in areas)
 
-    def over(block: Area) -> bool:
-        return any(_overlaps(block, area) for area in areas)
-
-    if merges:
-        found = [RangeAddress(ref, m).text for m in workbook.merges(sheet) if over(m)]
-        if found:
-            out["merges"] = found
-    blocks = [RangeAddress(ref, b).text for b in workbook.arrays(sheet) if over(b)]
+        if merges:
+            found += [RangeAddress(ref, m).text for m in workbook.merges(sheet) if over(m)]
+        blocks += [RangeAddress(ref, b).text for b in workbook.arrays(sheet) if over(b)]
+    if found:
+        out["merges"] = list(dict.fromkeys(found))
     if blocks:
-        out["arrays"] = blocks
+        out["arrays"] = list(dict.fromkeys(blocks))
     return out
 
 
@@ -478,7 +546,7 @@ def xlsx_profile(call: Any, doc: str, target: str, columns: list[str] | None = N
     page = names[start:start + call.limits.max_list_items]
     stats = workbook.profile(region, page)
 
-    data: dict[str, Any] = {"target": text, "range": region.range.text, "rows": region.rows,
+    data: dict[str, Any] = {"target": text, "range": region.where, "rows": region.rows,
                             "columns": []}
     budget = chars - _MARGIN - _size({**data, "cut": _PROFILE_CUT_ROOM}) \
         - len(_summary_profile(text, 1, len(names), len(names), True))

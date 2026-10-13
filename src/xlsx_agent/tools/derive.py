@@ -233,7 +233,7 @@ def _values(table: DatasetTable, first: int, last: int, offsets: tuple[int, ...]
 
 
 #: A page needs no comments or links: a dataset has none.
-_NONE = _Annotations(None, None, comments=False, hyperlinks=False)
+_NONE = _Annotations(None, [], comments=False, hyperlinks=False)
 
 #: A ``cut`` at its longest, to keep room for it.
 _CUT_ROOM = {"rows": 1000, "cells": 10000, "chars": True, "text": 100000}

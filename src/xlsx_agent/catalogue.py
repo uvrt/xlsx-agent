@@ -84,6 +84,9 @@ SAMPLE_TEXT = 40
 #: The most allowed values a column's summary shows per validation list.
 ALLOWED_SHOWN = 12
 
+#: The most fields a key-value region shows (the rest counted).
+FIELDS_SHOWN = 25
+
 #: The most key candidates shown per region (the rest counted).
 KEYS_SHOWN = 3
 
@@ -221,7 +224,8 @@ def _found(workbook: "Workbook", region: Region) -> _Found:
     samples: list[list[Value]] = []
     data = region.data
     if data is not None:
-        last = Cell(min(data.first.row + SAMPLE_ROWS - 1, data.last.row), data.last.column)
+        shown = FIELDS_SHOWN if region.shape == "key_value" else SAMPLE_ROWS
+        last = Cell(min(data.first.row + shown - 1, data.last.row), data.last.column)
         samples = list(workbook.read(RangeAddress(region.sheet_ref, Area(data.first, last))))
     return _Found(region, keys, stats, samples)
 
@@ -393,9 +397,13 @@ _NEXT = (("columns", "xlsx_profile gives a region's every column"),
 def _region(found: _Found, level: _Level, shown: int) -> dict:
     region = found.region
     out: dict = {"address": region.address.text, "kind": region.kind,
-                 "range": region.range.text, "rows": region.rows}
+                 "range": region.where, "rows": region.rows}
+    if region.about is not None:
+        out["about"] = region.about
     if region.hidden:
         out["hidden"] = True
+    if region.shape == "key_value":
+        return _key_value(found, out, level, shown)
     if region.header_rows != 1:
         out["header_rows"] = region.header_rows
     if region.totals_rows:
@@ -420,9 +428,33 @@ def _region(found: _Found, level: _Level, shown: int) -> dict:
     return out
 
 
+def _key_value(found: _Found, out: dict, level: _Level, shown: int) -> dict:
+    """A key-value region, compactly: its columns, and each field with its value (the
+    first :data:`FIELDS_SHOWN`), as ``{"field": value}``."""
+    region = found.region
+    out["shape"] = "key_value"
+    out["columns"] = list(region.columns)
+    if region.flags:
+        out["flags"] = [_problem(p) for p in region.flags]
+    if shown or level.full:
+        fields: dict = {}
+        for row in found.samples:
+            if row[0].t != "blank":
+                fields[str(_shown(row[0].v))] = _sample(row[1])
+        out["fields"] = fields
+        if region.rows > len(found.samples):
+            out["more_fields"] = region.rows - len(found.samples)
+    notes = {name: note for name, note in zip(region.columns, region.notes) if note}
+    if notes:
+        out["about_columns"] = notes
+    return out
+
+
 def _column(stats: ColumnStats) -> dict:
     """A column's profile, summarised: what an agent needs to pick columns and filters."""
     out: dict = {"name": stats.column, "type": stats.type, "fill": round(stats.fill, 2)}
+    if stats.description is not None:
+        out["about"] = stats.description
     if stats.measured:
         out["min"], out["max"] = _shown(stats.min), _shown(stats.max)
         if stats.mean is not None:

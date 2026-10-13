@@ -152,7 +152,11 @@ class Value:
     first cell), ``shared_from`` (a shared group's other cells: the address of the cell
     that holds the text), ``array`` (the range an array formula or a spill fills),
     ``volatile`` (the formula calls ``NOW``, ``TODAY``, ``RAND``, ``OFFSET`` or
-    ``INDIRECT``: its value is as of the last save)."""
+    ``INDIRECT``: its value is as of the last save).  ``origin``: the cell's own sheet (as
+    an address writes it), row and column, when ``sheet``, ``row`` and ``column`` are its
+    place in a declared table read as one (a table over several sheets, or with columns
+    hidden from the model: :mod:`xlsx_agent.declare`); :attr:`a` is then the cell's own
+    address."""
 
     sheet: str
     row: int
@@ -169,16 +173,29 @@ class Value:
     shared_from: str | None = None
     array: str | None = None
     volatile: bool = False
+    origin: "tuple[str, int, int] | None" = None
 
     @property
     def a(self) -> str:
-        """The cell's address: ``Stock!F2``."""
+        """The cell's address: ``Stock!F2`` (its own, for a value of a declared table)."""
+        if self.origin is not None:
+            sheet, row, column = self.origin
+            return f"{sheet}!{_letters(column)}{row}"
         return f"{self.sheet}!{_letters(self.column)}{self.row}"
 
     @property
     def ref(self) -> str:
         """The cell's reference without its sheet: ``F2``."""
+        if self.origin is not None:
+            return f"{_letters(self.origin[2])}{self.origin[1]}"
         return f"{_letters(self.column)}{self.row}"
+
+    @property
+    def place(self) -> "tuple[str, int, int]":
+        """The cell's own sheet (as an address writes it), row and column."""
+        if self.origin is not None:
+            return self.origin
+        return (self.sheet, self.row, self.column)
 
     def as_dict(self) -> dict:
         """``{"a": ..., "v": ..., "t": ...}`` and whichever of the rest are set."""

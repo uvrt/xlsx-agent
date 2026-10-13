@@ -429,6 +429,26 @@ class Workbook:
         See :meth:`~xlsx_agent.read.regions.Regions.declare_key`."""
         return self.regions.declare_key(address, column)
 
+    def declare_tables(self, declarations: Any) -> list[Region]:
+        """Declare tables from the caller's configuration (plain data: a mapping, a list of
+        them, or ``{"tables": [...]}``), usable as ``t:<name>`` from then on: sheets by
+        name or glob, a table over several sheets read as one, the header row, the data
+        rows' end, the key column, column ids and descriptions, columns hidden from the
+        model, key-value tables.  Every declaration is checked against the workbook before
+        any is kept (:class:`~xlsx_agent.declare.DeclarationError`, naming the entry and
+        what is wrong); see :mod:`xlsx_agent.declare`.  The tables declared, in order."""
+        from .declare import declare_tables
+        return declare_tables(self, declarations)
+
+    def declare_table(self, name: str, sheets: "str | Sequence[str]", **declaration: Any
+                      ) -> Region:
+        """One table, as :meth:`declare_tables` declares it: ``wb.declare_table("checks",
+        "Area *", header_row=3, key="Ref", fields=[...])``."""
+        found = self.declare_tables([{"name": name, "sheets": sheets, **declaration}])
+        if not found:   # optional, and its sheets are not there
+            raise KeyError(f"no sheet matches the sheets of t:{name}")
+        return found[0]
+
     def detect_region(self, where: "str | RangeAddress | TableAddress") -> Region:
         """The region whose single-row header starts at a cell (``t:Stock!A1``); see
         :meth:`~xlsx_agent.read.regions.Regions.detect`."""
@@ -726,6 +746,9 @@ class Workbook:
         if not isinstance(address, RangeAddress):
             raise ValueError(f"a {address.kind} address is read from a later milestone; "
                              "give a cell or range, as Stock!A1:H40")
+        span = self.regions.span(address.sheet)
+        if span is not None:   # a declared table read as one: its own rows and columns
+            return span.read(self, address.area, formats=formats, columns=columns)
         sheet = self._cell_sheet(self.sheet_of(address))
         found = self.scan(sheet)
         area = address.clipped(found.used)
@@ -754,6 +777,8 @@ class Workbook:
         as by one through them all: its reads start near their rows (it has a
         :class:`~xlsx_agent.read.stream.RowIndex`), and no cell read depends on one passed
         on the way (it has no shared formula, whose group's first cell the others name)."""
+        if self.regions.span(address.sheet) is not None:
+            return False
         index = self.scan(self._cell_sheet(self.sheet_of(address))).index
         return index is not None and not index.shared_formulas
 

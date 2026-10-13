@@ -398,8 +398,8 @@ def _table(a: "Workbook", b: "Workbook", old: Region, new: Region, key: str | No
     removed = [RowChange("removed", text, _at(old, found[0][0]),
                          _values(old, found[0][0], offsets, found[0][1]))
                for text, found in keys_old.items() if text not in shared and text not in keys_new]
-    return TableDiff(a=old.address.text, b=new.address.text, range_a=old.range.text,
-                     range_b=new.range.text, key=old.columns[key_offset], rows_a=old.rows,
+    return TableDiff(a=old.address.text, b=new.address.text, range_a=old.where,
+                     range_b=new.where, key=old.columns[key_offset], rows_a=old.rows,
                      rows_b=new.rows, paired=paired_rows, unchanged=unchanged,
                      columns=tuple(column_changes), duplicates=tuple(duplicates),
                      unkeyed_a=unkeyed_old, unkeyed_b=unkeyed_new, added=tuple(added),
@@ -436,8 +436,8 @@ def _key_offset(a: "Workbook", b: "Workbook", old: Region, new: Region, key: str
                       valid_options=[old.columns[i] for i in candidates] or either)
 
 
-#: A cell as :func:`_rows` keeps it: its value, type, issue, and whether it is a formula's
-#: cached value and hidden.
+#: A cell as :func:`_rows` keeps it: its value, type, issue, whether it is a formula's
+#: cached value and hidden, and its own cell (a declared table's: :attr:`Value.origin`).
 _Kept = tuple
 
 
@@ -458,7 +458,7 @@ def _rows(workbook: "Workbook", region: Region, offsets: list[int]
 
 
 def _kept(value: Value) -> _Kept:
-    return (value.v, value.t, value.issue, value.formula, value.hidden)
+    return (value.v, value.t, value.issue, value.formula, value.hidden, value.origin)
 
 
 def _by_key(rows: Iterator[tuple[int, tuple[_Kept, ...]]], region: Region
@@ -500,10 +500,10 @@ def _at(region: Region, position: int) -> str:
 
 def _value(region: Region, position: int, offset: int, kept: _Kept) -> Value:
     """A kept cell as the reader gives it, with its address."""
-    v, t, issue, formula, hidden = kept
+    v, t, issue, formula, hidden, origin = kept
     return Value(_written(region), region.data.first.row + position - 1,
                  region.area.first.column + offset, v=v, t=t, issue=issue, formula=formula,
-                 hidden=hidden)
+                 hidden=hidden, origin=origin)
 
 
 def _values(region: Region, position: int, offsets: list[int],

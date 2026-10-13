@@ -445,7 +445,6 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
             index = None
         if index is not None and index.unique:
             keys = index.keys
-    sheet = region.sheet_ref
     rows: list[tuple[Any, ...]] = []
     sources: list[tuple[tuple[str, ...], ...]] = []
     seen: list[set[str]] = [set() for _ in columns]
@@ -462,9 +461,11 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
                 seen[n].add(value.t)
             if keys is not None:
                 where.append((replace(whole, key=keys[position - 1], column=name).text,))
+            elif value is not None:
+                where.append((value.a,))      # its own cell, a declared table's too
             else:
                 cell = Cell(sheet_row, left + offset)
-                where.append((RangeAddress(sheet, Area(cell, cell)).text,))
+                where.append((region.located(Area(cell, cell)),))
         rows.append(tuple(values))
         sources.append(tuple(where))
     types = tuple(next(iter(t)) if len(t) == 1 else None for t in seen)
