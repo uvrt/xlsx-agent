@@ -32,8 +32,11 @@ with the rest listed by name -- with one sample row, else with none, else with t
 counted, else with only the first few problems, unclear blocks and names; then the first
 column of as many regions as fit, from the first; then every column's summary; and, last,
 regions past the first ones.  ``cut`` says what was
-left out, by count, so the caller knows to ask for it (``xlsx_profile``, in a later
-milestone, gives a region's every column).  Every region is listed whenever it fits.
+left out, by count, so the caller knows to ask for it, and ``next`` names the tool that
+gives it: ``xlsx_profile`` a region's every column, ``xlsx_read`` its rows
+(:mod:`xlsx_agent.tools.read`; in Python, :meth:`Workbook.profile
+<xlsx_agent.workbook.Workbook.profile>` and :meth:`Workbook.read
+<xlsx_agent.workbook.Workbook.read>`).  Every region is listed whenever it fits.
 
 **Content.**  The catalogue is a result: min, max, values, allowed values and sample rows
 are cell content, as a read returns them (text cut at :data:`SAMPLE_TEXT` characters, with
@@ -366,9 +369,17 @@ def _render(found: _Gathered, level: _Level) -> dict:
             cut["sample_rows"] = True
         if len(regions) < len(found.regions):
             cut["regions"] = len(found.regions) - len(regions)
+        hints = [hint for key, hint in _NEXT if key in cut]
+        if hints:
+            cut["next"] = "; ".join(hints)
     if cut:
         out["cut"] = cut
     return out
+
+
+#: What a cut catalogue says to ask for next, by what was cut: the tools that give it.
+_NEXT = (("columns", "xlsx_profile gives a region's every column"),
+         ("sample_rows", "xlsx_read gives its rows"))
 
 
 def _region(found: _Found, level: _Level, shown: int) -> dict:

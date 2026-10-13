@@ -13,15 +13,16 @@ An application puts these in a :class:`ooxml_edit.tools.Toolbox` with the xlsx
     openai_tools = toolbox.definitions("openai-responses")   # or "openai-chat"
     result = toolbox.dispatch(session, "open_document", {"blob": b1})      # d1
     result = toolbox.dispatch(session, "describe", {"doc": "d1"})
+    result = toolbox.dispatch(session, "xlsx_read", {"doc": "d1", "target": "t:Products"})
 
 The locale (how text that looks like a number or a date is read) is the application's
 setting, never the model's: ``format(locale=Locale(decimal=",", thousands="."))`` in place
 of :data:`FORMAT`.
 
-Everything is in memory: workbooks and inputs are bytes under handles.  So far (R6) the
-tools are the shared ``open_document``, ``close_document`` and ``read_blob``, and the
-workbook's ``describe`` (:mod:`.shared`); the read and derive tools follow (ROADMAP.md,
-"Milestones").  The library's address errors become tool errors with their valid
+Everything is in memory: workbooks and inputs are bytes under handles.  So far (R7) the
+tools are the shared ``open_document``, ``close_document`` and ``read_blob``, the
+workbook's ``describe`` (:mod:`.shared`), and ``xlsx_read`` and ``xlsx_profile``
+(:mod:`.read`); the query and derive tools follow (ROADMAP.md, "Milestones").  The library's address errors become tool errors with their valid
 options (:mod:`.docformat`).
 """
 
@@ -32,12 +33,13 @@ from ooxml_edit.tools import CORE, DocumentFormat, shared as _shared
 from ..read.types import Locale
 from .docformat import (ERRORS, KIND, PROMPT, REGION_CODES, STRICT_FIRST, FORMAT, detect,
                         tool_error, workbook_format)
+from .read import TOOLS as READ_TOOLS
 from .shared import TOOLS as SHARED_TOOLS
 
 GROUPS = [*_shared.GROUPS]
 
 #: Every tool a workbook has, the shared ones included, in the order they are offered.
-TOOLS = [*SHARED_TOOLS]
+TOOLS = [*SHARED_TOOLS, *READ_TOOLS]
 
 CORE_TOOLS = [t.name for t in TOOLS if t.group == CORE]
 

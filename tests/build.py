@@ -51,6 +51,7 @@ REL_STYLES = NS_R + "/styles"
 REL_SHARED_STRINGS = NS_R + "/sharedStrings"
 REL_TABLE = NS_R + "/table"
 REL_COMMENTS = NS_R + "/comments"
+REL_HYPERLINK = NS_R + "/hyperlink"
 
 _SML = "application/vnd.openxmlformats-officedocument.spreadsheetml."
 CT_WORKSHEET = _SML + "worksheet+xml"
@@ -239,6 +240,13 @@ class _Comment:
 
 
 @dataclass
+class _Hyperlink:
+    ref: str
+    url: str | None
+    location: str | None
+
+
+@dataclass
 class _Validation:
     sqref: str
     type: str
@@ -271,6 +279,7 @@ class SheetBuilder:
     tables: list[_Table] = field(default_factory=list)
     comments: list[_Comment] = field(default_factory=list)
     validations: list[_Validation] = field(default_factory=list)
+    hyperlinks: list[_Hyperlink] = field(default_factory=list)
 
     # -- cells ----------------------------------------------------------------------------------
 
@@ -312,6 +321,16 @@ class SheetBuilder:
     def comment(self, ref: str, text: "str | Rich", *, author: str = "Reviewer") -> "SheetBuilder":
         parse_cell(ref)
         self.comments.append(_Comment(ref, text, author))
+        return self
+
+    def hyperlink(self, ref: str, *, url: str | None = None,
+                  location: str | None = None) -> "SheetBuilder":
+        """A hyperlink over a cell or range (§18.3.1.47): to ``url`` (an external
+        relationship of the sheet) or to ``location`` in the workbook, or both."""
+        parse_area(ref)
+        if url is None and location is None:
+            raise ValueError("give url, location or both")
+        self.hyperlinks.append(_Hyperlink(ref, url, location))
         return self
 
     def validation(self, sqref: str, type: str, formula1: str | None = None,
@@ -375,7 +394,7 @@ class SheetBuilder:
         first, last = cell_name(min(rows), min(columns)), cell_name(max(rows), max(columns))
         return first if first == last else f"{first}:{last}"
 
-    def _xml(self, strings: "_SharedStrings", rels: list[tuple[str, str, str]]) -> etree._Element:
+    def _xml(self, strings: "_SharedStrings", rels: list[tuple[str, ...]]) -> etree._Element:
         root = etree.Element(_x("worksheet"), nsmap={None: NS_MAIN, "r": NS_R})
         dimension = self.used_range() if self.dimension is None else self.dimension
         if dimension:
@@ -421,6 +440,16 @@ class SheetBuilder:
                 for tag, formula in (("formula1", rule.formula1), ("formula2", rule.formula2)):
                     if formula is not None:
                         etree.SubElement(node, _x(tag)).text = formula
+        if self.hyperlinks:
+            links = etree.SubElement(root, _x("hyperlinks"))
+            for link in self.hyperlinks:
+                node = etree.SubElement(links, _x("hyperlink"), ref=link.ref)
+                if link.url is not None:
+                    rel_id = f"rId{len(rels) + 1}"
+                    rels.append((rel_id, REL_HYPERLINK, link.url, "External"))
+                    node.set(f"{{{NS_R}}}id", rel_id)
+                if link.location is not None:
+                    node.set("location", link.location)
         if self.tables:
             parts = etree.SubElement(root, _x("tableParts"), count=str(len(self.tables)))
             for table in self.tables:
@@ -647,7 +676,7 @@ class WorkbookBuilder:
             for table in sheet.tables:
                 table_id += 1
                 table.id = table_id
-            rels: list[tuple[str, str, str]] = []
+            rels: list[tuple[str, ...]] = []
             path = f"xl/worksheets/sheet{number}.xml"
             body[path] = _serialize(sheet._xml(strings, rels))
             overrides.append(("/" + path, CT_WORKSHEET))
@@ -791,10 +820,14 @@ def _comments_xml(comments: list[_Comment]) -> etree._Element:
     return root
 
 
-def _rels_xml(rels: list[tuple[str, str, str]]) -> etree._Element:
+def _rels_xml(rels: list[tuple[str, ...]]) -> etree._Element:
+    """Relationships: ``(id, type, target)``, or with a fourth item, the ``TargetMode``."""
     root = etree.Element(f"{{{NS_PKG_RELS}}}Relationships", nsmap={None: NS_PKG_RELS})
-    for rel_id, rel_type, target in rels:
-        etree.SubElement(root, f"{{{NS_PKG_RELS}}}Relationship", Id=rel_id, Type=rel_type, Target=target)
+    for rel_id, rel_type, target, *mode in rels:
+        node = etree.SubElement(root, f"{{{NS_PKG_RELS}}}Relationship", Id=rel_id, Type=rel_type,
+                                Target=target)
+        if mode:
+            node.set("TargetMode", mode[0])
     return root
 
 
