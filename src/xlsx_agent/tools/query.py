@@ -41,6 +41,22 @@ from .read import (_CUT_ROOM, _FIRST, _MARGIN, CURSOR, DOC, READ_ROWS, TEXT_SHOW
 KEPT = 4
 
 
+#: The filters, as ``xlsx_query`` and ``xlsx_derive`` take them.
+WHERE = array(obj({"column": string(),
+                   "op": string(enum=OPS),
+                   "value": string(optional=True),
+                   "values": array(string(), "For in.", optional=True)}),
+              "Filters, all met. value as JSON writes it: 12.5, true, dates ISO "
+              "(2026-01-05), percent as the fraction. gte/lte: numbers, dates, "
+              "times. contains: text, case ignored; eq/in match exactly.",
+              optional=True)
+
+#: The sort keys, as ``xlsx_query`` and ``xlsx_derive`` take them.
+SORT = array(obj({"column": string(), "desc": boolean(optional=True)}),
+             "Sort keys, first decides first. Other types, then blanks, last.",
+             optional=True)
+
+
 @tool("xlsx_query",
       "Rows of a table or region that meet every filter, sorted, each cell typed with its "
       "address; total is the count of all matches. A filter on a column of another type "
@@ -48,17 +64,8 @@ KEPT = 4
       {"doc": DOC,
        "table": string("A table or region (t:Products, t:Stock!A1)."),
        "columns": array(string(), "Columns to give, by name. Default all.", optional=True),
-       "where": array(obj({"column": string(),
-                           "op": string(enum=OPS),
-                           "value": string(optional=True),
-                           "values": array(string(), "For in.", optional=True)}),
-                      "Filters, all met. value as JSON writes it: 12.5, true, dates ISO "
-                      "(2026-01-05), percent as the fraction. gte/lte: numbers, dates, "
-                      "times. contains: text, case ignored; eq/in match exactly.",
-                      optional=True),
-       "sort": array(obj({"column": string(), "desc": boolean(optional=True)}),
-                     "Sort keys, first decides first. Other types, then blanks, last.",
-                     optional=True),
+       "where": WHERE,
+       "sort": SORT,
        "limit": integer(f"Rows per page. Default 50, at most {READ_ROWS}.", minimum=1,
                         maximum=READ_ROWS, optional=True),
        "cursor": CURSOR},

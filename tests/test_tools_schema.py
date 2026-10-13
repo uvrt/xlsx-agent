@@ -16,10 +16,11 @@ estimated, about 406 counted by the proxy.  R7 adds ``xlsx_read`` and ``xlsx_pro
 the core (the read tools are loaded): 912 estimated, about 1,350 counted.  R8 adds
 ``xlsx_query``: 1,366 estimated, about 2,022 counted.  R9 adds the shared ``find_text``
 (its one definition, 289 estimated, about 428 counted; nothing of the workbook's own):
-1,654 estimated, about 2,448 counted.  Every definition (``close_document`` and
-``read_blob`` deferred in ``shared_misc``, and the tool-search tool) is 1,877 estimated;
-the guard is 1,950, a regression guard and not a budget, raised as the read tools
-arrive.
+1,654 estimated, about 2,448 counted.  R11 adds ``xlsx_derive`` (789 estimated) and
+``xlsx_read``'s dataset side (``doc`` optional, ``sources``): 2,488 estimated, about 3,682
+counted.  Every definition (``close_document`` and ``read_blob`` deferred in
+``shared_misc``, and the tool-search tool) is 2,710 estimated; the guard is 2,800, a
+regression guard and not a budget, raised as the read tools arrive.
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6000
-ALL_GUARD = 1950
+ALL_GUARD = 2800
 
 
 @pytest.fixture(scope="module")
@@ -91,7 +92,7 @@ def test_the_groups_are_the_roadmaps():
         groups.setdefault(tool.group, set()).add(tool.name)
     # the read tools are the core; edits (0.2) will be deferred groups of their own
     assert groups == {"core": {"open_document", "describe", "find_text", "xlsx_read",
-                               "xlsx_profile", "xlsx_query"},
+                               "xlsx_profile", "xlsx_query", "xlsx_derive"},
                       "shared_misc": {"close_document", "read_blob"}}
 
 

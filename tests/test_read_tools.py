@@ -309,7 +309,7 @@ def test_the_limit_stops_a_page_before_the_characters_do(box, large):
 
 
 @pytest.mark.parametrize("target,code", [
-    ("d:by_category", "invalid_arguments"),
+    ("d:by_category", "not_found"),             # no such dataset in the session (R11)
     ("$step1", "not_found"),
     ("t:Stock!A1:F20", "invalid_arguments"),
     ("t:Nope", "not_found"),
