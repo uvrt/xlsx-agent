@@ -79,6 +79,16 @@ that a column of dates all stored as text is a date column (a filter on it compa
 its text cells counted in ``not_compared``).  A percent column's text stays out: its
 stored values are fractions, and text such as ``25`` is not one.
 
+**Lists and cleaned text** (:mod:`xlsx_agent.clean`).  A declared column whose text is
+split is a ``list`` column: ``count`` counts its cells that hold a list (rows, not items:
+an item count would be a new function, and the tool's definitions stay as they are);
+every other function, ``group_by`` and ``pivot`` refuse it (``wrong_type``), since a cell
+holding several values belongs to no one group; ``where`` filters it with ``eq``, ``in``
+and ``contains``, a row passing when any item does.  A list in a column of another type is
+left out of a measure, or of the groups, as ``wrong_type``.  The cells a declared rule
+changed, in every column read and every row, are counted per column with their first
+addresses (:attr:`Derived.cleaned`, ``cleaned`` in the tool's result).
+
 **Why a date column is refused.**  A column whose dates are stored as text is a ``text``
 column: ``min`` and ``max`` refuse it.  The refusal says so: how many of its values are
 dates stored as text (``date_as_text``), the first of them, and that
@@ -213,11 +223,15 @@ _NUMBERS = ("number", "percent")
 _MOMENTS = ("date", "time", "datetime")
 _ORDERED = _NUMBERS + _MOMENTS
 
-#: The column types each function takes.
+#: The types of a cell's own value: every type but ``list`` (a declared split,
+#: :mod:`xlsx_agent.clean`).
+_CELL_TYPES = tuple(t for t in TYPES if t != "list")
+
+#: The column types each function takes (a list column: ``count`` only).
 TYPES_BY_FUNCTION: dict[str, tuple[str, ...]] = {
-    "count": TYPES, "distinct": TYPES, "sum": _NUMBERS, "share": _NUMBERS,
+    "count": TYPES, "distinct": _CELL_TYPES, "sum": _NUMBERS, "share": _NUMBERS,
     "mean": _ORDERED, "median": _ORDERED, "min": _ORDERED, "max": _ORDERED,
-    "first": TYPES, "last": TYPES}
+    "first": _CELL_TYPES, "last": _CELL_TYPES}
 
 #: The functions that take no column (they count rows).
 ROW_FUNCTIONS = ("count", "share")
@@ -413,9 +427,10 @@ class Derived:
     column, the rows not grouped by reason (a group or pivot cell without a cached value; a
     bin cell outside the bins or of the wrong type); ``excluded`` per measure (by ``as``),
     the cells left out by reason, each with its first addresses; ``coerced`` per measure
-    (and the bins, by their ``as``), the cells read as numbers by ``coerce``;
-    ``not_compared`` per filtered column, as :class:`~xlsx_agent.query.QueryResult` gives
-    it; ``hidden`` the rows used that hold a
+    (and the bins, by their ``as``), the cells read as numbers by ``coerce``; ``cleaned``
+    per column read, the cells a declared rule changed (:mod:`xlsx_agent.clean`), every
+    row's, filtered out or not; ``not_compared`` per filtered column, as
+    :class:`~xlsx_agent.query.QueryResult` gives it; ``hidden`` the rows used that hold a
     hidden cell among the columns read; ``totals`` per ``share`` measure, its total;
     ``pivot_columns`` per pivoted column, its measure and pivot value; ``date1904`` the
     date system its dates are in (its source's); ``source_key`` the key column its
@@ -440,6 +455,7 @@ class Derived:
     left_out: dict[str, dict[str, Count]] = field(default_factory=dict)
     excluded: dict[str, dict[str, Count]] = field(default_factory=dict)
     coerced: dict[str, Count] = field(default_factory=dict)
+    cleaned: dict[str, Count] = field(default_factory=dict)
     not_compared: dict[str, Count] = field(default_factory=dict)
     hidden: Count = field(default_factory=lambda: Count(0))
     totals: dict[str, Total] = field(default_factory=dict)
@@ -496,7 +512,7 @@ class Derived:
             if value:
                 out[name] = {k: {r: c.as_dict() for r, c in v.items()}
                              for k, v in value.items()}
-        for name in ("coerced", "not_compared"):
+        for name in ("coerced", "cleaned", "not_compared"):
             value = getattr(self, name)
             if value:
                 out[name] = {k: c.as_dict() for k, c in value.items()}
@@ -739,6 +755,17 @@ class _Plan:
         self.offset_types = types
         for test in self.tests:
             test.check(self.types[test.column], self.date1904)
+        grouped = [(c, o, "group_by") for c, o in zip(self.group, self.group_offsets)]
+        if self.pivot_offset is not None:
+            grouped.append((self.pivot, self.pivot_offset, "pivot"))
+        for column, o, field_name in grouped:
+            if types[o] == "list":
+                raise DeriveError("wrong_type", f"{column} holds lists (its declaration "
+                                  "splits its text) and is not grouped by: count it, or "
+                                  "filter it with eq, in or contains", field=field_name,
+                                  column=column, column_type="list",
+                                  valid_options=[n for n, t in self.types.items()
+                                                 if t not in ("list", "blank")][:50])
         for m in self.measures:
             if m.offset is None:
                 continue
@@ -748,6 +775,9 @@ class _Plan:
                 takes = [fn for fn in FUNCTIONS if t in TYPES_BY_FUNCTION[fn]]
                 if t == "blank":
                     reason = "holds no values"
+                elif t == "list":
+                    reason = ("holds lists (its declaration splits its text): count counts "
+                              "its cells; filter it with eq, in or contains")
                 elif t == "text" and m.fn in ("min", "max"):
                     reason = "has no measured order (text collation is not measured)"
                 else:
@@ -996,6 +1026,7 @@ class _State:
     left_out: dict = field(default_factory=dict)         # column -> reason -> _Counter
     excluded: dict = field(default_factory=dict)         # offset -> reason -> _Counter
     coerced: dict = field(default_factory=dict)          # offset -> _Counter
+    cleaned: dict = field(default_factory=dict)          # offset -> _Counter
     not_compared: dict = field(default_factory=dict)     # column -> _Counter
     hidden: _Counter = field(default_factory=_Counter)
     totals: dict = field(default_factory=dict)           # offset or None -> [partials, runs, count]
@@ -1060,6 +1091,10 @@ def _second_pass(plan: _Plan) -> _State:
                               field="from")
 
     for row in rows:
+        for o in read:
+            value = row[o - left]
+            if value.cleaned:
+                state.cleaned.setdefault(o, _Counter()).add(value)
         # the filters: as a query's, a cell of another type than its column's never passes
         passed = True
         for test, t in typed_tests:
@@ -1077,8 +1112,8 @@ def _second_pass(plan: _Plan) -> _State:
         skip = False
         for column, o in zip(plan.group, plan.group_offsets):
             value = row[o - left]
-            if value.issue == "no_cached_value":
-                leave(column, "no_cached_value", value)
+            if value.issue == "no_cached_value" or value.t == "list":
+                leave(column, "no_cached_value" if value.t != "list" else "wrong_type", value)
                 skip = True
                 break
             parts.append((_group_key(value, date1904), value.v))
@@ -1101,8 +1136,9 @@ def _second_pass(plan: _Plan) -> _State:
         pivot_key = None
         if plan.pivot_offset is not None:
             value = row[plan.pivot_offset - left]
-            if value.issue == "no_cached_value":
-                leave(plan.pivot, "no_cached_value", value)
+            if value.issue == "no_cached_value" or value.t == "list":
+                leave(plan.pivot, "no_cached_value" if value.t != "list" else "wrong_type",
+                      value)
                 continue
             pivot_key = _group_key(value, date1904)
             if pivot_key not in state.pivots:
@@ -1434,13 +1470,15 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
                                    runs.bounds, n, via, keyed)
     left_out = {c: {r: counters[r].done() for r in REASONS if r in counters}
                 for c, counters in state.left_out.items()}
+    cleaned = {region.columns[o]: state.cleaned[o].done()
+               for o in sorted(state.cleaned)} if isinstance(region, Region) else {}
     return Derived(
         address=region.address.text, id=plan.id, columns=tuple(columns),
         key_columns=len(keys), types=types, rows=rows, unrounded=unrounded,
         provenance=[where for _, _, where in built],
         rounding={"rule": ROUNDING, "digits": by_measure},
         matched=state.matched, used=state.used, groups=groups, left_out=left_out,
-        excluded=excluded, coerced=coerced,
+        excluded=excluded, coerced=coerced, cleaned=cleaned,
         not_compared={c: counter.done() for c, counter in state.not_compared.items()},
         hidden=state.hidden.done(), totals=totals, pivot_columns=pivot_columns,
         date1904=plan.date1904, source_key=keyed.column if keyed is not None else None)

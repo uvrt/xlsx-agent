@@ -50,6 +50,7 @@ through them by unit, a page's keys of one column gathered into one key set agai
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, replace
 from typing import Any, Iterable, Iterator, Sequence
 
@@ -58,6 +59,8 @@ from ooxml_edit.tools import DATASET_PREFIX, Dataset
 
 from .address import (AddressError, DatasetAddress, NameNotFound, RangeAddress, SheetRef,
                       TableAddress, format_address, nearest, parse_address)
+from .clean import CleanedWarning
+from .profile import FIRST_ADDRESSES, Count
 from .read.regions import RegionError, key_text
 from .read.types import TYPES, Value
 
@@ -375,6 +378,11 @@ def _merged(sources: Iterable[str]) -> "list[RangeAddress | TableAddress | str]"
     return out
 
 
+#: What a list's items are joined by when a table's rows go into a deck or document: a line
+#: break, which their tables show as one cell of several lines.
+LIST_JOIN = "\n"
+
+
 def table_dataset(workbook: Any, address: "str | TableAddress", *,
                   max_cells: int | None = None) -> Dataset:
     """The rows a ``t:`` address names, as an ooxml-edit :class:`Dataset`: what a deck or
@@ -393,6 +401,13 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
     logical value a bool, an error its code, a blank ``None``.  Nothing is coerced: a
     number stored as text (``number_as_text``) stays text, a formula without a cached
     value stays blank.  Each column's type label is its values' one type, else ``None``.
+
+    A declared table's cleaned values (:mod:`xlsx_agent.clean`) are placed cleaned, a list
+    as its items joined by :data:`LIST_JOIN` (a line break: deck and document tables show
+    one cell, a line per item; its type label ``text``).  When any value was cleaned, the
+    dataset's ``detail`` is ``{"cleaned": Count}`` (how many, the first cells) and a
+    :class:`~xlsx_agent.clean.CleanedWarning` says so -- in a tool session, among the
+    deck's or document's tool's warnings.
 
     Each value's source is its cell by key (``t:Products/SKU-0042/Price``) when the table
     has a key column -- declared, or the one found -- and every data row has a key no other
@@ -448,14 +463,23 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
     rows: list[tuple[Any, ...]] = []
     sources: list[tuple[tuple[str, ...], ...]] = []
     seen: list[set[str]] = [set() for _ in columns]
+    cleaned: list[str] = []
+    cleaned_count = 0
     for position in positions:
         sheet_row = data.first.row + position - 1
         cells_of = found.get(sheet_row, {})
         values, where = [], []
         for n, (name, offset) in enumerate(zip(columns, offsets)):
             value = cells_of.get(left + offset)
+            if value is not None and value.cleaned:
+                cleaned_count += 1
+                if len(cleaned) < FIRST_ADDRESSES:
+                    cleaned.append(value.a)
             if value is None or value.t == "blank":
                 values.append(None)
+            elif value.t == "list":           # a declared split: one cell, a line per item
+                values.append(LIST_JOIN.join(value.v))
+                seen[n].add("text")
             else:
                 values.append(value.v)
                 seen[n].add(value.t)
@@ -470,8 +494,15 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
         sources.append(tuple(where))
     types = tuple(next(iter(t)) if len(t) == 1 else None for t in seen)
     first_is_key = keys is not None and columns[0] == index.column
+    detail = None
+    if cleaned_count:
+        detail = {"cleaned": Count(cleaned_count, tuple(cleaned))}
+        warnings.warn(CleanedWarning(
+            f"{whole.text}: {cleaned_count} values were cleaned by the table's declared "
+            f"rules, the first at {', '.join(cleaned)}; a list is placed as its items, one "
+            "line each"), stacklevel=2)
     return Dataset(columns, rows, sources=sources, keys=1 if first_is_key else 0,
-                   types=types)
+                   types=types, detail=detail)
 
 
 def _type(v: Any, label: str | None) -> str:

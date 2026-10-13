@@ -60,7 +60,9 @@ first addresses: every value issue the reader met (``number_as_text``, ``date_as
 <xlsx_agent.read.types.Value.issue>`), ``at_limit`` (text of 32,767 characters: probably
 cut), ``volatile`` (a formula calling ``NOW``, ``TODAY``, ``RAND``, ``OFFSET`` or
 ``INDIRECT``: its value is as of the last save), ``hidden`` (cells on a hidden sheet, row or
-column) and ``mixed_types``.
+column), ``cleaned`` (values a declared column's rule changed: :mod:`xlsx_agent.clean`)
+and ``mixed_types``.  A declared column split into lists (type ``list``) has its
+distinct values counted as whole lists, and no text lengths.
 
 **Bounded.**  One streamed pass (a row at a time, :meth:`Workbook.read
 <xlsx_agent.workbook.Workbook.read>`); what is kept per column is counts, the sum's
@@ -397,6 +399,8 @@ class _Tally:
             self._flag("at_limit", value)
         if value.volatile:
             self._flag("volatile", value)
+        if value.cleaned:
+            self._flag("cleaned", value)
         t = value.t
         if value.formula:
             self.formulas += 1

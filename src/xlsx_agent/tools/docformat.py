@@ -31,7 +31,9 @@ naming the workbook), a column (``t:Products[Price]``) or a key set's rows
 source its cell by key where the table has a key, else its cell address -- and refuses
 more values than the session's ``Limits.max_dataset_cells`` before reading any;
 :func:`~xlsx_agent.dataset.merge_sources` writes a placed column's sources compactly
-(``t:Products/{SKU-0003,SKU-0007}/Price``, ``Stock!F2:F9``).  The workbook is only read:
+(``t:Products/{SKU-0003,SKU-0007}/Price``, ``Stock!F2:F9``).  A declared table's cleaned
+values go in cleaned, a list as its items one per line, and the tool's result warns how
+many and where (:class:`~xlsx_agent.clean.CleanedWarning`).  The workbook is only read:
 the dispatcher holds it for the call, no undo step, its version unchanged.
 
 **Declared tables** (:mod:`xlsx_agent.declare`) are the application's configuration, never
@@ -56,6 +58,7 @@ from typing import Any, Callable
 from ooxml_edit.tools import DocumentFormat, ToolError
 
 from ..address import AddressError, NameNotFound
+from ..clean import CleanedWarning
 from ..dataset import merge_sources, table_dataset
 from ..declare import DeclarationError, parse_declarations
 from ..package import (BIFF_BOF, CFB_SIGNATURE, KindMismatchWarning, OpenError,
@@ -329,7 +332,7 @@ def workbook_format(*, grouping: bool = True, local_dates: bool = False,
     return DocumentFormat(
         kind=KIND, open=open_workbook, configure=configure_workbook, detect=detect,
         problems=problems,
-        problem_key=problem_key, warnings=(KindMismatchWarning,), prompt=PROMPT,
+        problem_key=problem_key, warnings=(KindMismatchWarning, CleanedWarning), prompt=PROMPT,
         errors=dict(ERRORS), summary=summary, strict_first=STRICT_FIRST,
         datasets={"t:": resolve_table}, merge_sources=merge_sources)
 
