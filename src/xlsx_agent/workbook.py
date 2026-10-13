@@ -73,6 +73,7 @@ from .address import (NameNotFound, RangeAddress, SheetRef, TableAddress, neares
                       parse_address, quote_sheet)
 from .catalogue import DEFAULT_TOKENS, catalogue
 from .compare import Diff, compare
+from .dataset import table_dataset
 from .derive import Derived, derive
 from .find import Found, find_text
 from .package import OpenError, open_package, read_source, workbook_part
@@ -462,6 +463,15 @@ class Workbook:
         numbers."""
         region = address if isinstance(address, Region) else self.regions.region(address)
         return self.regions.key_columns(region)
+
+    def dataset(self, address: "str | TableAddress", *, max_cells: int | None = None) -> Dataset:
+        """The rows a ``t:`` address names as an ooxml-edit
+        :class:`~ooxml_edit.tools.Dataset` -- columns, rows, each value's cell by key (or
+        its cell address without a key) -- as a deck or document tool takes it with
+        ``from: "t:Products"``: ``t:Products``, ``t:Products[Price]``,
+        ``t:Products/{SKU-0003,SKU-0007}``; nothing coerced.  See
+        :func:`~xlsx_agent.dataset.table_dataset`."""
+        return table_dataset(self, address, max_cells=max_cells)
 
     # -- derived figures -------------------------------------------------------------------
 

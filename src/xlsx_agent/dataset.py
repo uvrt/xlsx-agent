@@ -50,14 +50,14 @@ through them by unit, a page's keys of one column gathered into one key set agai
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Iterator, Sequence
+from dataclasses import dataclass, replace
+from typing import Any, Iterable, Iterator, Sequence
 
 from ooxml_edit.charts.workbook import Area, Cell
 from ooxml_edit.tools import DATASET_PREFIX, Dataset
 
 from .address import (AddressError, DatasetAddress, NameNotFound, RangeAddress, SheetRef,
-                      TableAddress, nearest, parse_address)
+                      TableAddress, format_address, nearest, parse_address)
 from .read.regions import RegionError, key_text
 from .read.types import TYPES, Value
 
@@ -222,36 +222,9 @@ class DatasetTable:
         held = self.dataset.sources
         if held is None:
             return ()
-        spans: dict[tuple[SheetRef, int], list[tuple[int, int]]] = {}
-        keyed: dict[TableAddress, dict[str, None]] = {}
-        other: dict[Any, None] = {}
-        for i in range(0, len(runs), 2):
-            for position in range(runs[i], runs[i + 1] + 1):
-                for text in held[position - 1][offset]:
-                    area = _column_area(text)
-                    if area is None:
-                        other.setdefault(text, None)
-                    elif isinstance(area[0], TableAddress):
-                        group = keyed.setdefault(area[0], {})
-                        for key in area[1]:
-                            group.setdefault(key, None)
-                    else:
-                        sheet, column, first, last = area
-                        spans.setdefault((sheet, column), []).append((first, last))
-        out: list[RangeAddress | str] = []
-        for (sheet, column), pairs in spans.items():
-            pairs.sort()
-            merged: list[list[int]] = []
-            for first, last in pairs:
-                if merged and first <= merged[-1][1] + 1:
-                    merged[-1][1] = max(merged[-1][1], last)
-                else:
-                    merged.append([first, last])
-            out.extend(RangeAddress(sheet, Area(Cell(a, column), Cell(b, column)))
-                       for a, b in merged)
-        out.extend(_by_keys(column, list(keys)) for column, keys in keyed.items())
-        out.extend(other)
-        return tuple(out)
+        return tuple(_merged(text for i in range(0, len(runs), 2)
+                             for position in range(runs[i], runs[i + 1] + 1)
+                             for text in held[position - 1][offset]))
 
     # -- addresses -------------------------------------------------------------------------
 
@@ -356,6 +329,148 @@ def cut_sources(sources: Sequence[str], shown: int) -> tuple[tuple[str, ...], in
     if len(units) <= shown:
         return tuple(sources), 0
     return tuple(join_units(units[:shown])), len(units) - shown
+
+
+def merge_sources(sources: Iterable[str]) -> list[str]:
+    """Source addresses written compactly, each once: a column's cells as ranges, a run of
+    rows one range (``Sales!C2``, ``Sales!C3`` -> ``Sales!C2:C3``), and the keys of one
+    table's column as one key set (``t:Sales/S-01/Amount``, ``t:Sales/S-02/Amount`` ->
+    ``t:Sales/{S-01,S-02}/Amount``), each in the order first met; any other address as it
+    is.  The merger a derive from a dataset writes its sources with
+    (:meth:`DatasetTable.sources_of`), and the xlsx format's ``merge_sources``: how a deck
+    or document tool's result names the cells a table's values came from
+    (:mod:`xlsx_agent.tools.docformat`)."""
+    return [address if isinstance(address, str) else address.text
+            for address in _merged(sources)]
+
+
+def _merged(sources: Iterable[str]) -> "list[RangeAddress | TableAddress | str]":
+    spans: dict[tuple[SheetRef, int], list[tuple[int, int]]] = {}
+    keyed: dict[TableAddress, dict[str, None]] = {}
+    other: dict[Any, None] = {}
+    for text in sources:
+        area = _column_area(text)
+        if area is None:
+            other.setdefault(text, None)
+        elif isinstance(area[0], TableAddress):
+            group = keyed.setdefault(area[0], {})
+            for key in area[1]:
+                group.setdefault(key, None)
+        else:
+            sheet, column, first, last = area
+            spans.setdefault((sheet, column), []).append((first, last))
+    out: list[RangeAddress | TableAddress | str] = []
+    for (sheet, column), pairs in spans.items():
+        pairs.sort()
+        merged: list[list[int]] = []
+        for first, last in pairs:
+            if merged and first <= merged[-1][1] + 1:
+                merged[-1][1] = max(merged[-1][1], last)
+            else:
+                merged.append([first, last])
+        out.extend(RangeAddress(sheet, Area(Cell(a, column), Cell(b, column)))
+                   for a, b in merged)
+    out.extend(_by_keys(column, list(keys)) for column, keys in keyed.items())
+    out.extend(other)
+    return out
+
+
+def table_dataset(workbook: Any, address: "str | TableAddress", *,
+                  max_cells: int | None = None) -> Dataset:
+    """The rows a ``t:`` address names, as an ooxml-edit :class:`Dataset`: what a deck or
+    document tool's ``from: "t:Products"`` places (O3; the xlsx format's resolver,
+    :mod:`xlsx_agent.tools.docformat`).
+
+    ``t:Products`` (or ``t:Products/*``, ``t:Products/*/*``) is every data row and column;
+    ``t:Products[Price]`` (or ``t:Products/*/Price``) one column; ``t:Products/{SKU-0003,
+    SKU-0007}`` a key set's rows in its order (``/Price`` their one column), and a row by
+    key or by position one row.  One value (``t:Products/SKU-0042/Price``) is no rows:
+    :class:`RegionError` ``not_rows``.  The columns are the region's names; the header
+    and totals rows are not rows.
+
+    Values as :meth:`Workbook.read <xlsx_agent.Workbook.read>` types them: a number or a
+    percent the stored number, a date, time or datetime its ISO 8601 text, text as text, a
+    logical value a bool, an error its code, a blank ``None``.  Nothing is coerced: a
+    number stored as text (``number_as_text``) stays text, a formula without a cached
+    value stays blank.  Each column's type label is its values' one type, else ``None``.
+
+    Each value's source is its cell by key (``t:Products/SKU-0042/Price``) when the table
+    has a key column -- declared, or the one found -- and every data row has a key no other
+    row shares, as a derive's sources are (:mod:`xlsx_agent.derive`); else its cell address
+    (``Stock!F7``).  ``keys`` is 1 when the key column comes first.  More than
+    ``max_cells`` values (rows times columns) is refused before any is read:
+    :class:`RegionError` ``too_many_cells``."""
+    if isinstance(address, str):
+        address = parse_address(address)
+    if not isinstance(address, TableAddress):
+        raise AddressError("rows come from a table, name or region: t:Products, "
+                           "t:Products[Price] or t:Products/{SKU-0003,SKU-0007}",
+                           text=format_address(address))
+    selection = workbook.resolve(address)
+    region = selection.region
+    whole = region.address
+    if selection.kind == "value":
+        raise RegionError("not_rows", f"{selection.address} is one value, not rows: name "
+                          "the table, a column or the rows",
+                          address=selection.address,
+                          valid_options=[whole.text,
+                                         replace(whole, column=selection.column).text])
+    columns = (selection.column,) if selection.column is not None else tuple(region.columns)
+    left = region.area.first.column
+    offsets = [region.column_index(name) for name in columns]
+    data = region.data
+    if selection.positions:
+        positions = list(selection.positions)
+    elif selection.row is not None:
+        positions = [selection.row]
+    elif data is not None and selection.range is not None:
+        positions = list(range(1, region.rows + 1))
+    else:
+        positions = []
+    cells = len(positions) * len(columns)
+    if max_cells is not None and cells > max_cells:
+        raise RegionError("too_many_cells", f"{selection.address} has {cells} values; at "
+                          f"most {max_cells}: name a column or a key set, or derive a "
+                          "smaller dataset", address=selection.address)
+    found: dict[int, dict[int, Value]] = {}
+    if positions:
+        for row in workbook.read(address):
+            for value in row:
+                found.setdefault(value.row, {})[value.column] = value
+    keys, index = None, None
+    if positions and data is not None:
+        try:
+            index = workbook.regions.key_index(region)
+        except (RegionError, KeyError):
+            index = None
+        if index is not None and index.unique:
+            keys = index.keys
+    sheet = region.sheet_ref
+    rows: list[tuple[Any, ...]] = []
+    sources: list[tuple[tuple[str, ...], ...]] = []
+    seen: list[set[str]] = [set() for _ in columns]
+    for position in positions:
+        sheet_row = data.first.row + position - 1
+        cells_of = found.get(sheet_row, {})
+        values, where = [], []
+        for n, (name, offset) in enumerate(zip(columns, offsets)):
+            value = cells_of.get(left + offset)
+            if value is None or value.t == "blank":
+                values.append(None)
+            else:
+                values.append(value.v)
+                seen[n].add(value.t)
+            if keys is not None:
+                where.append((replace(whole, key=keys[position - 1], column=name).text,))
+            else:
+                cell = Cell(sheet_row, left + offset)
+                where.append((RangeAddress(sheet, Area(cell, cell)).text,))
+        rows.append(tuple(values))
+        sources.append(tuple(where))
+    types = tuple(next(iter(t)) if len(t) == 1 else None for t in seen)
+    first_is_key = keys is not None and columns[0] == index.column
+    return Dataset(columns, rows, sources=sources, keys=1 if first_is_key else 0,
+                   types=types)
 
 
 def _type(v: Any, label: str | None) -> str:

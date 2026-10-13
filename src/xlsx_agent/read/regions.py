@@ -96,7 +96,9 @@ class RegionError(ValueError):
     ``no_key_column``, ``duplicate_key``, ``no_key`` (a row whose key cell is no key,
     :meth:`Regions.expand`), ``no_key_set`` (a key set of a dataset's rows,
     :mod:`xlsx_agent.dataset`), ``position_out_of_range``, ``bad_table``,
-    ``name_taken``, ``bad_name``, ``headers_required``, ``bad_headers``.  The message
+    ``name_taken``, ``bad_name``, ``headers_required``, ``bad_headers``, and as a source of
+    rows (:func:`~xlsx_agent.dataset.table_dataset`) ``not_rows`` (one value) and
+    ``too_many_cells`` (more values than the caller's limit).  The message
     names sheets, tables, names and columns, never a key or a cell's value; ``address``
     is the address in question as text, ``valid_options`` what would work instead."""
 
