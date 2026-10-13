@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Every Python the package claims, as the siblings test (ROADMAP.md's R0 asks only
+        # for 3.10 and 3.15; the full range costs little and keeps the four repositories alike).
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          # 3.15.0 is out (2026-10-09) but setup-python's version list may still offer only
+          # its release candidates; this takes a final release whenever there is one, so
+          # it changes nothing for 3.10 to 3.14.
+          allow-prereleases: true
+
+      - name: Install
+        # The siblings are not on PyPI yet, so they are installed from their repositories
+        # first and `pip install -e .[test]` then finds the requirements already satisfied.
+        # They are @main, so a sibling change this repository depends on lands there first.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@main"
+          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@main"
+          python -m pip install -e .[test]
+
+      # A docstring's invalid escape ("\h") is a SyntaxWarning (3.12+; a DeprecationWarning
+      # before), printed once at the first compile and easy to miss: fail on it here.
+      - name: Compile with syntax warnings as errors
+        run: python -W error::SyntaxWarning -W error::DeprecationWarning -m compileall -q -f src tests
+
+      - name: Test
+        run: python -m pytest -q
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build distributions
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
