@@ -11,18 +11,27 @@ import subprocess
 import sys
 import time
 import tracemalloc
+import types
 from datetime import date, datetime, time as clock
 
 import pytest
 
 from build import (NS_MAIN, NS_R, Error, Formula, Inline, IsoDate, Rich, Run,
                    WorkbookBuilder, zip_parts)
+from ooxml_common.locales import EN_US, Locale as SharedLocale
 from xlsx_agent import Locale, NameNotFound, OpenError, Problem, Workbook
 from xlsx_agent.read.stream import SheetReader, is_volatile
 from xlsx_agent.read.strings import decode_xstring
-from xlsx_agent.read.types import TEXT_LIMIT, looks_like_date, looks_like_number, serial_text
+from xlsx_agent.read.types import (TEXT_LIMIT, format_language, looks_like_date, looks_like_number,
+                                   serial_text)
 
 MARKER = "MARKER-7Q"  # cell content that must never reach a diagnostic
+
+#: A comma-decimal locale, as Excel's nl-BE region reads text (decimal ``,``, thousands
+#: ``.``, day first).
+COMMA = Locale(decimal_separator=",", thousands_separator=".", date_order="dmy",
+               language="nl-BE", list_separator=";")
+SPACED = Locale(decimal_separator=",", thousands_separator=" ", list_separator=";")
 
 
 def _open(book: WorkbookBuilder, **options) -> Workbook:
@@ -351,7 +360,7 @@ def test_numbers_and_dates_stored_as_text_with_the_callers_locale():
                        "12%": "number_as_text", " 7 ": "number_as_text", "abc": None,
                        "2026-01-05": "date_as_text", "05/01/2026": None, "1.234,50": None,
                        "31/02/2026": None, "12 apples": None, "1,23,4": None}
-    comma = issues(Workbook.open(data, locale=Locale(decimal=",", thousands=".", day_order="dmy")))
+    comma = issues(Workbook.open(data, locale=COMMA, local_dates=True))
     assert comma["1.234,50"] == "number_as_text" and comma["1,234.50"] is None
     assert comma["05/01/2026"] == "date_as_text" and comma["31/02/2026"] is None
     assert comma["2026-01-05"] == "date_as_text"
@@ -359,17 +368,86 @@ def test_numbers_and_dates_stored_as_text_with_the_callers_locale():
     assert all(v.t == "text" for v in next(Workbook.open(data).read("S!A1:L1")))
 
 
-def test_locale_settings_are_checked():
-    assert Locale().decimal == "."
-    assert Locale(language="ja-jp").language == "ja-JP"
-    for bad in ({"decimal": ""}, {"decimal": "1"}, {"decimal": ",", "thousands": ","},
-                {"day_order": "dym"}, {"language": "en-US"}):
-        with pytest.raises(ValueError):
-            Locale(**bad)
-    assert looks_like_number("1 234,5", Locale(decimal=",", thousands=" "))
+def test_the_reader_takes_the_shared_locale_or_any_object_with_its_fields():
+    assert Locale is SharedLocale and Workbook.open(_open_bytes()).locale is EN_US
+    duck = types.SimpleNamespace(decimal_separator=",", thousands_separator=".",
+                                 date_order="dmy", language="nl-BE", list_separator=";")
+    assert Workbook.open(_open_bytes(), locale=duck).locale is duck
+    for bad in ("nl-BE", object(), types.SimpleNamespace(decimal_separator=",")):
+        with pytest.raises(TypeError):
+            Workbook.open(_open_bytes(), locale=bad)
+    assert looks_like_number("1 234,5", SPACED)
+    assert not looks_like_number("1 234,5", SPACED,
+                                 grouping=False)
     assert not looks_like_number("", Locale())
-    assert looks_like_date("1/31/26", Locale(day_order="mdy"))
+    assert looks_like_date("1/31/26", Locale(date_order="mdy"), local_dates=True)
+    assert not looks_like_date("1/31/26", Locale(date_order="mdy"))
     assert not looks_like_date("2026-02-30", Locale())
+
+
+def test_the_locales_language_names_a_format_table_only_when_it_has_one():
+    assert format_language("ja-jp") == "ja-JP" and format_language("zh_TW") == "zh-TW"
+    assert format_language("en-US") is None and format_language("nl-BE") is None
+    assert format_language("ja") is None and format_language(None) is None
+
+
+#: Excel's readings of text (VALUE and --A; Excel 16.106 Mac, Dutch UI, 2026-10-13):
+#: parsed (True) or an error (False), under the nl-BE and the en-US region.
+MEASURED_TEXT = {
+    "1,234.5": (False, True), "1234.5": (False, True), "12.5": (False, True),
+    "1.234,5": (True, False), "1234,5": (True, False), "12,5": (True, False),
+}
+
+
+def test_text_numbers_as_excel_reads_them_in_each_region():
+    texts = list(MEASURED_TEXT)
+    book = WorkbookBuilder()
+    book.sheet("S").rows("A1", [texts])
+    data = book.to_bytes()
+
+    def flagged(**options):
+        values = next(Workbook.open(data, **options).read("S!A1:F1"))
+        return [v.issue == "number_as_text" for v in values]
+
+    assert flagged(locale=COMMA) == [nl for nl, _ in MEASURED_TEXT.values()]
+    assert flagged(locale=EN_US) == [us for _, us in MEASURED_TEXT.values()]
+    assert flagged() == flagged(locale=EN_US)   # the default is en-US, grouping on
+    # without grouping, only an ungrouped number is one
+    assert flagged(locale=COMMA, grouping=False) == [False, False, False, False, True, True]
+
+
+def test_text_dates_dmy_or_mdy_only_when_asked():
+    # Excel: 3/4/2026 is 3 April (nl-BE) or 4 March (en-US); 13/4/2026 an error under
+    # en-US, 4/13/2026 under nl-BE; 2026-04-03 a date in both
+    texts = ["3/4/2026", "3-4-2026", "13/4/2026", "4/13/2026", "2026-04-03"]
+    book = WorkbookBuilder()
+    book.sheet("S").rows("A1", [texts])
+    data = book.to_bytes()
+
+    def flagged(**options):
+        values = next(Workbook.open(data, **options).read("S!A1:E1"))
+        return [v.issue == "date_as_text" for v in values]
+
+    iso_only = [False, False, False, False, True]
+    assert flagged() == iso_only and flagged(locale=COMMA) == iso_only
+    assert flagged(locale=COMMA, local_dates=True) == [True, True, True, False, True]
+    assert flagged(locale=EN_US, local_dates=True) == [True, True, False, True, True]
+
+
+def test_setting_another_locale_reads_the_cells_again():
+    book = WorkbookBuilder()
+    book.sheet("S").rows("A1", [["Price"], ["12,50"]])
+    wb = Workbook.open(book.to_bytes())
+    assert wb.cell("S!A2").issue is None and wb.scan("S").issues == {}
+    wb.locale = COMMA
+    assert wb.cell("S!A2").issue == "number_as_text"
+    assert wb.scan("S").issues["number_as_text"][0] == 1
+
+
+def _open_bytes() -> bytes:
+    book = WorkbookBuilder()
+    book.sheet("S").rows("A1", [["x"]])
+    return book.to_bytes()
 
 
 def test_cells_at_the_length_limit_are_flagged():

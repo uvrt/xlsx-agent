@@ -28,14 +28,16 @@ classifiers = [
 # already made", 6).  ooxml-edit is the format-neutral editing core the siblings share: the
 # OPC package (parts as their original bytes, content types, relationships), the safe parser,
 # the history and the tool layer as pptx-agent and docx-agent use it -- from 0.18.0 with
-# workbooks a kind of the shared tools (O1), which xlsx_agent.tools needs; its
+# workbooks a kind of the shared tools (O1), which xlsx_agent.tools needs, and from 0.19.0
+# the session's locale (Toolbox(locale=...)), which the xlsx format reads workbooks in; its
 # charts.workbook carries the cell and area types xlsx-agent's addresses build on.
 # ooxml-common (standard library only) is named for what xlsx-agent imports from it
 # directly: the package kinds (ooxml_common.kinds: xlsx, xlsm, xltx, xltm), and from 0.14.0
-# the themes and measured text widths the later edit and render milestones need.  Neither is
+# the themes and measured text widths the later edit and render milestones need, and from
+# 0.15.0 the shared locale (ooxml_common.locales.Locale), the reader's locale.  Neither is
 # on PyPI yet: install them first from sibling checkouts (`pip install -e ../ooxml-common
 # -e ../ooxml-edit`) or from GitHub.
-dependencies = ["lxml>=4.9", "ooxml-edit>=0.18.0", "ooxml-common>=0.14.0"]
+dependencies = ["lxml>=4.9", "ooxml-edit>=0.19.0", "ooxml-common>=0.15.0"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]

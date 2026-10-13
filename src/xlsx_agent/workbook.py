@@ -11,7 +11,9 @@
 
 and its cells, typed, streamed from the sheet (:mod:`xlsx_agent.read`)::
 
-    wb = Workbook.open("inventory.xlsx", locale=Locale(decimal=",", thousands="."))
+    wb = Workbook.open("inventory.xlsx", locale=Locale(decimal_separator=",",
+                       thousands_separator=".", date_order="dmy", language="nl-BE",
+                       list_separator=";"))      # ooxml_common.locales.Locale
     wb.cell("Stock!F2")                  # Value(sheet='Stock', row=2, column=6, v=12.5, t='number')
     for row in wb.read("Stock!A:C"):     # whole columns, clipped to the used range; lazy
         ...
@@ -48,7 +50,7 @@ import os
 import re
 from collections import OrderedDict
 from dataclasses import dataclass, field, replace
-from typing import BinaryIO, Iterator
+from typing import Any, BinaryIO, Iterator
 
 from lxml import etree
 from ooxml_edit.charts.workbook import Area
@@ -69,7 +71,7 @@ from .read.stream import Hyperlink, SheetReader, SheetScan, read_area, scan
 from .read.strings import SharedStrings
 from .read.styles import NumberFormat, Styles
 from .read.tables import TablePart, read_table
-from .read.types import Locale, Problem, Value
+from .read.types import Problem, Value, format_language, reading_locale
 from .xml import iterparse_xml
 
 #: SpreadsheetML's main namespace, transitional and strict.
@@ -118,16 +120,20 @@ class Workbook:
     """An open workbook.  Made by :meth:`open`."""
 
     def __init__(self, package: OpcPackage, *, part: str, kind: str, data: bytes | None = None,
-                 locale: Locale | None = None) -> None:
+                 locale: Any = None, grouping: bool = True, local_dates: bool = False) -> None:
         #: The ooxml-edit package: every part as the bytes that were read.
         self.package = package
         #: The workbook part (``xl/workbook.xml`` in every file Excel writes).
         self.part = part
         #: ``"xlsx"``, ``"xlsm"``, ``"xltx"`` or ``"xltm"``: what the workbook part declares.
         self.kind = kind
-        #: How text is read as numbers and dates, and the language of the language-dependent
-        #: built-in number formats: the caller's (:class:`~xlsx_agent.read.types.Locale`).
-        self.locale = locale or Locale()
+        self._locale = reading_locale(locale)
+        #: Whether a text number's whole part may be grouped with the locale's thousands
+        #: separator (``1,234.5``), and whether text dates other than ISO 8601 are read in
+        #: the locale's date order: reader settings, set at :meth:`open`
+        #: (:mod:`xlsx_agent.read.types`).
+        self.grouping = bool(grouping)
+        self.local_dates = bool(local_dates)
         self._data = data
         self._sheets: list[Sheet] | None = None
         self._strings: SharedStrings | None = None
@@ -144,7 +150,8 @@ class Workbook:
 
     @classmethod
     def open(cls, source: "str | os.PathLike[str] | bytes | BinaryIO | OpcPackage", *,
-             limits: Limits | None = None, locale: Locale | None = None) -> "Workbook":
+             limits: Limits | None = None, locale: Any = None, grouping: bool = True,
+             local_dates: bool = False) -> "Workbook":
         """Open a ``.xlsx``, ``.xlsm``, ``.xltx`` or ``.xltm`` from a path, bytes, a binary
         file or an :class:`~ooxml_edit.opc.OpcPackage`.
 
@@ -161,19 +168,48 @@ class Workbook:
         with the part's name (``code`` ``"damaged"``), rather than at a later read.
 
         ``locale`` is how text is read as numbers and dates, and the language the
-        language-dependent built-in number formats are read in; ``Locale()`` (``.`` as the
-        decimal separator) when ``None``.  It is the caller's setting, never a model's."""
+        language-dependent built-in number formats are read in: an
+        :class:`ooxml_common.locales.Locale`, or any object with its five string fields;
+        en-US (:data:`~ooxml_common.locales.EN_US`) when ``None``.  ``grouping`` (on)
+        recognises a text number whose whole part is grouped with the locale's thousands
+        separator; ``local_dates`` (off: ISO 8601 dates only) recognises text dates in the
+        locale's date order too -- Excel's own reading, measured
+        (:mod:`xlsx_agent.read.types`).  All three are the caller's settings, never a
+        model's."""
         if isinstance(source, OpcPackage):
             part, kind = workbook_part(source)
-            workbook = cls(source, part=part, kind=kind, locale=locale)
+            workbook = cls(source, part=part, kind=kind, locale=locale, grouping=grouping,
+                           local_dates=local_dates)
         else:
             limits = limits or Limits()
             data = read_source(source, limits)
             package = open_package(data, limits)
             part, kind = workbook_part(package, source)
-            workbook = cls(package, part=part, kind=kind, data=data, locale=locale)
+            workbook = cls(package, part=part, kind=kind, data=data, locale=locale,
+                           grouping=grouping, local_dates=local_dates)
         workbook._sheets = workbook._read_sheets()
         return workbook
+
+    @property
+    def locale(self) -> Any:
+        """How text is read as numbers and dates, and the language of the
+        language-dependent built-in number formats: the caller's
+        (:class:`ooxml_common.locales.Locale`; en-US unless given).  Setting another one
+        (as the tool layer does with its session's) forgets what was read in the old one:
+        the number formats, the sheets' scans, the detected regions, the catalogue."""
+        return self._locale
+
+    @locale.setter
+    def locale(self, locale: Any) -> None:
+        locale = reading_locale(locale)
+        if locale == self._locale:
+            return
+        self._locale = locale
+        self._styles = None
+        self._scans.clear()
+        self._catalogue = None
+        self._queries.clear()
+        self.regions.forget_cells()
 
     def to_bytes(self) -> bytes:
         """The workbook as a file.  While nothing has changed it is the bytes that were
@@ -456,7 +492,7 @@ class Workbook:
         if self._styles is None:
             part = self._related("styles")
             root = _parsed(part, lambda: self.package.tree(part)) if part else None
-            self._styles = Styles(root, self.locale.language)
+            self._styles = Styles(root, format_language(self.locale.language))
         return self._styles
 
     def number_format(self, style: int) -> NumberFormat:
@@ -480,7 +516,8 @@ class Workbook:
         name = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
         return SheetReader(data or b"", sheet=name, hidden=not sheet.visible,
                            strings=self.strings, styles=self.styles, date1904=self.date1904,
-                           locale=self.locale, formats=formats)
+                           locale=self.locale, formats=formats, grouping=self.grouping,
+                           local_dates=self.local_dates)
 
     def _stream(self, sheet: Sheet, run):
         """``run()`` over a sheet's part, with the parser's refusal turned into

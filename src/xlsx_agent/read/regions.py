@@ -265,6 +265,12 @@ class Regions:
         self._detected: dict[tuple, Region] = {}
         self._keys: dict[tuple, list[str]] = {}
 
+    def forget_cells(self) -> None:
+        """Forget what was found from the cells (detected regions, key columns): the
+        workbook's locale changed.  The tables, names and declared regions stay."""
+        self._detected.clear()
+        self._keys.clear()
+
     # -- what the workbook holds -----------------------------------------------------------
 
     @property

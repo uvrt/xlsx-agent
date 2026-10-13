@@ -12,11 +12,13 @@ implementing application", and that ids it does not list (5 to 8, say) follow th
 
 * an id in the all-languages table is that table's code, whatever the language;
 * an id in the language tables (27 to 36 and 50 to 58 for the four East Asian languages,
-  59 to 81 for Thai) is read with the language the caller names
-  (:attr:`~xlsx_agent.read.types.Locale.language`).  With no language named, an id whose
-  kind (date or time) is the same in every language that lists it takes that kind; one
-  whose kind differs between languages (34, 35, 52, 53, 55, 56) is ``"ambiguous"``, and a
-  number in it is left a number, never guessed a date or a time;
+  59 to 81 for Thai) is read with the language the caller's locale names, when it is one
+  of those five (:func:`~xlsx_agent.read.types.format_language`).  With none of them, an
+  id whose kind (date or time) is the same in every language that lists it takes that
+  kind; one whose kind differs between languages (34, 35, 52, 53, 55, 56) is
+  ``"ambiguous"``, and a number in it is left a number, never guessed a date or a time.
+  Measured (Excel 16.106 Mac, Dutch UI, 2026-10-13): ids 27 to 36 and 50 to 58 show as
+  id 14 (a date) or id 21 (a time) under both the nl-BE and the en-US region;
 * any other id without a code in the file is ``"unknown"``: its numbers stay numbers.
 
 An Excel probe in E1 confirms the list on Excel itself (ROADMAP.md, "Values and types"),
