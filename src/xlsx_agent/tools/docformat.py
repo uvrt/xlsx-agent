@@ -33,6 +33,16 @@ more values than the session's ``Limits.max_dataset_cells`` before reading any;
 :func:`~xlsx_agent.dataset.merge_sources` writes a placed column's sources compactly
 (``t:Products/{SKU-0003,SKU-0007}/Price``, ``Stock!F2:F9``).  The workbook is only read:
 the dispatcher holds it for the call, no undo step, its version unchanged.
+
+**Declared tables** (:mod:`xlsx_agent.declare`) are the application's configuration, never
+a model's: no tool takes them, so they cost no definition tokens.  The application gives
+them to the format (``format(tables=...)``: every workbook the format opens) or to one
+session (:func:`declare`: the workbooks that session opens from then on, in place of the
+format's); a workbook joining the session has them declared after its locale is set
+(:func:`configure`).  A workbook they do not fit is refused at ``open_document``
+(:class:`~xlsx_agent.declare.DeclarationError`: ``refused``, with its ``code`` and
+``path`` in ``details``); a declaration marked ``optional`` is skipped where its sheets are
+not there.
 """
 
 from __future__ import annotations
@@ -47,6 +57,7 @@ from ooxml_edit.tools import DocumentFormat, ToolError
 
 from ..address import AddressError, NameNotFound
 from ..dataset import merge_sources, table_dataset
+from ..declare import DeclarationError, parse_declarations
 from ..package import (BIFF_BOF, CFB_SIGNATURE, KindMismatchWarning, OpenError,
                        compound_file_refusal)
 from ..query import QueryError
@@ -110,6 +121,7 @@ REGION_CODES: dict[str, str] = {
     "bad_headers": "invalid_arguments",
     "not_rows": "invalid_arguments",    # one value named as a source of rows
     "too_many_cells": "limit",          # a source over Limits.max_dataset_cells
+    "declared": "refused",              # a detected region in a declared table: its name
 }
 
 
@@ -124,6 +136,7 @@ ERRORS: dict[type[BaseException], Any] = {
     OpenError: "refused",
     QueryError: ("invalid_arguments", _options),
     SchemaError: ("invalid_arguments", _options),
+    DeclarationError: ("refused", _options),
 }
 
 #: The tool error each :class:`~xlsx_agent.QueryError` code calls for.
@@ -165,6 +178,9 @@ def tool_error(error: BaseException) -> ToolError | None:
     if isinstance(error, SchemaError):
         return ToolError("invalid_arguments", error.message, valid_options=_options(error),
                          field="schema", details={"code": error.code, "path": error.path})
+    if isinstance(error, DeclarationError):     # the application's configuration
+        return ToolError("refused", error.message, valid_options=_options(error),
+                         details={"code": error.code, "path": error.path})
     if isinstance(error, NameNotFound):
         return ToolError("not_found", error.message, valid_options=_options(error),
                          details={"what": error.what})
@@ -247,16 +263,38 @@ def summary(workbook: Workbook) -> dict[str, Any]:
 _SOURCE_CELLS: "weakref.WeakKeyDictionary[Workbook, int]" = weakref.WeakKeyDictionary()
 
 
-def configure(workbook: Workbook, session: Any) -> None:
+#: The tables each session declares on the workbooks it opens (:func:`declare`), checked
+#: for their form.
+_SESSION_TABLES: "weakref.WeakKeyDictionary[Any, list]" = weakref.WeakKeyDictionary()
+
+
+def declare(session: Any, tables: Any) -> None:
+    """Declare ``tables`` (:mod:`xlsx_agent.declare`'s plain data: a mapping, a list of
+    them, or ``{"tables": [...]}``) on every workbook ``session`` opens from then on, in
+    place of the format's (``format(tables=...)``); ``None`` or ``[]`` declares none.  The
+    declarations are checked for their form now (:class:`~xlsx_agent.declare.DeclarationError`),
+    and against each workbook as it opens.  The application's configuration, never a
+    model's."""
+    _SESSION_TABLES[session] = parse_declarations(tables) if tables else []
+
+
+def configure(workbook: Workbook, session: Any, tables: "list | None" = None) -> None:
     """A workbook joining a session is read in the session's locale (``Toolbox(locale=...)``
     or ``toolbox.session(locale=...)``: an :class:`ooxml_common.locales.Locale` or any
     object with its fields; en-US unless given) -- the application's setting, never a
-    model's -- and its tables are given as sources up to the session's
-    ``Limits.max_dataset_cells``."""
+    model's -- its tables are given as sources up to the session's
+    ``Limits.max_dataset_cells``, and the declared tables are declared on it: the
+    session's (:func:`declare`), else ``tables`` (the format's)."""
     workbook.locale = session.locale
     limits = getattr(session, "limits", None)
     if limits is not None:
         _SOURCE_CELLS[workbook] = limits.max_dataset_cells
+    try:
+        declared = _SESSION_TABLES.get(session, tables)
+    except TypeError:            # a session that cannot be weakly referred to declares none
+        declared = tables
+    if declared:
+        workbook.declare_tables(declared)
 
 
 def resolve_table(workbook: Workbook, address: str) -> Any:
@@ -270,16 +308,24 @@ def resolve_table(workbook: Workbook, address: str) -> Any:
         raise tool_error(error) from None
 
 
-def workbook_format(*, grouping: bool = True, local_dates: bool = False) -> DocumentFormat:
+def workbook_format(*, grouping: bool = True, local_dates: bool = False,
+                    tables: Any = None) -> DocumentFormat:
     """The xlsx format, its workbooks opened with the reader settings ``grouping`` and
-    ``local_dates`` (:meth:`Workbook.open <xlsx_agent.Workbook.open>`) and read in the
-    session's locale (:func:`configure`): the application's settings, never a model's."""
+    ``local_dates`` (:meth:`Workbook.open <xlsx_agent.Workbook.open>`), read in the
+    session's locale and given the declared ``tables`` (:mod:`xlsx_agent.declare`; a
+    session's own, :func:`declare`, in their place) (:func:`configure`): the
+    application's settings, never a model's.  ``tables`` is checked for its form here."""
+    declared = parse_declarations(tables) if tables else []
 
     def open_workbook(data: bytes) -> Workbook:
         return Workbook.open(data, grouping=grouping, local_dates=local_dates)
 
+    def configure_workbook(workbook: Workbook, session: Any) -> None:
+        configure(workbook, session, declared)
+
     return DocumentFormat(
-        kind=KIND, open=open_workbook, configure=configure, detect=detect, problems=problems,
+        kind=KIND, open=open_workbook, configure=configure_workbook, detect=detect,
+        problems=problems,
         problem_key=problem_key, warnings=(KindMismatchWarning,), prompt=PROMPT,
         errors=dict(ERRORS), summary=summary, strict_first=STRICT_FIRST,
         datasets={"t:": resolve_table}, merge_sources=merge_sources)

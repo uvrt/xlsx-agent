@@ -207,7 +207,7 @@ class Region:
         if self.span is None:
             return self.range.text
         return ",".join(RangeAddress(SheetRef(name=sheet), area).text
-                        for sheet, area in self.span.areas())
+                        for sheet, area in self.span.extent())
 
     def located(self, area: Area | None) -> str | None:
         """Cells of the region (in its own rows and columns) as the sheets' ranges, as
@@ -418,6 +418,14 @@ class Span:
             bottom = max(part.last, top)
             out.append((part.sheet, Area(Cell(top, self.left), Cell(bottom, self.right))))
         return out
+
+    def extent(self) -> list[tuple[str, Area]]:
+        """Each sheet's cells of the table as the model sees them: header row to last data
+        row, from its first column to its last (a hidden column at either end left
+        out)."""
+        low, high = min(self.columns), max(self.columns)
+        return [(sheet, Area(Cell(area.first.row, low), Cell(area.last.row, high)))
+                for sheet, area in self.areas()]
 
     def withheld(self) -> list[tuple[str, Area]]:
         """The cells of the columns hidden from the model, sheet by sheet: never shown."""
