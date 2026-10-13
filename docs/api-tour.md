@@ -165,6 +165,67 @@ A declaration that does not fit the workbook is refused before any table is kept
 differs on one sheet, an unknown header, an id that would name two columns, a hidden key,
 a key two rows share. Nothing is guessed past.
 
+## Cleaning text
+
+A declared field may also say how its text is cleaned (`xlsx_agent.clean`): a leading label
+stripped, white space collapsed, a cell split into a list. Like the rest of a declaration,
+the rules are the application's configuration -- no tool takes them, so no definition
+changes -- and they are applied once, where the table is read. This example's workbook
+(made up, as in `tests/test_clean.py`) has a sheet of tasks per team whose "Owners" cell
+starts with the lead's label before the owners, `Lead: Robin;  Kim ;Ash`:
+
+```python
+wb.declare_tables([{"name": "tasks", "sheets": "Team *", "key": "Ref", "fields": [
+    {"header": "Owners", "id": "owners",
+     "clean": {"strip": r"^Lead:[^;]*;\s*", "split": ";"}},
+    {"header": "Note", "clean": {"strip": r"^Lead:[^;]*;\s*", "collapse_space": True}}]}])
+
+wb.cell("t:tasks/E-1/owners").as_dict()
+# {'a': "'Team East'!C2", 'v': ['Kim', 'Ash'], 't': 'list', 'cleaned': True}
+wb.cell("t:tasks/E-1/owners").original     # 'Lead: Robin;  Kim ;Ash': the text as stored
+wb.cell("'Team East'!C2").v                # the same: a cell by its address is as stored
+wb.cell("t:tasks/W-1/Note").as_dict()      # only a label: nothing left, so blank
+# {'a': "'Team West'!D2", 'v': None, 't': 'blank', 'cleaned': True}
+wb.column("t:tasks[owners]").stats().flags
+# {'cleaned': Count(count=2, first=("'Team East'!C2", "'Team West'!C2"))}
+```
+
+- **The rules**, in this order, on text values only: `strip` (a regular expression matched
+  at the start, within the cell's first 256 characters), `split` (a literal separator; each
+  item trimmed, empty ones dropped; the value a `list` -- a tuple in Python, a list in
+  JSON -- even of one item), `collapse_space` (runs of white space become one space, none
+  at the ends; on each item of a split). Text cleaned to nothing is `blank`; cleaned text
+  that reads as a number or date is flagged `number_as_text` or `date_as_text`, so a
+  derive's `coerce` reads it.
+- **Never silent**: a value a rule changed says `cleaned` and keeps `original`; the cells
+  are counted with their first addresses in an `xlsx_read` or `xlsx_query` page
+  (`cleaned`), as a `cleaned` flag in `xlsx_profile` and `describe`, per column in
+  `xlsx_derive` (`Derived.cleaned`), and as a `CleanedWarning` when the table goes into a
+  deck or document (the tool's result lists it among its warnings).
+- **Bounded**: a pattern is compiled when declared, and refused (`bad_pattern`) when its
+  backtracking could grow past the square of the 256 characters it sees -- a repeat in a
+  repeat (`(a+)+`), an alternation in a repeat (`(a|ab)*`), a backreference, or more than
+  one repeat that can give characters back (`.*;` can; `[^;]*;` cannot).
+- **Not the key**: the key column is never cleaned (`clean_key`): an address by key names
+  the key as its cell holds it, and two keys cleaned alike would name one row. Nor is a
+  hidden column, nor the header.
+
+Lists flow on as follows:
+
+```python
+tasks = wb.region("t:tasks")
+[r[0].v for r in tasks.query(["Ref"], where={"owners": {"eq": "Kim"}}).rows]
+# ['E-1', 'E-2']: eq, in and contains pass when any item does
+wb.derive("t:tasks", measures=[{"fn": "count", "column": "owners", "as": "with owners"}]).rows
+# [{'with owners': 3}]: cells holding a list (rows, not items)
+wb.derive("t:tasks", group_by=["owners"])  # DeriveError wrong_type: a list is no one group
+table_dataset(wb, "t:tasks[owners]").rows  # into a deck or document: a line per item
+# (('Kim\nAsh',), ('Kim',), ('Ash\nLee',), (None,))
+```
+
+Every other function refuses a list column; `xlsx_compare` compares lists as values;
+`xlsx_validate_data` checks a list as `text`, item by item (an `enum` holds for each).
+
 ## Query
 
 ```python

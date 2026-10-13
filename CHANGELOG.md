@@ -5,6 +5,20 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **Cleaning text** (X6): a declared field takes `clean` -- `strip` (a leading label, a
+  pattern matched at the start within the cell's first 256 characters), `collapse_space`
+  and `split` (a literal separator: the value becomes a `list`, a new value type; a tuple
+  in Python, a list in JSON). The caller's configuration, so no definition changes;
+  applied once, where the table is read (reads through it, describe, query, profile,
+  derive, compare, checks, a deck's or document's `from`), never to the header, a hidden
+  column or the key column (`clean_key`). A changed value says `cleaned` and keeps
+  `original`; `xlsx_read`/`xlsx_query` pages count them (`cleaned`), `xlsx_profile` and
+  `describe` flag them, `xlsx_derive` counts them per column (`Derived.cleaned`), and a
+  `t:` source warns (`CleanedWarning`, among the deck tool's warnings) and places a list
+  as one cell with a line per item. Lists: `eq`, `in`, `contains` pass when any item does;
+  `count` counts them; other functions, `group_by` and `pivot` refuse them; validation
+  checks their items as text. Patterns are compiled when declared and refused
+  (`bad_pattern`) when their backtracking could grow past the square of what they see.
 - **Declared tables** (X3) and **key-value tables** (X7): the application declares its own
   tables from its configuration, as plain data -- `Workbook.declare_tables`, the format
   (`xlsx_agent.tools.format(tables=...)`) or a session (`xlsx_agent.tools.declare`); no tool

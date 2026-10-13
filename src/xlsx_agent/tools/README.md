@@ -103,6 +103,16 @@ reads a key-value table. A workbook the declarations do not fit is refused at
 marked `optional` is skipped where its sheets are not there. Every rule is in
 `xlsx_agent.declare` and docs/api-tour.md, "Declaring tables".
 
+A field may also clean its column's text -- `"clean": {"strip": "^Lead:[^;]*;\\s*",
+"collapse_space": true, "split": ";"}`: a leading label stripped, white space collapsed, a
+cell split into a list (`"t": "list"`) -- applied where the table is read, never to the
+key column. A value a rule changed says `"cleaned": true`; `xlsx_read` and `xlsx_query`
+pages count them (`cleaned`: count and first addresses), `xlsx_profile` and `describe`
+flag them, `xlsx_derive` counts them per column, and a slide's or document's table from
+`t:` gets a list as one cell with a line per item and a warning saying how many values
+were cleaned. A pattern that could backtrack without bound is refused when declared.
+See `xlsx_agent.clean` and docs/api-tour.md, "Cleaning text".
+
 **Dates stored as text.** `xlsx_derive`'s `min` and `max` take dates and give a date. On a
 column whose dates are stored as text they are refused, and the error says so in one step:
 its `details` give the `issue` (`date_as_text`) and its `cells` (the count, the first

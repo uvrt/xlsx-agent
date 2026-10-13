@@ -169,6 +169,7 @@ Every value read comes back typed, with its address:
 | `bool` | `t="b"` | |
 | `error` | `t="e"` | the code (`#N/A`, `#REF!`, `#DIV/0!`...), never a number |
 | `blank` | no value | a cell with only a style is blank |
+| `list` | a declared column's text split by the caller's rule (X6) | a list of texts; no cell stores one |
 
 Which number formats are dates is decided from the format code (date and time tokens
 outside quotes and brackets) and, for the built-in ids that have no code in the file, from
@@ -641,6 +642,56 @@ key-value 1,357. **Budget**: no definition changes (a declaring format's definit
 the plain one's: tested); the loaded core is as before, 5,009 online; `strict_problems` is
 clean; the workbook prompt is unchanged. The goldens are unchanged; describe of an
 undeclared workbook changes only where a two-column key-value block was `header_unclear`.
+
+*X6 as built* (production feedback, 2026-10-13): **Cleaning text, on the declaration.**
+A declared field takes `clean` (`xlsx_agent.clean`): `strip`, a pattern matched at the start
+of the text (Python's `re`, within the first 256 characters: a leading label such as
+`^Lead:[^;]*;\s*`); `split`, a literal separator, each item trimmed and empty ones dropped,
+the value a `list` (a new value type, last in `TYPES`: a tuple in Python, a list in JSON;
+even of one item, so the column has one type); `collapse_space`, runs of white space to
+one space and none at the ends (each item's, with a split); applied in that order, to text
+values only. **Caller configuration, not a tool parameter**: no definition changes (tested:
+a format declaring rules gives the plain one's definitions, and the `xlsx_*` definitions
+are 10,155 characters of compact JSON, as on main); the loaded core is unchanged, 5,009
+online; `strict_problems` clean; goldens unchanged. **Where**: a table with rules reads
+through its `Span` (as one with hidden columns did), which cleans the data rows as they are
+read -- reads through the table, describe's samples, query, profile, derive, compare,
+checks and `t:` sources; never the header; a cell read by its sheet address is as stored.
+Text cleaned to nothing is `blank`; cleaned text that reads as a number or date is flagged
+`number_as_text`/`date_as_text`, so `coerce` reads it. **Never silent**: a changed value has
+`cleaned` (`"cleaned": true` in a tool's cell) and `original` (Python only); a one-item list
+of unchanged text is not counted. Counted with first addresses in `xlsx_read`/`xlsx_query`
+pages (`cleaned`), as a `cleaned` flag in `xlsx_profile` and `describe`, per column in
+`xlsx_derive` (`Derived.cleaned`, every row read), and for a `t:` source in the dataset's
+`detail` and a `CleanedWarning`, a format warning the dispatcher adds to the deck or
+document tool's result (counts and addresses, never text). **Keys: refused**
+(`clean_key`), not cleaned before matching: an address by key names the key as its cell
+holds it (what Excel and the caller see), two keys cleaned alike would name one row, and
+a list is no key; a key-value table's field column is its key. Clean rules on a hidden
+column are refused too (nothing to show). **Lists downstream**: `xlsx_query` and `where`
+take `eq`, `in` and `contains` on a list column, passing when any item does; a list sorts
+item by item. `xlsx_derive` takes a list column in `count` only (its cells, not items: an
+item count would be a new function, a definition change); every other function,
+`group_by` and `pivot` refuse it (`wrong_type`), and a list in a column of another type is
+left out as `wrong_type`; so a `d:` dataset never holds one. `t:` sources join a list's
+items by a line break (`dataset.LIST_JOIN`; deck and document tables render one cell of
+several lines), type label `text`. `xlsx_compare` compares lists as values.
+`xlsx_validate_data` checks a list as `text`, item by item, each code once per cell;
+`unique` compares whole lists; the schema's `type` enum leaves `list` out (unchanged
+definition). **Pattern cost** (decided: reject, with a window, no timer -- Python's `re`
+cannot be interrupted): compiled at declaration (`DeclarationError` `bad_pattern`, path
+`tables[i].fields[j].clean.strip`, the parser's message and position), at most 200
+characters, and refused when a repeat holds a repeat, an alternation sits in a repeat, it
+uses a backreference or conditional group, more than one repeat can give characters back
+to what follows (a one-character class repeat followed by a character it cannot match,
+`[^;]*;`, or ending the pattern, cannot; `.*;` and `\s*[^;]*` can), or its alternations
+combine more than 16 ways. Read from Python's own parser (`re._parser`, 3.11 on;
+refused where it is missing). With the 256-character window the worst form allowed
+(`^\s*\s*x` on a 32,767-space cell) took 0.2 ms a cell on 3.12, 0.1 ms on 3.15 (Intel Core
+i7-6567U, 2026-10-13); `^Lead:[^;]*;\s*` about a microsecond. Whether two character
+classes share a character is decided on the code points up to U+3000 (and a few past
+it): two classes that share only a character past those would be taken as disjoint, and
+such a pattern could cost more than the square bound on text of that character.
 
 ### 0.2 — edit
 
