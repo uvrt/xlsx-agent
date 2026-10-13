@@ -51,6 +51,8 @@ import math
 import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from decimal import Decimal
+from fractions import Fraction
 from typing import Any
 
 from ooxml_common.locales import DATE_ORDERS, EN_US
@@ -310,6 +312,27 @@ def looks_like_number(text: str, locale: Any = EN_US, *, grouping: bool = True) 
     pattern = number_pattern(locale.decimal_separator,
                              locale.thousands_separator if grouping else None)
     return pattern.fullmatch(stripped) is not None
+
+
+def text_number(text: str, locale: Any = EN_US, *, grouping: bool = True) -> float | None:
+    """The number ``text`` writes out, when :func:`looks_like_number` says it is one
+    (``None`` otherwise): the thousands separators dropped, the decimal separator read as
+    a point, a trailing ``%`` dividing by 100 (``25%`` is 0.25, the stored fraction), and
+    the decimal read exactly and rounded once to the nearest double.  What a caller who
+    opts in to ``coerce=["number_as_text"]`` gets (:mod:`xlsx_agent.derive`)."""
+    if not looks_like_number(text, locale, grouping=grouping):
+        return None
+    stripped = text.strip()
+    hundredths = stripped.endswith("%")
+    if hundredths:
+        stripped = stripped[:-1]
+    if grouping and locale.thousands_separator:
+        stripped = stripped.replace(locale.thousands_separator, "")
+    stripped = stripped.replace(locale.decimal_separator, ".")
+    exact = Fraction(Decimal(stripped))
+    if hundredths:
+        exact /= 100
+    return float(exact)
 
 
 def looks_like_date(text: str, locale: Any = EN_US, *, local_dates: bool = False) -> bool:

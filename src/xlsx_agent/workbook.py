@@ -61,6 +61,7 @@ from ooxml_edit.xml import Element
 from .address import (NameNotFound, RangeAddress, SheetRef, TableAddress, nearest,
                       parse_address, quote_sheet)
 from .catalogue import DEFAULT_TOKENS, catalogue
+from .derive import Derived, derive
 from .find import Found, find_text
 from .package import OpenError, open_package, read_source, workbook_part
 from .profile import Column, ColumnStats, profile
@@ -417,6 +418,25 @@ class Workbook:
         numbers."""
         region = address if isinstance(address, Region) else self.regions.region(address)
         return self.regions.key_columns(region)
+
+    # -- derived figures -------------------------------------------------------------------
+
+    def derive(self, from_: "str | TableAddress | Region", *, where=None, group_by=None,
+               measures=None, bins=None, pivot=None, sort=None, top: int | None = None,
+               round: "int | dict[str, int] | None" = None, coerce=None,
+               id: str | None = None) -> Derived:
+        """Figures from a table, name or region (``t:Products``), computed here, each with
+        the cells it came from: ``where`` (:mod:`xlsx_agent.query`'s filters), ``group_by``
+        (column names), ``measures`` (``[{"fn": "mean", "column": "Price", "as":
+        "average"}]``: count, sum, mean, median, min, max, share, distinct), ``bins``
+        (``{"column", "edges", "as"}``), ``pivot`` (a column whose values become columns),
+        ``sort``, ``top``, ``round`` (decimals, half away from zero, on the reported values
+        only), ``coerce`` (``["number_as_text"]``) and ``id``.  A measure its column's type
+        does not take is refused before anything is computed; see
+        :mod:`xlsx_agent.derive`."""
+        return derive(self, from_, where=where, group_by=group_by, measures=measures,
+                      bins=bins, pivot=pivot, sort=sort, top=top, round=round,
+                      coerce=coerce, id=id)
 
     # -- finding text ----------------------------------------------------------------------
 
