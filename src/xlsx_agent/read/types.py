@@ -208,6 +208,24 @@ def serial_day(day: int, date1904: bool) -> str | None:
     return (_EPOCH_1900 + timedelta(days=day if day < 60 else day - 1)).isoformat()
 
 
+def day_serial(year: int, month: int, day: int, date1904: bool) -> int | None:
+    """The serial of a day in the date system, :func:`serial_day`'s inverse (1900-02-29 is
+    the 1900 system's serial 60); ``None`` for a day no calendar has, or one outside the
+    system."""
+    if (year, month, day) == (1900, 2, 29) and not date1904:
+        return 60
+    try:
+        when = date(year, month, day)
+    except ValueError:
+        return None
+    if date1904:
+        number = (when - _EPOCH_1904).days
+        return number if 0 <= number <= _LAST_1904 else None
+    number = (when - _EPOCH_1900).days
+    number += 1 if number >= 60 else 0
+    return number if 1 <= number <= _LAST_1900 else None
+
+
 def _split(serial: float) -> tuple[int, int]:
     """A serial as (day, milliseconds into the day), rounded to the millisecond."""
     total = round(serial * _MS_PER_DAY)

@@ -55,6 +55,7 @@ from .types import Problem, Value
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..profile import Column, ColumnStats
+    from ..query import QueryResult
     from ..workbook import Sheet, Workbook
 
 #: What a :class:`Region` is.
@@ -204,6 +205,15 @@ class Region:
         (:mod:`xlsx_agent.profile`)."""
         from ..profile import profile
         return profile(self._workbook(), self, columns)
+
+    def query(self, columns: "Sequence[str] | None" = None, *, where=None, sort=None,
+              limit: int | None = None, offset: int = 0) -> "QueryResult":
+        """The rows that pass ``where`` (``{"Category": {"eq": "Hardware"}}``), ordered by
+        ``sort`` (``[("Price", "desc")]``), from ``offset`` and at most ``limit`` of them,
+        with ``columns`` (every column when ``None``): :func:`xlsx_agent.query.query`."""
+        from ..query import query
+        return query(self._workbook(), self, columns, where=where, sort=sort, limit=limit,
+                     offset=offset)
 
     def _workbook(self) -> "Workbook":
         if self.workbook is None:

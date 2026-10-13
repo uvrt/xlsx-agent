@@ -274,6 +274,14 @@ def profile(workbook: "Workbook", region: Region,
     return out
 
 
+def majority_type(counts: "dict[str, int]") -> str:
+    """A column's type from how many values it holds of each type (blanks aside): the type
+    most values have, a tie going to the type :data:`~xlsx_agent.read.types.TYPES` lists
+    first; ``"blank"`` when it holds none.  The rule ``xlsx_query`` checks filters by."""
+    held = {t: n for t, n in counts.items() if n and t != "blank"}
+    return max(held, key=lambda t: (held[t], -TYPES.index(t)), default="blank")
+
+
 # ------------------------------------------------------------------------------------------
 # The pass
 # ------------------------------------------------------------------------------------------
@@ -376,7 +384,7 @@ class _Tally:
     def stats(self, address: str, name: str, range_text: str | None, rows: int,
               date1904: bool, allowed: tuple[AllowedList, ...]) -> ColumnStats:
         types = {t: self.types[t].done() for t in TYPES if t in self.types}
-        majority = max(types, key=lambda t: (types[t].count, -TYPES.index(t)), default="blank")
+        majority = majority_type({t: c.count for t, c in types.items()})
         flags = {code: counter.done() for code, counter in self.flags.items()}
         if len(types) > 1:
             first: list[str] = []

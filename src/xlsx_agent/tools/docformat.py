@@ -8,10 +8,13 @@ format's ``errors``: an address that is none of the forms (:class:`~xlsx_agent.A
 is ``invalid_arguments``; a sheet, column, key, table or ref that names nothing
 (:class:`~xlsx_agent.NameNotFound`) is ``not_found``; a region the workbook cannot give
 (:class:`~xlsx_agent.RegionError`) is ``refused``; a file refused at open
-(:class:`~xlsx_agent.OpenError`) is ``refused``.  Each carries the library's
-``valid_options``.  The xlsx handlers go further (:func:`tool_error`, through
+(:class:`~xlsx_agent.OpenError`) is ``refused``; a query the library refuses
+(:class:`~xlsx_agent.QueryError`) is ``refused`` for a filter its column's type does not
+take (``wrong_type``, :data:`QUERY_CODES`) and ``invalid_arguments`` otherwise.  Each
+carries the library's ``valid_options``.  The xlsx handlers go further (:func:`tool_error`, through
 :func:`handler`): a :class:`~xlsx_agent.RegionError` gets the tool error its own ``code``
-calls for (:data:`REGION_CODES`), and the library's code goes in the error's ``details``.
+calls for (:data:`REGION_CODES`), and the library's code goes in the error's ``details``
+(a query error's with its column and the column's type).
 No message carries a cell's content: the library's messages name sheets, tables, names,
 columns and addresses only (ROADMAP.md, "Design rules", 7).
 """
@@ -28,6 +31,7 @@ from ooxml_edit.tools import DocumentFormat, ToolError
 from ..address import AddressError, NameNotFound
 from ..package import (BIFF_BOF, CFB_SIGNATURE, KindMismatchWarning, OpenError,
                        compound_file_refusal)
+from ..query import QueryError
 from ..read.regions import RegionError
 from ..read.types import Locale
 from ..workbook import Workbook
@@ -45,7 +49,8 @@ Excel workbooks
 - describe first: sheets (name and id), regions (tables, names, detected blocks) with \
 their key column, each column's type, fill and values, sample rows, flags and problems. \
 cut says what a large workbook's catalogue left out, next which tool gives it.
-- xlsx_read reads cells by any address, paged; xlsx_profile gives a region's columns in full.
+- xlsx_read reads cells by any address, paged; xlsx_profile gives a region's columns in full; \
+xlsx_query gives a region's rows that meet filters, sorted, with the count of all matches.
 - Addresses: Stock!F2 a cell; Stock!A1:H40 a range; 'Q3 sales'!B2 a quoted sheet; #3!F2 \
 the sheet whose id is 3 (it survives a rename). t:Products a table, defined name or \
 declared region; t:Stock!Prices a name local to a sheet; t:Stock!A1 a region detected at \
@@ -89,6 +94,14 @@ ERRORS: dict[type[BaseException], Any] = {
     NameNotFound: ("not_found", _options),
     RegionError: ("refused", _options),
     OpenError: "refused",
+    QueryError: ("invalid_arguments", _options),
+}
+
+#: The tool error each :class:`~xlsx_agent.QueryError` code calls for.
+QUERY_CODES: dict[str, str] = {
+    "wrong_type": "refused",            # the tests the column's type takes are the options
+    "bad_filter": "invalid_arguments",
+    "bad_sort": "invalid_arguments",
 }
 
 
@@ -102,6 +115,14 @@ def tool_error(error: BaseException) -> ToolError | None:
             details["reason"] = error.reason
         return ToolError(REGION_CODES.get(error.code, "refused"), error.message,
                          valid_options=_options(error), details=details)
+    if isinstance(error, QueryError):
+        details = {"code": error.code}
+        if error.column is not None:
+            details["column"] = error.column
+        if error.column_type is not None:
+            details["column_type"] = error.column_type
+        return ToolError(QUERY_CODES.get(error.code, "invalid_arguments"), error.message,
+                         valid_options=_options(error), field=error.field, details=details)
     if isinstance(error, NameNotFound):
         return ToolError("not_found", error.message, valid_options=_options(error),
                          details={"what": error.what})
@@ -120,7 +141,7 @@ def handler(fn: Callable[..., Any]) -> Callable[..., Any]:
     def run(call: Any, *args: Any, **kwargs: Any) -> Any:
         try:
             return fn(call, *args, **kwargs)
-        except (AddressError, NameNotFound, RegionError) as error:
+        except (AddressError, NameNotFound, RegionError, QueryError) as error:
             raise tool_error(error) from None
 
     return run
