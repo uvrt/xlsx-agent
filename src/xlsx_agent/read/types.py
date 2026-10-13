@@ -8,7 +8,8 @@ Every value read comes back typed, with its address (ROADMAP.md, "Values and typ
 
 Types: ``number`` (as stored), ``percent`` (the stored fraction), ``date``, ``time`` and
 ``datetime`` (ISO 8601 text, in the workbook's date system), ``text``, ``bool``, ``error``
-(the code) and ``blank``.
+(the code) and ``blank``; and ``list``, a tuple of texts, which no cell stores: a declared
+column's text split by its caller's rule (:mod:`xlsx_agent.clean`).
 
 **Dates** (ECMA-376 Part 1, §18.17.4.1, "Date Representation").  A serial's whole part is
 a day and its fraction the time of day.  In the 1900 date system serial 1 is 1900-01-01,
@@ -61,8 +62,10 @@ from ooxml_common.locales import DATE_ORDERS, EN_US
 #: tables a locale's ``language`` maps to (:func:`format_language`).
 FORMAT_LANGUAGES = ("zh-TW", "zh-CN", "ja-JP", "ko-KR", "th-TH")
 
-#: Every value type.
-TYPES = ("number", "percent", "date", "time", "datetime", "text", "bool", "error", "blank")
+#: Every value type (``list`` last: a cell's text split by a declared rule,
+#: :mod:`xlsx_agent.clean`).
+TYPES = ("number", "percent", "date", "time", "datetime", "text", "bool", "error", "blank",
+         "list")
 
 #: The most characters a cell holds in Excel; text this long was probably cut by the
 #: program that wrote it (ROADMAP.md, "Messy workbooks": ``at_limit``).
@@ -156,7 +159,9 @@ class Value:
     an address writes it), row and column, when ``sheet``, ``row`` and ``column`` are its
     place in a declared table read as one (a table over several sheets, or with columns
     hidden from the model: :mod:`xlsx_agent.declare`); :attr:`a` is then the cell's own
-    address."""
+    address.  ``cleaned``: a declared column's rule changed the text (:mod:`xlsx_agent.clean`;
+    ``v`` is the text cleaned, or a tuple of items for ``t="list"``), and ``original`` is
+    the text as stored."""
 
     sheet: str
     row: int
@@ -174,6 +179,8 @@ class Value:
     array: str | None = None
     volatile: bool = False
     origin: "tuple[str, int, int] | None" = None
+    cleaned: bool = False
+    original: str | None = field(default=None, repr=False)
 
     @property
     def a(self) -> str:
@@ -198,15 +205,16 @@ class Value:
         return (self.sheet, self.row, self.column)
 
     def as_dict(self) -> dict:
-        """``{"a": ..., "v": ..., "t": ...}`` and whichever of the rest are set."""
-        out = {"a": self.a, "v": self.v, "t": self.t}
+        """``{"a": ..., "v": ..., "t": ...}`` and whichever of the rest are set (a list's
+        ``v`` as a list)."""
+        out = {"a": self.a, "v": list(self.v) if self.t == "list" else self.v, "t": self.t}
         if self.formula:
             out["formula"] = True
         for name in ("issue", "serial", "format", "shared_from", "array"):
             value = getattr(self, name)
             if value is not None:
                 out[name] = value
-        for name in ("hidden", "at_limit", "volatile"):
+        for name in ("hidden", "at_limit", "volatile", "cleaned"):
             if getattr(self, name):
                 out[name] = True
         return out

@@ -92,6 +92,7 @@ from .tables import TablePart, name_columns
 from .types import Problem, Value
 
 if TYPE_CHECKING:  # pragma: no cover
+    from ..clean import Clean
     from ..profile import Column, ColumnStats
     from ..query import QueryResult
     from ..workbook import Sheet, Workbook
@@ -377,7 +378,9 @@ class Span:
     from the model.  In its own rectangle, row 1 is the header row (the first sheet's;
     ``header_rows`` 0: none), the data rows follow sheet by sheet, and column ``n`` is the
     sheet column ``columns[n - 1]``; ``left`` to ``right`` are the sheet columns declared,
-    ``hidden`` the ones hidden from the model among them.  ``name`` is the sheet name its
+    ``hidden`` the ones hidden from the model among them; ``clean`` each of its own
+    columns' cleaning rules (``None``: none; empty: no column has any), applied to the data
+    rows as they are read (:mod:`xlsx_agent.clean`).  ``name`` is the sheet name its
     region reads through (``t:<name>``: no sheet can be called that, since a sheet's
     name never holds ``:``)."""
 
@@ -388,6 +391,7 @@ class Span:
     left: int
     right: int
     hidden: tuple[int, ...] = ()
+    clean: "tuple[Clean | None, ...]" = ()
 
     @property
     def rows(self) -> int:
@@ -460,6 +464,10 @@ class Span:
         typed = None if columns is None else \
             {self.columns[c - 1] for c in columns if 1 <= c <= len(self.columns)}
         name = quote_sheet(self.name)
+        rules = [(n, column, self.clean[column - 1]) for n, column in enumerate(own)
+                 if self.clean and self.clean[column - 1] is not None]
+        if rules:
+            from ..clean import clean_value
         for part, top, bottom, first in self.runs(area.first.row, area.last.row):
             cells = RangeAddress(SheetRef(name=part.sheet), Area(Cell(top, left),
                                                                  Cell(bottom, right)))
@@ -471,6 +479,9 @@ class Span:
                     value.origin = (value.sheet, value.row, value.column)
                     value.sheet, value.row, value.column = name, at, column
                     out.append(value)
+                if rules and at > self.header_rows:
+                    for n, _, rule in rules:
+                        clean_value(out[n], rule, workbook)
                 yield out
 
 
