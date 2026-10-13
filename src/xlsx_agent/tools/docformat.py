@@ -294,7 +294,10 @@ def configure(workbook: Workbook, session: Any, tables: "list | None" = None) ->
     except TypeError:            # a session that cannot be weakly referred to declares none
         declared = tables
     if declared:
-        workbook.declare_tables(declared)
+        try:
+            workbook.declare_tables(declared)
+        except DeclarationError as error:   # refused, with its code and path: not the
+            raise tool_error(error) from None   # blob's invalid_arguments
 
 
 def resolve_table(workbook: Workbook, address: str) -> Any:
