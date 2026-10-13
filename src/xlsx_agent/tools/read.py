@@ -90,8 +90,8 @@ CURSOR = string("next_cursor of the previous page, with the same target.", optio
       {"doc": string("Document id; not needed for a dataset (d:).", optional=True),
        "target": string("A cell or range (Stock!A1:H40, Stock!A:C), table or region "
                         "(t:Products: its data rows), column (t:Products[Price]), row "
-                        "(t:Products/#5, t:Products/SKU-0042) or value; or a dataset "
-                        "(d:by_region), as tables."),
+                        "(t:Products/#5, t:Products/SKU-0042) or value; * is every row "
+                        "(t:Products/*/Price); or a dataset (d:by_region), as tables."),
        "formats": boolean("Add format, the number format code. Default false.", optional=True),
        "formulas": boolean("Add f, the formula text. Default false.", optional=True),
        "comments": boolean("Add comment (author, text). Default false.", optional=True),

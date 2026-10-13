@@ -307,6 +307,7 @@ class Regions:
         self._detected: dict[tuple, Region] = {}
         self._keys: dict[tuple, list[str]] = {}
         self._indexes: dict[tuple, KeyIndex] = {}
+        self._declared_keys: dict[str, str] = {}      # region's address, folded -> column
 
     def forget_cells(self) -> None:
         """Forget what was found from the cells (detected regions, key columns, key
@@ -370,7 +371,35 @@ class Regions:
 
     def region(self, address: "str | TableAddress") -> Region:
         """The table, name or region a ``t:`` address names (its column or row, if any,
-        aside)."""
+        aside), with the key column declared for it (:meth:`declare_key`), if any."""
+        return self.with_key(self._region(address))
+
+    @property
+    def declared_keys(self) -> dict[str, str]:
+        """The key columns :meth:`declare_key` declared, by region address (folded)."""
+        return dict(self._declared_keys)
+
+    def with_key(self, region: Region) -> Region:
+        """``region`` with the key column declared for it, when it has none of its own."""
+        column = self._declared_keys.get(region.address.text.casefold())
+        if column is None or region.key is not None:
+            return region
+        return replace(region, key=region.columns[region.column_index(column)])
+
+    def declare_key(self, address: "str | TableAddress", column: str) -> Region:
+        """Name ``column`` the key column of the table, name or region at ``address``
+        (``t:Products``; a detected region's ``t:Stock!A1``), from then on: what an address
+        by key looks keys up in, and what a derived value's sources are written by
+        (:mod:`xlsx_agent.derive`), when the region declares none itself.  Declaring
+        again replaces it.  The column must exist (:class:`NameNotFound` with the nearest);
+        its cells need not all be keys -- a row without one, or sharing one, is refused
+        where a key would name it."""
+        region = self._region(address)
+        name = region.columns[region.column_index(column)]
+        self._declared_keys[region.address.text.casefold()] = name
+        return replace(region, key=region.key or name)
+
+    def _region(self, address: "str | TableAddress") -> Region:
         address = _table_address(address)
         if address.region is not None:
             return self.detect(address.region)

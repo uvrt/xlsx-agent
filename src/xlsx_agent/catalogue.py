@@ -152,7 +152,7 @@ class _Gathered:
 def _gathered(workbook: "Workbook") -> _Gathered:
     """What the catalogue is made from, gathered once per workbook state: a workbook does
     not change in 0.1, but the regions declared on it do."""
-    key = tuple(workbook.regions.declared)
+    key = (tuple(workbook.regions.declared), tuple(workbook.regions.declared_keys.items()))
     cached = workbook._catalogue
     if cached is None or cached[0] != key:
         cached = workbook._catalogue = (key, _gather(workbook))
@@ -197,7 +197,7 @@ def _gather(workbook: "Workbook") -> _Gathered:
         except (RegionError, KeyError) as error:
             names.append({"name": address.text, "not_a_range": getattr(error, "code", "unknown")})
     regions.extend(workbook.regions.declared)
-    found = [_found(workbook, region) for region in regions]
+    found = [_found(workbook, workbook.regions.with_key(region)) for region in regions]
     return _Gathered(head=_head(workbook), sheets=[_sheet(workbook, s) for s in sheets],
                      regions=found, unclear=unclear, names=names, problems=problems)
 

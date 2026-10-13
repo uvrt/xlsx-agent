@@ -419,6 +419,15 @@ class Workbook:
         return self.regions.declare(name, where, header_rows=header_rows, headers=headers,
                                     key=key)
 
+    def declare_key(self, address: "str | TableAddress", column: str) -> Region:
+        """Name ``column`` the key column of a table, name or region (``t:Products``) from
+        then on: rows by key look their keys up in it, :meth:`expand` names cells by it,
+        and a derived value's sources are written by it (``t:Products/{SKU-0003,
+        SKU-0007}/Price``) -- the caller's setting, for a table with several columns that
+        could be its key, or none that is.  A region declared with ``key=`` keeps its own.
+        See :meth:`~xlsx_agent.read.regions.Regions.declare_key`."""
+        return self.regions.declare_key(address, column)
+
     def detect_region(self, where: "str | RangeAddress | TableAddress") -> Region:
         """The region whose single-row header starts at a cell (``t:Stock!A1``); see
         :meth:`~xlsx_agent.read.regions.Regions.detect`."""
