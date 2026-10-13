@@ -680,13 +680,7 @@ class WorkbookBuilder:
         return parts
 
     def to_bytes(self) -> bytes:
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w") as archive:
-            for name, data in self.parts().items():
-                info = zipfile.ZipInfo(name, _ZIP_TIME)
-                info.compress_type = zipfile.ZIP_DEFLATED
-                archive.writestr(info, data)
-        return buffer.getvalue()
+        return zip_parts(self.parts())
 
     def save(self, path) -> None:
         with open(path, "wb") as handle:
@@ -740,6 +734,19 @@ class WorkbookBuilder:
         # builtinId 0 is the Normal style (ECMA-376 Part 1 §18.8.7).
         etree.SubElement(styles, _x("cellStyle"), name="Normal", xfId="0", builtinId="0")
         return root
+
+
+def zip_parts(parts: dict[str, bytes]) -> bytes:
+    """Parts as a package, in the order given: what :meth:`WorkbookBuilder.to_bytes` writes,
+    and what a test writes after changing a part :meth:`WorkbookBuilder.parts` gave it (a
+    sheet written by hand, say)."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, data in parts.items():
+            info = zipfile.ZipInfo(name, _ZIP_TIME)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, data)
+    return buffer.getvalue()
 
 
 def _table_xml(table: _Table) -> etree._Element:
