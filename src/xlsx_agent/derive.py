@@ -17,7 +17,12 @@ cell, and each one says which cells it came from.
 
 **Rows.**  ``from_`` is a table, defined name or region (``t:`` address, or a
 :class:`~xlsx_agent.read.regions.Region`); its data rows are read (header and totals rows
-excluded).  ``where`` is :mod:`xlsx_agent.query`'s filters, with the same validation and
+excluded).  Or a dataset (R11: a :class:`Derived`, an ooxml-edit
+:class:`~ooxml_edit.tools.Dataset` or a :class:`~xlsx_agent.dataset.DatasetTable`; in a
+tool session, ``d:<id>``): its rows, the unrounded values of a :class:`Derived`, with
+every value's sources carried through to the original cells
+(:mod:`xlsx_agent.dataset`).
+``where`` is :mod:`xlsx_agent.query`'s filters, with the same validation and
 refusals (:class:`~xlsx_agent.query.QueryError`), checked against the same column types
 (the type most of a column's values have, :func:`~xlsx_agent.profile.majority_type`, over
 all its data rows); a cell of another type than its column's never passes a test that
@@ -152,8 +157,10 @@ from fractions import Fraction
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from ooxml_edit.charts.workbook import Area, Cell, number_text
+from ooxml_edit.tools import Dataset
 
 from .address import DatasetAddress, RangeAddress, SheetRef, TableAddress, parse_address
+from .dataset import DatasetTable, as_dataset
 from .profile import FIRST_ADDRESSES, Count, _add_partial, majority_type
 from .query import QueryError, _Bad, _key, _operand, _tests
 from .read.regions import Region
@@ -227,9 +234,13 @@ class _Sourced:
     __slots__ = ()
 
     @property
-    def sources(self) -> tuple[RangeAddress, ...]:
+    def sources(self) -> "tuple[RangeAddress | str, ...]":
         """The cells, as compact ranges: a run of consecutive rows is one range
-        (``Stock!F3:F14``), in row order."""
+        (``Stock!F3:F14``), in row order.  Derived from a dataset (``via``), the cells its
+        values came from (:meth:`DatasetTable.sources_of
+        <xlsx_agent.dataset.DatasetTable.sources_of>`)."""
+        if self.via is not None:
+            return self.via.sources_of(self.column, self.runs)
         b, sheet, column = self.runs, self.sheet, self.column
         return tuple(RangeAddress(sheet, Area(Cell(b[i], column), Cell(b[i + 1], column)))
                      for i in range(0, len(b), 2))
@@ -237,6 +248,8 @@ class _Sourced:
     @property
     def ranges(self) -> int:
         """How many ranges :attr:`sources` gives."""
+        if self.via is not None:
+            return len(self.sources)
         return len(self.runs) // 2
 
 
@@ -245,16 +258,19 @@ class Provenance(_Sourced):
     """Where one value came from: :attr:`sources` the cells it was computed from, as
     compact ranges; ``count`` how many cells those are; ``excluded`` how many cells of the
     group's rows were left out of it, by reason.  ``sheet``, ``column`` and ``runs`` (first
-    and last rows, flat) are what :attr:`sources` is made from."""
+    and last rows, flat) are what :attr:`sources` is made from; ``via`` the dataset it was
+    derived from, if any (then ``column`` is the dataset's, from 0, ``runs`` its positions,
+    and ``count`` how many of its values were used)."""
 
     sheet: SheetRef | None
     column: int
     runs: array = field(repr=False)
     count: int
     excluded: dict[str, int] = field(default_factory=dict)
+    via: "DatasetTable | None" = field(default=None, repr=False, compare=False)
 
     def as_dict(self) -> dict:
-        out: dict = {"sources": [s.text for s in self.sources], "count": self.count}
+        out: dict = {"sources": [str(s) for s in self.sources], "count": self.count}
         if self.excluded:
             out["excluded"] = dict(self.excluded)
         return out
@@ -270,9 +286,10 @@ class Total(_Sourced):
     column: int
     runs: array = field(repr=False)
     count: int
+    via: "DatasetTable | None" = field(default=None, repr=False, compare=False)
 
     def as_dict(self) -> dict:
-        return {"value": self.value, "sources": [s.text for s in self.sources],
+        return {"value": self.value, "sources": [str(s) for s in self.sources],
                 "count": self.count}
 
 
@@ -297,7 +314,12 @@ class Derived:
     ``not_compared`` per filtered column, as :class:`~xlsx_agent.query.QueryResult` gives
     it; ``hidden`` the rows used that hold a
     hidden cell among the columns read; ``totals`` per ``share`` measure, its total;
-    ``pivot_columns`` per pivoted column, its measure and pivot value."""
+    ``pivot_columns`` per pivoted column, its measure and pivot value; ``date1904`` the
+    date system its dates are in (its source's).
+
+    :meth:`dataset` gives it as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`, what a
+    tool session keeps under ``d:<id>`` (:mod:`xlsx_agent.dataset`); ``wb.derive(ds, ...)``
+    derives from it."""
 
     address: str
     id: str | None
@@ -318,6 +340,14 @@ class Derived:
     hidden: Count = field(default_factory=lambda: Count(0))
     totals: dict[str, Total] = field(default_factory=dict)
     pivot_columns: dict[str, dict[str, Any]] = field(default_factory=dict)
+    date1904: bool = False
+
+    def dataset(self) -> "Dataset":
+        """This result as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`: the rows as
+        reported (rounded), each value's sources as range text, the key columns as
+        ``keys``, the types as labels, and this result as ``detail``
+        (:func:`xlsx_agent.dataset.as_dataset`)."""
+        return as_dataset(self)
 
     @property
     def sources(self) -> dict[Any, dict[str, list[RangeAddress]]]:
@@ -371,14 +401,16 @@ class Derived:
         return out
 
 
-def derive(workbook: "Workbook", from_: "str | TableAddress | Region", *,
+def derive(workbook: "Workbook | None",
+           from_: "str | TableAddress | Region | Derived | Dataset | DatasetTable", *,
            where: Any = None, group_by: "Sequence[str] | str | None" = None,
            measures: "Sequence[Mapping[str, Any]] | None" = None,
            bins: "Mapping[str, Any] | None" = None, pivot: str | None = None,
            sort: Any = None, top: int | None = None,
            round: "int | Mapping[str, int] | None" = None,
            coerce: "Sequence[str] | None" = None, id: str | None = None) -> Derived:
-    """Figures from a table, name or region; see the module's notes."""
+    """Figures from a table, name or region, or from a dataset (``workbook`` may then be
+    ``None``); see the module's notes."""
     region = _region(workbook, from_)
     plan = _Plan(workbook, region, where=where, group_by=group_by, measures=measures,
                  bins=bins, pivot=pivot, coerce=coerce, id=id)
@@ -392,17 +424,19 @@ def derive(workbook: "Workbook", from_: "str | TableAddress | Region", *,
 # ------------------------------------------------------------------------------------------
 
 
-def _region(workbook: "Workbook", from_: Any) -> Region:
-    if isinstance(from_, Region):
+def _region(workbook: "Workbook | None", from_: Any) -> "Region | DatasetTable":
+    if isinstance(from_, (Region, DatasetTable)):
         return from_
+    if isinstance(from_, (Derived, Dataset)):
+        return DatasetTable(from_)
     if isinstance(from_, str):
         try:
             address = parse_address(from_)
         except ValueError:
             address = None
         if isinstance(address, DatasetAddress):
-            raise DeriveError("bad_source", "deriving from a dataset (d:) comes with datasets "
-                              "(a later milestone); give a table, name or region (t:)",
+            raise DeriveError("bad_source", "a d: address names a dataset in a tool session; "
+                              "here, give the dataset itself (a Derived or a Dataset)",
                               field="from")
         if address is not None and not isinstance(address, TableAddress):
             raise DeriveError("bad_source", "from is a table, name or region (t:Products)",
@@ -412,11 +446,14 @@ def _region(workbook: "Workbook", from_: Any) -> Region:
         if from_.column is not None or from_.key is not None or from_.position is not None:
             raise DeriveError("bad_source", "from names a whole table, name or region, not a "
                               "column or row of one", field="from")
+        if workbook is None:
+            raise DeriveError("bad_source", "a table is derived from in its workbook",
+                              field="from")
         return workbook.region(from_)
-    if isinstance(from_, str):
+    if isinstance(from_, str) and workbook is not None:
         return workbook.region(from_)
-    raise DeriveError("bad_source", "from is a table, name or region (t:Products)",
-                      field="from")
+    raise DeriveError("bad_source", "from is a table, name or region (t:Products), or a "
+                      "dataset", field="from")
 
 
 @dataclass
@@ -451,11 +488,12 @@ def _names(value: Any, what: str, code: str) -> list[str]:
 class _Plan:
     """The arguments checked, and what the passes need."""
 
-    def __init__(self, workbook: "Workbook", region: Region, *, where, group_by, measures,
-                 bins, pivot, coerce, id) -> None:
+    def __init__(self, workbook: "Workbook | None", region: "Region | DatasetTable", *,
+                 where, group_by, measures, bins, pivot, coerce, id) -> None:
         self.workbook = workbook
         self.region = region
-        self.date1904 = workbook.date1904
+        self.via = region if isinstance(region, DatasetTable) else None
+        self.date1904 = region.date1904 if self.via is not None else workbook.date1904
         if id is not None:
             try:
                 DatasetAddress(id=id)
@@ -664,13 +702,28 @@ def _area(region: Region, offsets: Iterable[int]) -> Area | None:
                 Cell(data.last.row, first + max(offsets)))
 
 
-def _type_pass(workbook: "Workbook", region: Region, offsets: list[int]) -> dict[int, str]:
-    """Each column's type, from one streamed pass counting its values' types."""
+def _rows(workbook: "Workbook | None", region: "Region | DatasetTable", offsets: list[int]
+          ) -> tuple[Iterable[list[Value]], int] | None:
+    """The rows to read for the columns at ``offsets``, streamed, and the offset of each
+    row's first value; ``None`` when there are no data rows.  A dataset gives every
+    column, measured (unrounded)."""
+    if isinstance(region, DatasetTable):
+        return region.measured_rows(), 0
     area = _area(region, offsets)
+    if area is None:
+        return None
+    left = area.first.column - region.area.first.column
+    return workbook.read(RangeAddress(region.sheet_ref, area)), left
+
+
+def _type_pass(workbook: "Workbook | None", region: "Region | DatasetTable",
+               offsets: list[int]) -> dict[int, str]:
+    """Each column's type, from one streamed pass counting its values' types."""
+    found = _rows(workbook, region, offsets)
     counts: dict[int, dict[str, int]] = {o: {} for o in offsets}
-    if area is not None and offsets:
-        left = area.first.column - region.area.first.column
-        for row in workbook.read(RangeAddress(region.sheet_ref, area)):
+    if found is not None and offsets:
+        rows, left = found
+        for row in rows:
             for o in offsets:
                 t = row[o - left].t
                 if t != "blank":
@@ -799,13 +852,15 @@ def _second_pass(plan: _Plan) -> _State:
     date1904 = plan.date1904
     state = _State()
     offsets = plan.typed_offsets + [plan.row_offset]
-    area = _area(region, offsets)
-    if area is None:
+    found = _rows(workbook, region, offsets)
+    if found is None:
         return state
-    left = area.first.column - region.area.first.column
+    rows, left = found
     types = plan.offset_types
     typed_tests = [(t, types[t.offset]) for t in plan.tests]
-    locale, grouping = workbook.locale, workbook.grouping
+    # a dataset's values are typed already: no text is read as a number there
+    locale, grouping = (workbook.locale, workbook.grouping) if workbook is not None \
+        else (None, True)
     columns = plan.columns
     shares = {m.offset for m in plan.measures if m.fn == "share"}
     for o in shares:
@@ -826,7 +881,7 @@ def _second_pass(plan: _Plan) -> _State:
                               "them so that each group's rows are fewer runs",
                               field="from")
 
-    for row in workbook.read(RangeAddress(region.sheet_ref, area)):
+    for row in rows:
         # the filters: as a query's, a cell of another type than its column's never passes
         passed = True
         for test, t in typed_tests:
@@ -1045,8 +1100,9 @@ def _label(v: Any, t: str) -> str:
 
 def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Derived:
     region = plan.region
-    sheet = region.sheet_ref
-    first_column = region.area.first.column
+    via = plan.via
+    sheet = region.sheet_ref if via is None else None
+    first_column = region.area.first.column if via is None else 0
     bins = plan.bins
     keys = list(plan.group) + ([bins.name] if bins else [])
     # the output columns: (name, measure, pivot key)
@@ -1109,18 +1165,18 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
             row[column] = shown[k]
             t, key = g[k]
             sort_keys[column] = None if t == "blank" else (TYPES.index(t), _text_key(key, t))
-            where[column] = _row_sources(group, sheet, first_column + offset)
+            where[column] = _row_sources(group, sheet, first_column + offset, via)
         if bins:
             row[bins.name] = bins.labels[index]
             sort_keys[bins.name] = index
-            where[bins.name] = _row_sources(group, sheet, first_column + bins.offset)
+            where[bins.name] = _row_sources(group, sheet, first_column + bins.offset, via)
         for name, m, pkey in measure_columns:
             cell = group.cells.get(pkey) if group is not None else None
             t = plan.offset_types[m.offset] if m.offset is not None else None
             value, key = _value(m, cell, t, plan, state)
             row[name] = value
             sort_keys[name] = key
-            where[name] = _cell_sources(m, cell, sheet, first_column, plan)
+            where[name] = _cell_sources(m, cell, sheet, first_column, plan, via)
         built.append((row, sort_keys, where))
 
     groups = len(built)
@@ -1169,11 +1225,12 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
             runs = _Runs()
             for group in state.groups.values():
                 runs = _merge(runs, group.runs)
-            totals[m.name] = Total(n, sheet, first_column + plan.row_offset, runs.bounds, n)
+            totals[m.name] = Total(n, sheet, first_column + plan.row_offset, runs.bounds, n,
+                                   via)
         else:
             partials, runs, n = state.totals[m.offset]
             totals[m.name] = Total(math.fsum(partials), sheet, first_column + m.offset,
-                                   runs.bounds, n)
+                                   runs.bounds, n, via)
     left_out = {c: {r: counters[r].done() for r in REASONS if r in counters}
                 for c, counters in state.left_out.items()}
     return Derived(
@@ -1184,7 +1241,8 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
         matched=state.matched, used=state.used, groups=groups, left_out=left_out,
         excluded=excluded, coerced=coerced,
         not_compared={c: counter.done() for c, counter in state.not_compared.items()},
-        hidden=state.hidden.done(), totals=totals, pivot_columns=pivot_columns)
+        hidden=state.hidden.done(), totals=totals, pivot_columns=pivot_columns,
+        date1904=plan.date1904)
 
 
 def _merge(a: _Runs, b: _Runs) -> _Runs:
@@ -1201,22 +1259,22 @@ def _merge(a: _Runs, b: _Runs) -> _Runs:
     return out
 
 
-def _row_sources(group: _Group | None, sheet, column: int) -> Provenance:
+def _row_sources(group: _Group | None, sheet, column: int, via) -> Provenance:
     if group is None:
-        return Provenance(sheet, column, array("l"), 0)
-    return Provenance(sheet, column, group.runs.bounds, group.count)
+        return Provenance(sheet, column, array("l"), 0, via=via)
+    return Provenance(sheet, column, group.runs.bounds, group.count, via=via)
 
 
 def _cell_sources(m: _Measure, cell: _Cell | None, sheet, first_column: int,
-                  plan: _Plan) -> Provenance:
+                  plan: _Plan, via) -> Provenance:
     column = first_column + (plan.row_offset if m.offset is None else m.offset)
     if cell is None:
-        return Provenance(sheet, column, array("l"), 0)
+        return Provenance(sheet, column, array("l"), 0, via=via)
     if m.offset is None:
-        return Provenance(sheet, column, cell.runs.bounds, cell.count)
+        return Provenance(sheet, column, cell.runs.bounds, cell.count, via=via)
     acc = cell.accs[m.offset]
     return Provenance(sheet, column, acc.runs.bounds, acc.count,
-                      {r: acc.excluded[r] for r in REASONS if r in acc.excluded})
+                      {r: acc.excluded[r] for r in REASONS if r in acc.excluded}, via=via)
 
 
 def _text_key(key: Any, t: str) -> Any:

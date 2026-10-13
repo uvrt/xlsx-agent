@@ -11,9 +11,10 @@ parse and format (:mod:`xlsx_agent.address`), cells are read, typed and streamed
 (:mod:`xlsx_agent.profile`), and the workbook is catalogued in one bounded result
 (:mod:`xlsx_agent.catalogue`), which the shared ``describe`` tool returns; a region's rows
 are queried (:mod:`xlsx_agent.query`); text is found (:mod:`xlsx_agent.find`); figures
-are derived, each with its cells (:mod:`xlsx_agent.derive`); ``xlsx_read``,
-``xlsx_profile`` and ``xlsx_query`` read cells, columns and rows, paged
-(:mod:`xlsx_agent.tools`)::
+are derived, each with its cells (:mod:`xlsx_agent.derive`), and kept as datasets that
+are read by address and derived from again (:mod:`xlsx_agent.dataset`); ``xlsx_read``,
+``xlsx_profile``, ``xlsx_query`` and ``xlsx_derive`` read cells, columns and rows, paged,
+and keep figures as ``d:<id>`` (:mod:`xlsx_agent.tools`)::
 
     from xlsx_agent import Workbook, parse_address
 
@@ -31,8 +32,12 @@ are derived, each with its cells (:mod:`xlsx_agent.derive`); ``xlsx_read``,
     wb.catalogue()                             # sheets, regions, columns, samples, flags
     wb.comments("Stock"), wb.hyperlinks("Stock"), wb.arrays("Stock")   # over the cells
     wb.find_text("Hardware", within="Stock!")  # matches by address and kind
-    wb.derive("t:Products", group_by=["Category"],
-              measures=[{"fn": "mean", "column": "Price", "as": "average"}], round=2)
+    ds = wb.derive("t:Products", group_by=["Category"],
+                   measures=[{"fn": "mean", "column": "Price", "as": "average"}], round=2,
+                   id="by_category")
+    ds.dataset()                               # ooxml_edit.tools.Dataset: rows, sources
+    DatasetTable(ds).read("d:by_category/Hardware/average")   # [[DatasetValue(...)]]
+    wb.derive(ds, measures=[{"fn": "max", "column": "average"}])   # cells carried through
 
 A ``.xls``, ``.xlsb`` or encrypted file is refused with an :class:`OpenError` whose
 ``code`` says why.  See ROADMAP.md for the plan and what each milestone adds.
@@ -41,6 +46,7 @@ A ``.xls``, ``.xlsb`` or encrypted file is refused with an :class:`OpenError` wh
 from .address import (FORMS, Address, AddressError, DatasetAddress, NameNotFound,
                       RangeAddress, RefAddress, SheetRef, TableAddress, format_address,
                       is_name, needs_quotes, parse_address, quote_sheet)
+from .dataset import DatasetSelection, DatasetTable, DatasetValue, as_dataset
 from .derive import Derived, DeriveError, Provenance, Total
 from .find import Found
 from .package import REFUSALS, KindMismatchWarning, OpenError
@@ -53,10 +59,12 @@ from .workbook import Sheet, Workbook
 __version__ = "0.0.1"
 
 __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "Column",
-           "ColumnStats", "Comment", "Count", "DatasetAddress", "DefinedName", "DeriveError",
+           "ColumnStats", "Comment", "Count", "DatasetAddress", "DatasetSelection",
+           "DatasetTable", "DatasetValue", "DefinedName", "DeriveError",
            "Derived", "Distinct",
            "Found", "Hyperlink", "KindMismatchWarning", "Locale", "NameNotFound", "NumberFormat",
            "OpenError", "Problem", "QueryError", "QueryResult", "RangeAddress", "RefAddress",
            "Provenance", "Region", "RegionError", "Selection", "Sheet", "SheetRef", "SheetScan",
            "TableAddress", "Total", "UnclearRegion", "Value", "Workbook", "__version__",
-           "format_address", "is_name", "needs_quotes", "parse_address", "quote_sheet"]
+           "as_dataset", "format_address", "is_name", "needs_quotes", "parse_address",
+           "quote_sheet"]

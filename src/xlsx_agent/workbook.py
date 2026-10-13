@@ -55,6 +55,7 @@ from typing import Any, BinaryIO, Iterator
 from lxml import etree
 from ooxml_edit.charts.workbook import Area
 from ooxml_edit.opc import OpcPackage
+from ooxml_edit.tools import Dataset
 from ooxml_edit.tools.limits import Limits
 from ooxml_edit.xml import Element
 
@@ -421,9 +422,9 @@ class Workbook:
 
     # -- derived figures -------------------------------------------------------------------
 
-    def derive(self, from_: "str | TableAddress | Region", *, where=None, group_by=None,
-               measures=None, bins=None, pivot=None, sort=None, top: int | None = None,
-               round: "int | dict[str, int] | None" = None, coerce=None,
+    def derive(self, from_: "str | TableAddress | Region | Derived | Dataset", *, where=None,
+               group_by=None, measures=None, bins=None, pivot=None, sort=None,
+               top: int | None = None, round: "int | dict[str, int] | None" = None, coerce=None,
                id: str | None = None) -> Derived:
         """Figures from a table, name or region (``t:Products``), computed here, each with
         the cells it came from: ``where`` (:mod:`xlsx_agent.query`'s filters), ``group_by``
@@ -433,7 +434,9 @@ class Workbook:
         ``sort``, ``top``, ``round`` (decimals, half away from zero, on the reported values
         only), ``coerce`` (``["number_as_text"]``) and ``id``.  A measure its column's type
         does not take is refused before anything is computed; see
-        :mod:`xlsx_agent.derive`."""
+        :mod:`xlsx_agent.derive`.  ``from_`` may be a dataset instead -- an earlier
+        :class:`Derived`, or an ooxml-edit ``Dataset`` -- whose sources carry through to
+        the original cells (:mod:`xlsx_agent.dataset`)."""
         return derive(self, from_, where=where, group_by=group_by, measures=measures,
                       bins=bins, pivot=pivot, sort=sort, top=top, round=round,
                       coerce=coerce, id=id)
