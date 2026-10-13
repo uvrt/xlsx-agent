@@ -42,7 +42,10 @@
   ``error``).  A cell of another type is ``wrong_type``, with the type found and the
   reader's issue (``number_as_text``...); nothing is coerced, so a percent is not a
   number and a number stored as text is not one either (ROADMAP.md, "Design rules", 4).
-  A cell of the wrong type gets no other check.
+  A cell of the wrong type gets no other check.  A declared column split into lists
+  (:mod:`xlsx_agent.clean`) is checked as ``text``, item by item: a cell is reported
+  once per code, at the first item that fails (``not_in_enum`` for an item not among
+  the values); ``unique`` compares whole lists.
 * ``required``: a blank cell is ``required_blank``.  A formula without a cached value is
   ``no_cached_value`` in any column checked, required or not: its value is unknown.
 * ``min`` and ``max``: the least and the most a value may be, written as a filter's value
@@ -121,8 +124,9 @@ CODES = ("missing_sheet", "missing_table", "missing_column", "no_validation_list
          "no_cached_value", "required_blank", "wrong_type", "out_of_range", "off_step",
          "not_in_enum", "not_in_list", "pattern_mismatch", "duplicate_key", "duplicate_value")
 
-#: The types a column may be declared as: the reader's, blank aside.
-COLUMN_TYPES = tuple(t for t in TYPES if t != "blank")
+#: The types a column may be declared as: the reader's, blank and list aside (a declared
+#: split's list is checked as ``text``, item by item).
+COLUMN_TYPES = tuple(t for t in TYPES if t not in ("blank", "list"))
 
 #: The types ``min`` and ``max`` are for, and ``step``.
 ORDERED_TYPES = ("number", "percent", "date", "time", "datetime")
@@ -612,12 +616,37 @@ class _Check:
             if self.required:
                 emit("required_blank", value, {})
             return
-        if spec.type is not None and t != spec.type:
+        if spec.type is not None and t != spec.type and not (t == "list" and spec.type == "text"):
             detail = {"expected": spec.type, "found": t}
             if value.issue is not None:
                 detail["issue"] = value.issue
             emit("wrong_type", value, detail)
             return
+        if t == "list":         # a declared split: its items checked as text, a code once
+            met: set[str] = set()
+
+            def once(code: str, _item: Value, detail: dict) -> None:
+                if code not in met:
+                    met.add(code)
+                    emit(code, value, detail)
+
+            for item in value.v:
+                self._value(Value(value.sheet, value.row, value.column, v=item, t="text",
+                                  origin=value.origin), once)
+        else:
+            self._value(value, emit)
+        if self.seen is not None:
+            identity = _identity(value)
+            first = self.seen.get(identity)
+            if first is None:
+                self.seen[identity] = value.a
+            else:
+                emit("duplicate_value", value, {"first": first})
+
+    def _value(self, value: Value, emit: Callable[[str, Value, dict], None]) -> None:
+        """The checks of one value of the column's type (an item of a list as text)."""
+        spec = self.spec
+        t = value.t
         if spec.low is not None or spec.high is not None:
             key = _key(value, t, self.date1904)
             if key is not None and ((spec.low is not None and key < spec.low)
@@ -640,13 +669,6 @@ class _Check:
                                             **({"hint": hint} if hint else {})})
         if spec.pattern is not None and t == "text" and not spec.pattern.fullmatch(value.v):
             emit("pattern_mismatch", value, {})
-        if self.seen is not None:
-            identity = _identity(value)
-            first = self.seen.get(identity)
-            if first is None:
-                self.seen[identity] = value.a
-            else:
-                emit("duplicate_value", value, {"first": first})
 
     def _member(self, value: Value, allowed: tuple, which: str) -> "bool | str | None":
         """``True`` when the cell is one of ``allowed``; else the hint (``case_differs``,

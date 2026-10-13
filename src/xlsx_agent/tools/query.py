@@ -35,7 +35,7 @@ from ..address import TableAddress, parse_address
 from ..query import OPS, matches, read_rows, select
 from .docformat import KIND, handler
 from .read import (_CUT_ROOM, _FIRST, _MARGIN, CURSOR, DOC, READ_ROWS, TEXT_SHOWN, _Annotations,
-                   _cursor, _forms, _page, _read_cursor, _sheet, _size)
+                   _cursor, _forms, _page, _read_cursor, _sheet, _size, cleaned_count)
 
 #: How many queries' matches a workbook keeps for their next pages, the latest.
 KEPT = 4
@@ -115,12 +115,16 @@ def xlsx_query(call: Any, doc: str, table: str, columns: list[str] | None = None
     budget = chars - _MARGIN - _size({**data, "cut": _CUT_ROOM}) \
         - len(_summary(label, 1, total, total, region.rows, True))
     annotate = _Annotations(workbook, [], comments=False, hyperlinks=False)
+    cleaned: list[str] = []
     shown, cut_text, stop, full = _page(read_rows(workbook, region, names, page, kept=found.values), start_row,
-                                        start_column, budget, annotate, False, TEXT_SHOWN)
+                                        start_column, budget, annotate, False, TEXT_SHOWN,
+                                        cleaned)
     if stop is None and start_row + len(page) < total:
         stop = (start_row + len(page), 0)
 
     data["rows"] = shown
+    if cleaned:
+        data["cleaned"] = cleaned_count(cleaned)
     cut: dict[str, Any] = {}
     next_cursor = None
     if stop is not None:

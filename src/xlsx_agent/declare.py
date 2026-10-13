@@ -56,9 +56,12 @@ session's), and :meth:`Workbook.declare_tables
 * ``fields``: what is said of some columns, each a mapping with ``header`` (its header
   text, matched case aside) or ``column`` (its letter, ``"D"``), and any of ``id`` (the
   name the column is addressed and shown by: ``t:checks[rating]``; its header still
-  finds it), ``description`` (shown by ``describe`` and ``xlsx_profile``) and ``hidden``
-  (``true``: the column is hidden from the model).  Columns not listed keep their
-  header's name.
+  finds it), ``description`` (shown by ``describe`` and ``xlsx_profile``), ``hidden``
+  (``true``: the column is hidden from the model) and ``clean`` (rules for its text: a
+  leading label stripped, white space collapsed, a split into a list --
+  ``{"strip": "^Lead:[^;]*;\\s*", "collapse_space": true, "split": ";"}``; see
+  :mod:`xlsx_agent.clean`; never on the key column, ``clean_key``, nor on a hidden one).
+  Columns not listed keep their header's name.
 * ``optional``: ``true`` when a workbook without the sheets is no error: the table is then
   not declared.
 
@@ -109,6 +112,7 @@ from typing import TYPE_CHECKING, Any, Mapping, Sequence
 from ooxml_edit.charts.workbook import Area, Cell, column_index, column_letters
 
 from .address import NameNotFound, RangeAddress, SheetRef, is_name, nearest, quote_sheet
+from .clean import CLEAN_KEYS, Clean, RuleError, parse_clean
 from .read.regions import KEY_VALUE_COLUMNS, Part, Region, Span, _header_names
 from .read.types import Problem
 
@@ -123,7 +127,7 @@ TABLE_KEYS = ("name", "sheets", "type", "header_row", "first_row", "last_row", "
               "key", "description", "fields", "optional")
 
 #: The keys a field takes.
-FIELD_KEYS = ("header", "column", "id", "description", "hidden")
+FIELD_KEYS = ("header", "column", "id", "description", "hidden", "clean")
 
 #: The longest description (characters) a table or column takes: ``describe`` shows it.
 MAX_DESCRIPTION = 300
@@ -140,7 +144,8 @@ class DeclarationError(ValueError):
     ``no_sheets``, ``not_cells``, ``empty_sheet``, ``name_taken``, ``bad_name``,
     ``duplicate_name``, ``header_mismatch``, ``no_header``, ``bad_columns``, ``bad_rows``,
     ``no_rows``, ``unknown_column``, ``duplicate_field``, ``bad_id``, ``id_taken``,
-    ``no_columns``, ``hidden_key``, ``no_key``, ``duplicate_key``), ``path`` where in the
+    ``no_columns``, ``hidden_key``, ``no_key``, ``duplicate_key``, ``bad_pattern``,
+    ``clean_key``), ``path`` where in the
     declarations (``tables[0].fields[2].header``), ``valid_options`` what would do instead.
     The message names sheets, cells, paths and what the declaration gave, never a cell's
     content."""
@@ -164,6 +169,7 @@ class FieldSpec:
     id: str | None = None
     description: str | None = None
     hidden: bool = False
+    clean: "Clean | None" = None
 
 
 @dataclass(frozen=True)
@@ -302,8 +308,20 @@ def _field(item: Any, path: str) -> FieldSpec:
     hidden = item.get("hidden", False)
     if not isinstance(hidden, bool):
         raise DeclarationError("bad_declaration", f"{path}.hidden", "true or false")
+    clean = None
+    if "clean" in item:
+        try:
+            clean = parse_clean(item["clean"])
+        except RuleError as error:
+            where = f"{path}.clean" + (f".{error.key}" if error.key else "")
+            raise DeclarationError(error.code, where, error.message,
+                                   valid_options=list(CLEAN_KEYS)
+                                   if error.code == "bad_declaration" else ()) from None
+        if hidden:
+            raise DeclarationError("bad_declaration", f"{path}.clean", "a column hidden from "
+                                   "the model is never shown: its text is not cleaned")
     return FieldSpec(path=path, header=header, column=column, id=ident,
-                     description=_description(item, path), hidden=hidden)
+                     description=_description(item, path), hidden=hidden, clean=clean)
 
 
 def _description(item: Mapping, path: str) -> str | None:
@@ -519,6 +537,7 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
     ids: list[str | None] = [None] * width
     notes: list[str | None] = [None] * width
     hidden = [False] * width
+    cleans: "list[Clean | None]" = [None] * width
     if spec.type == "key_value" and spec.header_row:
         ids[:2] = list(KEY_VALUE_COLUMNS)
     seen: dict[int, str] = {}
@@ -546,6 +565,7 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
             ids[offset] = field.id
         notes[offset] = field.description
         hidden[offset] = field.hidden
+        cleans[offset] = field.clean
     columns = [ids[i] or names[i] for i in range(width)]
     visible = [i for i in range(width) if not hidden[i]]
     if not visible:
@@ -578,6 +598,13 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
         key = columns[found]
     elif spec.type == "key_value":
         key = columns[0]
+    if key is not None:
+        at = next(i for i in range(width) if columns[i] == key)
+        if cleans[at] is not None:
+            field_path = spec.fields[_field_of(spec, at, left, names)].path
+            raise DeclarationError("clean_key", f"{field_path}.clean", "the key column is "
+                                   "not cleaned: an address by key names the key as its cell "
+                                   "holds it, and two keys cleaned alike would name one row")
     sheet_columns = tuple(left + i for i in visible)
     # What the table says of its cells names no cell of a column hidden from the model:
     # a header flag there is dropped, and more below is flagged at its first visible cell.
@@ -595,7 +622,8 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
                   notes=tuple(notes[i] for i in visible), about=spec.description,
                   shape=spec.type, workbook=workbook)
     hidden_columns = tuple(left + i for i in range(width) if hidden[i])
-    if len(parts) == 1 and not hidden_columns:
+    rules = tuple(cleans[i] for i in visible) if any(cleans) else ()
+    if len(parts) == 1 and not hidden_columns and not rules:
         part = parts[0]
         top = part.header if part.header is not None else part.first
         if part.last < top:
@@ -608,7 +636,8 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
             raise DeclarationError("no_rows", path, "the sheets have no data rows, and the "
                                    "table no header row")
         span = Span(name=f"t:{spec.name}", parts=tuple(parts), columns=sheet_columns,
-                    header_rows=header_rows, left=left, right=right, hidden=hidden_columns)
+                    header_rows=header_rows, left=left, right=right, hidden=hidden_columns,
+                    clean=rules)
         region = Region(sheet=span.name, area=span.area, span=span, **common)
     if key is not None:
         if region.span is not None:

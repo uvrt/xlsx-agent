@@ -46,6 +46,10 @@ as text in its JSON form (``"5"``, ``"2.5e3"``, ``"true"``), as a tool call give
   has no ``gte``/``lte`` for that reason.
 * **bool**: ``True``/``False``; **error**: the code as the reader gives it (``#N/A``),
   exactly.
+* **list** (a declared column whose text is split, :mod:`xlsx_agent.clean`): ``eq``,
+  ``in`` and ``contains`` test each item as text is tested, and a cell passes when any
+  item does (``{"owners": {"eq": "Kim"}}``: the rows Kim is among); a list sorts by its
+  items, as text does, item by item.
 
 **Sorting.**  ``sort`` is a list of keys, the first deciding first: a column name
 (ascending) or ``(name, "asc" | "desc")``.  Within a key, the cells of the column's type
@@ -92,7 +96,8 @@ _ANY = ("eq", "in", "blank", "not_blank")
 OPS_BY_TYPE: dict[str, tuple[str, ...]] = {
     "number": _ORDERED, "percent": _ORDERED, "date": _ORDERED, "time": _ORDERED,
     "datetime": _ORDERED, "text": ("eq", "in", "contains", "words_gt", "blank", "not_blank"),
-    "bool": _ANY, "error": _ANY, "blank": ("blank", "not_blank")}
+    "bool": _ANY, "error": _ANY, "blank": ("blank", "not_blank"),
+    "list": ("eq", "in", "contains", "blank", "not_blank")}
 
 #: The most values an ``in`` test takes.
 MAX_IN = 1000
@@ -350,12 +355,14 @@ class _Test:
         """The operand read as a value of type ``t`` (a set for ``in``); ``_BAD`` when it is
         not one."""
         if t not in self._parsed:
+            read_as = "text" if t == "list" else t      # a list's items are text
             try:
                 if self.op == "in":
-                    parsed: Any = frozenset(_operand(v, t, date1904) for v in self.operand)
+                    parsed: Any = frozenset(_operand(v, read_as, date1904)
+                                            for v in self.operand)
                 else:
                     parsed = _words(self.operand) if self.op == "words_gt" else \
-                        _operand(self.operand, t, date1904)
+                        _operand(self.operand, read_as, date1904)
                     if self.op == "contains":
                         parsed = parsed.casefold()
             except _Bad:
@@ -375,6 +382,12 @@ class _Test:
         wanted = self._value(t, date1904)
         if wanted is _BAD:
             return False
+        if t == "list":                     # any of its items
+            if self.op == "eq":
+                return wanted in value.v
+            if self.op == "in":
+                return any(item in wanted for item in value.v)
+            return any(wanted in item.casefold() for item in value.v)
         key = _key(value, t, date1904)
         if key is None:
             return False
@@ -603,6 +616,8 @@ class _SortKey:
         key = _key(value, t, date1904)
         if t == "text":
             key = (key.casefold(), key)
+        elif t == "list":
+            key = tuple((item.casefold(), item) for item in key)
         return t, key
 
 

@@ -20,7 +20,11 @@ and ``sources`` adds each value's source cells (R11).  Every other target needs 
 **Declared tables** (:mod:`xlsx_agent.declare`): a table over several sheets is read as one,
 each cell with its own address; the result's ``range`` is each sheet's, joined by ``,``,
 and it names no one ``sheet``.  A cell of a column hidden from the model is never given:
-a read of the sheet's cells gives it as ``{"a": ..., "withheld": true}``.
+a read of the sheet's cells gives it as ``{"a": ..., "withheld": true}``.  A declared
+column's cleaning rules (:mod:`xlsx_agent.clean`) apply to a read through its table: a
+value a rule changed says ``"cleaned": true``, a split one is a ``list``, and the page
+counts them (``cleaned``: how many, the first addresses); a read of the sheet's cells
+gives them as stored.
 
 **Bounded.**  A page holds at most ``limit`` rows (by default ``Limits.max_list_items``, at
 most :data:`READ_ROWS`) and its whole result at most ``max_chars`` characters (by default,
@@ -179,13 +183,16 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
         - len(_summary(found.label, 1, total, total, True))
     cap = None if single else TEXT_SHOWN
 
+    cleaned: list[str] = []
     shown, cut_text, stop, full = _page(rows, start_row, start_column, budget, annotate,
-                                        formulas, cap)
+                                        formulas, cap, cleaned)
     if stop is None and more:
         stop = (start_row + (len(pages) if found.rows is not None
                              else bottom - top + 1), 0)
 
     data["rows"] = shown
+    if cleaned:
+        data["cleaned"] = cleaned_count(cleaned)
     # The rows given, each with one cell at least: from the page's first, one after another.
     given = max(len(shown), 1)
     if found.rows is not None:
@@ -214,14 +221,21 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     return Result(summary=summary, data=data, total=total, next_cursor=next_cursor)
 
 
+def cleaned_count(addresses: list[str]) -> dict:
+    """The cells of a page a declared rule changed: how many, and the first."""
+    return {"count": len(addresses), "first": addresses[:_FIRST]}
+
+
 def _page(rows: Iterable[list[Value]], start_row: int, start_column: int, budget: int,
-          annotate: "_Annotations", formulas: bool, cap: int | None
+          annotate: "_Annotations", formulas: bool, cap: int | None,
+          cleaned: "list[str] | None" = None
           ) -> tuple[list[list[dict]], list[str], tuple[int, int] | None, bool]:
     """A page's rows, filled from ``rows`` (the first of them at ``start_row``, from its
     ``start_column``) within ``budget`` characters: the rows as cells, the addresses whose
     text was cut, where the next page starts when the budget ran out (row and column), and
     whether it did.  A first cell too big for the page by itself is cut to fit
-    (:func:`_fit`); a row too wide for what is left is split."""
+    (:func:`_fit`); a row too wide for what is left is split.  ``cleaned`` collects the
+    addresses of the cells given whose value a declared rule changed."""
     shown: list[list[dict]] = []
     used = 0
     cut_text: list[str] = []
@@ -244,6 +258,8 @@ def _page(rows: Iterable[list[Value]], start_row: int, start_column: int, budget
             out.append(cell)
             used += size
             cut_text.extend(texts)
+            if cleaned is not None and value.cleaned:
+                cleaned.append(value.a)
         if out:
             shown.append(out)
         if stop is not None:
@@ -436,6 +452,15 @@ def _cell(value: Value, annotate: _Annotations, formulas: bool,
     if isinstance(out["v"], str) and cap is not None and len(out["v"]) > cap:
         out["length"] = len(out["v"])
         out["v"] = out["v"][:cap]
+        cut = True
+    elif isinstance(out["v"], list) and cap is not None \
+            and sum(len(item) for item in out["v"]) > cap:     # a list: its items cut
+        out["length"] = sum(len(item) for item in out["v"])
+        left, items = cap, []
+        for item in out["v"]:
+            items.append(item[:left])
+            left = max(left - len(item), 0)
+        out["v"] = items
         cut = True
     if formulas and value.formula_text is not None:
         text = value.formula_text

@@ -15,7 +15,8 @@ are derived, each with its cells (:mod:`xlsx_agent.derive`), and kept as dataset
 are read by address and derived from again (:mod:`xlsx_agent.dataset`); two workbooks
 are compared by key (:mod:`xlsx_agent.compare`); a workbook is checked against a declared
 schema (:mod:`xlsx_agent.schema`); the caller's own tables are declared from its
-configuration (:mod:`xlsx_agent.declare`); ``xlsx_read``, ``xlsx_profile``, ``xlsx_query``,
+configuration (:mod:`xlsx_agent.declare`), their text cleaned by its rules on request
+(:mod:`xlsx_agent.clean`); ``xlsx_read``, ``xlsx_profile``, ``xlsx_query``,
 ``xlsx_derive``, ``xlsx_compare`` and ``xlsx_validate_data`` read cells, columns and rows,
 paged, keep figures as ``d:<id>``, compare workbooks and check them
 (:mod:`xlsx_agent.tools`)::
@@ -57,6 +58,7 @@ from .address import (FORMS, Address, AddressError, DatasetAddress, NameNotFound
                       is_name, needs_quotes, parse_address, quote_sheet)
 from .compare import (CellChange, ColumnChange, Diff, DuplicateKey, RowChange,
                       SheetChange, TableDiff)
+from .clean import CleanedWarning
 from .declare import DeclarationError
 from .dataset import (DatasetSelection, DatasetTable, DatasetValue, as_dataset,
                       merge_sources, table_dataset)
@@ -73,7 +75,7 @@ from .workbook import Sheet, Workbook
 __version__ = "0.1.0"
 
 __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellChange",
-           "CheckedTable", "Column", "DataProblem", "SchemaError", "ValidationReport",
+           "CheckedTable", "CleanedWarning", "Column", "DataProblem", "SchemaError", "ValidationReport",
            "ColumnChange", "Diff", "DuplicateKey", "RowChange", "SheetChange", "TableDiff",
            "ColumnStats", "Comment", "Count", "DatasetAddress", "DatasetSelection",
            "DatasetTable", "DatasetValue", "DeclarationError", "DefinedName", "DeriveError",

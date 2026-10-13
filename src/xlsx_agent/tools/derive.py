@@ -165,7 +165,7 @@ def _derived_result(call: Any, name: str, derived: Any, table: DatasetTable) -> 
         value = getattr(derived, key)
         if value:
             data[key] = {k: {r: c.as_dict() for r, c in v.items()} for k, v in value.items()}
-    for key in ("coerced", "not_compared"):
+    for key in ("coerced", "cleaned", "not_compared"):
         value = getattr(derived, key)
         if value:
             data[key] = {k: c.as_dict() for k, c in value.items()}
