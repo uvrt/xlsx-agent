@@ -86,8 +86,8 @@ def _about(entry: Any) -> dict[str, Any]:
 
 
 @tool("xlsx_derive",
-      "Figures computed here, never by you: count, sum, mean, median, min, max, share, "
-      "distinct of a table's or dataset's rows, filtered, grouped, binned or pivoted. Kept "
+      "Figures computed here, never by you, from a table's or dataset's rows, filtered, "
+      "grouped, binned or pivoted. min/max of dates are dates; first/last by row order. Kept "
       "as dataset d:<id> (xlsx_read reads it, xlsx_derive derives from it); every value "
       "lists its source cells; cells left out are counted by reason.",
       {"doc": string("Document id; not needed when from is a dataset.", optional=True),
@@ -110,7 +110,7 @@ def _about(entry: Any) -> dict[str, Any]:
                       optional=True),
        "round": integer("Decimals, half away from zero; reported values only.",
                         minimum=-MAX_DIGITS, maximum=MAX_DIGITS, optional=True),
-       "coerce": array(string(enum=COERCIONS), "Opt in: use numbers stored as text.",
+       "coerce": array(string(enum=COERCIONS), "Opt in: read numbers or dates stored as text.",
                        optional=True)},
       group=CORE, datasets=("from",))
 @handler

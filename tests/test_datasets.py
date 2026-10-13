@@ -25,7 +25,7 @@ import pytest
 from build import WorkbookBuilder
 from ooxml_edit.tools import Dataset, Limits, Result, Toolbox, string, tool
 from test_catalogue import MARKER
-from test_derive import sales
+from test_derive import checks, sales
 
 from xlsx_agent import (AddressError, DatasetAddress, DatasetTable, DatasetValue, DeriveError,
                         NameNotFound, RegionError, Workbook, as_dataset, parse_address)
@@ -418,6 +418,25 @@ def test_xlsx_derive_refusals(box):
     assert err(key)["code"] == "refused" and err(key)["details"]["code"] == "no_key_column"
     # nothing failed defined a dataset
     assert session.dataset_ids() == ["d:by_rep"]
+
+
+def test_a_refused_column_of_dates_stored_as_text_names_the_issue_and_a_cell(box):
+    session = _session(box, checks())
+    measures = [{"fn": "min", "column": "Seen", "as": "earliest"}]
+    refused = call(box, session, "xlsx_derive", doc="d1", **{"from": "t:Checks"}, id="seen",
+                   measures=measures)
+    error = err(refused)
+    assert error["code"] == "refused" and error["field"] == "measures"
+    assert error["details"] == {"code": "wrong_type", "column": "Seen", "column_type": "text",
+                                "issue": "date_as_text",
+                                "cells": {"count": 3, "first": ["Log!C2", "Log!C3", "Log!C5"]}}
+    assert "Log!C2" in error["message"] and 'coerce ["date_as_text"]' in error["message"]
+    # one step: the same call with the coercion it names
+    read = call(box, session, "xlsx_derive", doc="d1", **{"from": "t:Checks"}, id="seen",
+                measures=measures, coerce=["date_as_text"])
+    assert read.ok, read.error
+    assert read.data["types"]["earliest"] == "date"
+    assert read.data["rows"][0][0]["v"] == "2026-02-11"
 
 
 def test_the_limits_of_a_derive_are_limit_errors(box, monkeypatch):

@@ -358,6 +358,24 @@ def looks_like_date(text: str, locale: Any = EN_US, *, local_dates: bool = False
     return _real(year, int(parts["m"]), int(parts["d"]))
 
 
+def text_date(text: str, locale: Any = EN_US, *, local_dates: bool = False) -> str | None:
+    """The date ``text`` writes out, as ISO 8601 text (``2026-01-05``, a time kept as
+    ``2026-01-05T10:30``), when :func:`looks_like_date` says it is one; ``None`` otherwise,
+    and for a two-digit year, whose century Excel decides by a rule not measured here.
+    What a caller who opts in to ``coerce=["date_as_text"]`` gets (:mod:`xlsx_agent.derive`)
+    and what ``xlsx_profile`` gives the range of."""
+    if not looks_like_date(text, locale, local_dates=local_dates):
+        return None
+    stripped = text.strip()
+    if _ISO_DATE.fullmatch(stripped):
+        return stripped.replace(" ", "T", 1)
+    match = _LOCAL_DATE.fullmatch(stripped)
+    parts = dict(zip(locale.date_order, (match.group(1), match.group(3), match.group(4))))
+    if len(parts["y"]) != 4:
+        return None
+    return f"{parts['y']}-{int(parts['m']):02d}-{int(parts['d']):02d}"
+
+
 def _real(year: int, month: int, day: int) -> bool:
     try:
         date(year, month, day)

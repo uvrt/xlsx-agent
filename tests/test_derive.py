@@ -27,7 +27,7 @@ from xlsx_agent import (DeriveError, Locale, NameNotFound, QueryError, Region, R
 from xlsx_agent import derive as derive_module
 from xlsx_agent.derive import FUNCTIONS, TYPES_BY_FUNCTION, _round
 from xlsx_agent.query import _key
-from xlsx_agent.read.types import serial_text, text_number
+from xlsx_agent.read.types import serial_text, text_date, text_number
 
 COLUMNS = ["Region", "Rep", "Amount", "Rate", "Day", "At", "Opens", "Paid", "Note"]
 
@@ -123,6 +123,8 @@ def _reason(value, t: str) -> str:
         return "error"
     if value.issue == "number_as_text" and t in _NUMBERS:
         return "number_as_text"
+    if value.issue == "date_as_text" and t in _MOMENTS:
+        return "date_as_text"
     return "wrong_type"
 
 
@@ -142,6 +144,8 @@ def _reference(fn: str, t: str, cells, date1904: bool):
         return len({c.v for c in cells})
     if not cells:
         return None
+    if fn in ("first", "last"):
+        return cells[0 if fn == "first" else -1].v
     if t in _NUMBERS:
         exact = [Fraction(c.v) for c in cells]
         if fn == "sum":
@@ -464,7 +468,8 @@ def test_numbers_as_text_are_read_only_when_asked():
     assert [s.text for s in ds.sources["South"]["total"]] == ["Sales!C4", "Sales!C13"]
     with pytest.raises(DeriveError) as caught:
         workbook.derive("t:Sales", coerce=["dates_as_text"])
-    assert caught.value.code == "bad_coerce" and caught.value.valid_options == ["number_as_text"]
+    assert caught.value.code == "bad_coerce" and caught.value.valid_options == ["number_as_text",
+                                                                     "date_as_text"]
 
 
 def test_numbers_as_text_are_read_in_the_workbooks_locale():
@@ -483,17 +488,145 @@ def test_numbers_as_text_are_read_in_the_workbooks_locale():
     assert text_number("1,234.5") == 1234.5 and text_number("1,234.5", grouping=False) is None
 
 
+def test_first_and_last_follow_the_row_order_for_any_type(wb):
+    ends = [{"fn": fn, "column": column, "as": f"{fn} {column}"}
+            for column in ("Amount", "Day", "Note", "Paid") for fn in ("first", "last")]
+    ds = wb.derive("t:Sales", group_by=["Region"], measures=ends)
+    north = ds.rows[0]
+    assert ds.columns[0] == "Region" and north["Region"] == "North"
+    # North is rows 2, 3, 5 and 7: first and last of each column's own type
+    assert (north["first Amount"], north["last Amount"]) == (2.675, -1e16)
+    assert (north["first Day"], north["last Day"]) == ("2026-01-05", "2025-12-31")
+    assert (north["first Note"], north["last Note"]) == ("first", "hidden row")
+    assert (north["first Paid"], north["last Paid"]) == (True, True)
+    assert ds.types["first Day"] == "date" and ds.types["last Note"] == "text"
+    # the sources are the cells compared, as min's: the first is the first of them
+    note = ds.provenance[0]["first Note"]
+    assert [s.text for s in note.sources] == ["Sales!I2:I3", "Sales!I5"]
+    assert note.excluded == {"blank": 1}
+    # South's amounts: text, a bool and a blank left out; with coerce, the text as read
+    south = wb.derive("t:Sales", group_by=["Region"], measures=ends[:2],
+                      coerce=["number_as_text"]).rows[1]
+    assert (south["first Amount"], south["last Amount"]) == (7.25, 0.125)
+    whole = wb.derive("t:Sales", measures=[{"fn": "last", "column": "Note", "as": "n"}])
+    assert whole.rows == [{"n": "hidden row"}]
+
+
+def test_min_and_max_of_coerced_text_are_given_as_read(wb):
+    ds = wb.derive("t:Sales", group_by=["Region"], coerce=["number_as_text"],
+                   measures=[{"fn": "max", "column": "Amount", "as": "top"}])
+    assert ds.rows[1] == {"Region": "South", "top": 7.25}       # not the text "7.25"
+
+
+def checks(day_order: bool = False) -> WorkbookBuilder:
+    """A table of checks whose dates are stored as text: ISO 8601 text in Seen (one with a
+    time of day, one blank), text in the en-US day order in Due (one with a two-digit
+    year), and a date column, Done, with one date as ISO text."""
+    book = WorkbookBuilder()
+    sheet = book.sheet("Log")
+    sheet.rows("A1", [["Check", "Rating", "Seen", "Due", "Done"],
+                      ["c1", 3.5, "2026-03-04", "03/05/2026", date(2026, 3, 9)],
+                      ["c2", 4, "2026-02-11", "02/20/2026", "2026-03-01"],
+                      ["c3", 2.5, None, "03/01/26", date(2026, 3, 12)],
+                      ["c4", 5, "2026-03-20T09:30", "04/02/2026", date(2026, 3, 10)]])
+    sheet.table("Checks", "A1:E5", ["Check", "Rating", "Seen", "Due", "Done"],
+                write_header=False)
+    return book
+
+
+def test_a_column_of_dates_stored_as_text_is_refused_saying_why():
+    workbook = _open(checks())
+    with pytest.raises(DeriveError) as caught:
+        workbook.derive("t:Checks", measures=[{"fn": "min", "column": "Seen"}])
+    error = caught.value
+    assert (error.code, error.column_type, error.issue) == ("wrong_type", "text", "date_as_text")
+    assert error.cells.as_dict() == {"count": 3, "first": ["Log!C2", "Log!C3", "Log!C5"]}
+    assert "3 of its values are dates stored as text (date_as_text, first Log!C2)" in str(error)
+    assert 'coerce ["date_as_text"] reads them as dates' in str(error)
+    assert "first" in error.valid_options and "last" in error.valid_options
+    assert "2026-03-04" not in str(error)                     # no cell's value
+    # text in the locale's day order is not read as a date without local_dates
+    with pytest.raises(DeriveError) as local:
+        workbook.derive("t:Checks", measures=[{"fn": "max", "column": "Due"}])
+    assert local.value.issue == "local_date_text" and local.value.cells.count == 4
+    assert "local_dates" in str(local.value) and "coerce" not in str(local.value)
+    # numbers stored as text, the same way
+    book = WorkbookBuilder()
+    book.sheet("S").rows("A1", [["Qty"], ["1"], ["2"], [3]])
+    with pytest.raises(DeriveError) as numbers:
+        _open(book).derive("t:S!A1", measures=[{"fn": "sum", "column": "Qty"}])
+    assert numbers.value.issue == "number_as_text"
+    assert 'coerce ["number_as_text"] reads them as numbers' in str(numbers.value)
+    # and a refusal of another kind names no issue
+    with pytest.raises(DeriveError) as plain:
+        workbook.derive("t:Checks", measures=[{"fn": "sum", "column": "Check"}])
+    assert plain.value.issue is None and "stored as text" not in str(plain.value)
+
+
+def test_dates_stored_as_text_are_read_as_dates_when_asked():
+    workbook = _open(checks())
+    measures = [{"fn": fn, "column": "Seen", "as": fn} for fn in ("min", "max", "first",
+                                                                  "last", "mean")]
+    ds = workbook.derive("t:Checks", measures=measures, coerce=["date_as_text"])
+    assert ds.types["min"] == "date"
+    # a date column compares days: 2026-03-20T09:30 is its day
+    assert ds.rows == [{"min": "2026-02-11", "max": "2026-03-20", "first": "2026-03-04",
+                        "last": "2026-03-20", "mean": "2026-03-02"}]
+    assert ds.coerced["min"].as_dict() == {"count": 3, "first": ["Log!C2", "Log!C3", "Log!C5"]}
+    assert ds.provenance[0]["min"].excluded == {"blank": 1}
+    # without coerce, first and last take the text as it is
+    plain = workbook.derive("t:Checks", measures=measures[2:4])
+    assert plain.rows == [{"first": "2026-03-04", "last": "2026-03-20T09:30"}]
+    assert plain.types["first"] == "text"
+
+
+def test_a_date_column_counts_its_dates_as_text_apart_and_reads_them_when_asked():
+    workbook = _open(checks())
+    measures = [{"fn": "min", "column": "Done", "as": "earliest"}]
+    plain = workbook.derive("t:Checks", measures=measures)
+    assert plain.rows == [{"earliest": "2026-03-09"}]
+    assert plain.excluded["earliest"]["date_as_text"].as_dict() == {"count": 1,
+                                                                    "first": ["Log!E3"]}
+    read = workbook.derive("t:Checks", measures=measures, coerce=["date_as_text"])
+    assert read.rows == [{"earliest": "2026-03-01"}] and read.coerced["earliest"].count == 1
+
+
+def test_dates_in_the_locales_day_order_are_read_with_local_dates():
+    workbook = _open(checks(), local_dates=True)
+    measures = [{"fn": "min", "column": "Due", "as": "lo"},
+                {"fn": "max", "column": "Due", "as": "hi"}]
+    with pytest.raises(DeriveError) as caught:
+        workbook.derive("t:Checks", measures=measures)
+    assert caught.value.issue == "date_as_text" and caught.value.cells.count == 4
+    ds = workbook.derive("t:Checks", measures=measures, coerce=["date_as_text"])
+    # en-US is month first; a two-digit year's century is not read: left out, counted
+    assert ds.rows == [{"lo": "2026-02-20", "hi": "2026-04-02"}]
+    assert ds.excluded["lo"]["date_as_text"].as_dict() == {"count": 1, "first": ["Log!D4"]}
+    nl = Locale(decimal_separator=",", thousands_separator=".", date_order="dmy",
+                language="nl-BE", list_separator=";")
+    dmy = _open(checks(), local_dates=True, locale=nl)
+    ds = dmy.derive("t:Checks", measures=measures[:1], coerce=["date_as_text"])
+    # dmy: 03/05/2026 is 3 May and 04/02/2026 4 February; 02/20/2026 is no day there
+    assert ds.rows == [{"lo": "2026-02-04"}]
+    assert set(ds.excluded["lo"]) == {"date_as_text", "wrong_type"}
+    assert ds.excluded["lo"]["wrong_type"].first == ("Log!D3",)
+    assert text_date(" 2026-03-20 09:30 ") == "2026-03-20T09:30"
+    assert text_date("3.5.2026", nl, local_dates=True) == "2026-05-03"
+    assert text_date("3.5.2026", nl) is None and text_date("3.5.26", nl, local_dates=True) is None
+    assert text_date("2026-02-30") is None and text_date("soon") is None
+
+
 # -- refusals ---------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("measure,column_type,takes", [
-    ({"fn": "sum", "column": "Region"}, "text", ["count", "distinct"]),
-    ({"fn": "min", "column": "Note"}, "text", ["count", "distinct"]),
-    ({"fn": "mean", "column": "Paid"}, "bool", ["count", "distinct"]),
+    ({"fn": "sum", "column": "Region"}, "text", ["count", "first", "last", "distinct"]),
+    ({"fn": "min", "column": "Note"}, "text", ["count", "first", "last", "distinct"]),
+    ({"fn": "mean", "column": "Paid"}, "bool", ["count", "first", "last", "distinct"]),
     ({"fn": "sum", "column": "Day"}, "date",
-     ["count", "mean", "median", "min", "max", "distinct"]),
+     ["count", "mean", "median", "min", "max", "first", "last", "distinct"]),
     ({"fn": "share", "column": "Opens"}, "time",
-     ["count", "mean", "median", "min", "max", "distinct"]),
+     ["count", "mean", "median", "min", "max", "first", "last", "distinct"]),
 ])
 def test_a_measure_its_columns_type_does_not_take_is_refused(wb, monkeypatch, measure,
                                                              column_type, takes):
