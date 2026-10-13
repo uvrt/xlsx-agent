@@ -22,9 +22,11 @@ counted.  R12 adds ``xlsx_compare`` (329 estimated, about 487 counted): 2,806 es
 about 4,153 counted, so the check tools stay in the core (ROADMAP.md, "Tools").  R13 adds
 ``xlsx_validate_data`` (630 estimated, about 932 counted): 3,425 estimated, about 5,069
 counted, still under 6,000, so it is loaded too and no ``xlsx_check`` group is needed.
+X4 and X5 add ``first``, ``last``, ``date_as_text``, ``words_gt`` and a few words of
+description: 3,452 estimated, about 5,109 counted.
 Every definition (``close_document`` and ``read_blob`` deferred in ``shared_misc``, and the
-tool-search tool) is 3,647 estimated; the guard is 3,700, a regression guard and not a
-budget, raised as the read tools arrive.
+tool-search tool) is 3,674 estimated (3,647 before X4 and X5); the guard is 3,700, a
+regression guard and not a budget, raised as the read tools arrive.
 """
 
 from __future__ import annotations

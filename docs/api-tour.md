@@ -91,8 +91,9 @@ sales.query(["Date", "Revenue"], where={"Region": {"eq": "North"}},
 #             matches=5, ...)
 ```
 
-Filters are `eq`, `in`, `gte`, `lte`, `contains`, `blank` and `not_blank`, combined with
-and; a filter on a column of the wrong type is refused naming the column's type.
+Filters are `eq`, `in`, `gte`, `lte`, `contains`, `words_gt`, `blank` and `not_blank`,
+combined with and; a filter on a column of the wrong type is refused naming the column's
+type. `{"Note": {"words_gt": 150}}` finds the text cells longer than 150 words.
 
 ## Profile
 
@@ -101,6 +102,13 @@ wb.table("t:Sales").column("Revenue").stats()
 # ColumnStats(address='t:Sales[Revenue]', range='Sales!E2:E17', rows=16, type='number',
 #             fill=1.0, min=34.5, max=239.4, mean=108.83125, distinct=12, ...)
 wb.profile("t:Sales", ["Units"])         # every column (or these) in one streamed pass
+```
+
+A date column's `min` and `max` are its range, as dates. Text columns give their lengths in
+characters and in words (median and max) and the address of the longest text; dates stored
+as text are flagged `date_as_text`, counted, and their own range is `date_text`.
+
+```python
 wb.key_columns("t:Stock")    # ['SKU', 'Item', 'Qty']: unique, never blank, text or whole
                              # numbers; with more than one, a value by key names its key=
 ```
@@ -129,12 +137,16 @@ ds.sources["North"]["revenue"]           # Sales!E2, E5, E9, E13, E17 (RangeAddr
 ds.excluded                              # {} -- else per measure, per reason, with addresses
 ```
 
-The measures are `count`, `sum`, `mean`, `median`, `min`, `max`, `share` and `distinct`,
-with `where`, `bins`, `pivot`, `sort` and `top`. Sums are `math.fsum`; rounding is half
-away from zero on the reported value only. Blanks, errors, numbers stored as text and
-formulas without a cached value are left out of a measure and counted by reason
-(`coerce=["number_as_text"]` opts in). A measure on a column whose type does not take it is
-refused (`DeriveError`) before anything is computed.
+The measures are `count`, `sum`, `mean`, `median`, `min`, `max`, `first`, `last`, `share`
+and `distinct`, with `where`, `bins`, `pivot`, `sort` and `top`. `min` and `max` take dates
+and give a date; `first` and `last` take any column and give the value of the first and
+last row used, in the table's order. Sums are `math.fsum`; rounding is half away from zero
+on the reported value only. Blanks, errors, numbers and dates stored as text and formulas
+without a cached value are left out of a measure and counted by reason
+(`coerce=["number_as_text", "date_as_text"]` opts in). A measure on a column whose type does
+not take it is refused (`DeriveError`) before anything is computed; when the column is text
+holding dates or numbers stored as text, the refusal says how many, names the first cell
+and the `coerce` that reads them (`error.issue`, `error.cells`).
 
 A derived result is a dataset, read back by address and derived from again -- its sources
 stay the original cells:

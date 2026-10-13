@@ -72,6 +72,14 @@ go on the format: `xlsx_agent.tools.format(grouping=True, local_dates=False)` in
 8601 only) reads `3/4/2026` in the locale's date order, as Excel does. A format code's own
 locale tag (`[$-409]`) wins for its cells. No tool definition or prompt changes.
 
+**Dates stored as text.** `xlsx_derive`'s `min` and `max` take dates and give a date. On a
+column whose dates are stored as text they are refused, and the error says so in one step:
+its `details` give the `issue` (`date_as_text`) and its `cells` (the count, the first
+addresses), and the message the `coerce: ["date_as_text"]` that reads them as dates. Text
+in the locale's day order (`3/4/2026`) is `local_date_text` without `local_dates`: no
+coercion reads it then. `first` and `last` take any column as it is. `xlsx_profile` gives
+the range of a column's dates stored as text (`date_text`) beside its flag.
+
 **Datasets (`d:`).** `xlsx_derive` keeps its figures in the session as a dataset,
 `d:<id>`: columns, rows, and beside every value the cells it came from. `xlsx_read` reads
 it back (`{"target": "d:by_region", "sources": true}`, no `doc` needed), `xlsx_derive`

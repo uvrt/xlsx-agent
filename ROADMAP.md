@@ -215,11 +215,11 @@ Every result is bounded by `Limits.max_result_chars` (24,000) and
 | --- | --- | --- | --- |
 | `open_document` (shared) | `blob` | `d1`, the summary: sheets, tables, size, problems at open | the zip limits; `.xls`/`.xlsb` refused |
 | `describe` (shared) | `doc` | the catalogue: sheets (id, name, visible, hidden or very hidden, protected, used range); tables, names and detected regions with their key columns; per column: header, inferred type, fill rate, min/max/mean or distinct values when 12 or fewer, text length median and max, formula share, data-validation list, flags (mixed types, numbers as text, no cached value, cut at 32,767); up to two sample rows per table; workbook flags (recalculation, external links, macros) | about 3,000 tokens by default; a workbook too big for that lists every table and the first columns, and says which were left for `xlsx_profile` |
-| `xlsx_profile` | `doc`, `target` (table or column), `columns`, `cursor` | the full per-column profile for one table, every column | one table per call; 50 columns a page, within 24,000 characters; paged |
+| `xlsx_profile` | `doc`, `target` (table or column), `columns`, `cursor` | the full per-column profile for one table, every column (a date column's range as dates; text lengths in characters and words with the longest cell's address; the range of dates stored as text) | one table per call; 50 columns a page, within 24,000 characters; paged |
 | `xlsx_read` | `doc` (not for a dataset), `target` (range, table, column, row, dataset), `formats`, `formulas`, `comments`, `hyperlinks`, `merges`, `sources` (a dataset's), `key_column`, `limit`, `max_chars`, `cursor` | typed values by row, with addresses; optionally format codes, formula text, comments, links, merges; the array blocks over the rows always | default 50 rows, at most 500 or 24,000 characters; paged, a row too wide for a page split across pages |
-| `xlsx_query` | `doc`, `table`, `columns`, `where` (`eq`, `in`, `gte`, `lte`, `contains`, `blank`, `not_blank`, combined with and), `sort`, `limit`, `cursor` | matching rows with their addresses, and the count of all matches | as `xlsx_read`; a filter on a column of the wrong type is refused naming the column's type |
+| `xlsx_query` | `doc`, `table`, `columns`, `where` (`eq`, `in`, `gte`, `lte`, `contains`, `words_gt`, `blank`, `not_blank`, combined with and), `sort`, `limit`, `cursor` | matching rows with their addresses, and the count of all matches | as `xlsx_read`; a filter on a column of the wrong type is refused naming the column's type |
 | `find_text` (shared) | `doc`, `text`, `regex`, `range` (a sheet, range or table), `cursor` | matches by address and kind: cell (text cells; numbers and dates are not searched, having no display string yet), table or region name, column header, comment, defined name; hidden ones marked; formula text not searched (the shared tool has no option for it) | 50 per page |
-| `xlsx_derive` | `doc`, `from` (table, region or dataset), `where`, `group_by`, `measures` (`count`, `sum`, `mean`, `median`, `min`, `max`, `share`, `distinct`, each with `column` and `as`), `bins` (edges for a number or date column), `pivot` (a column whose values become columns), `sort`, `top`, `round`, `id` | `d:<id>`: columns, rows, the rounding applied, and for every value its sources (see *Provenance*); the rows left out and why, counted by reason | at most 1,000 result rows and 50 shown; a measure on a column whose type does not allow it is refused before anything is computed |
+| `xlsx_derive` | `doc`, `from` (table, region or dataset), `where`, `group_by`, `measures` (`count`, `sum`, `mean`, `median`, `min`, `max` (of dates, a date), `first`, `last` (row order, any column), `share`, `distinct`, each with `column` and `as`), `bins` (edges for a number or date column), `pivot` (a column whose values become columns), `sort`, `top`, `round`, `coerce` (`number_as_text`, `date_as_text`), `id` | `d:<id>`: columns, rows, the rounding applied, and for every value its sources (see *Provenance*); the rows left out and why, counted by reason | at most 1,000 result rows and 50 shown; a measure on a column whose type does not allow it is refused before anything is computed |
 | `xlsx_compare` | `a`, `b` (two open documents), `tables` (default every table and declared region; `table_b` when the one table's name differs in `b`), `key`, `columns`, `cursor` | sheets added, removed and renamed (by id); rows added and removed (by key); cells changed (address in each, old and new value, type: a number and the same number as text is a `type` change); columns added, removed and renamed; duplicate keys reported, not paired by guess | 50 differences per page, totals always |
 | `xlsx_validate_data` | `doc`, `schema`: sheets and tables (or declared region specs) required; `key`; per column type, required, unique, enum (with `case`), the column's own drop-down list (`validation_list`), `min`/`max`, `step` (e.g. 1–5 in halves), pattern | problems by address and code (`missing_sheet`, `missing_table`, `missing_column`, `no_validation_list`, `no_cached_value`, `required_blank`, `wrong_type`, `out_of_range`, `off_step`, `not_in_enum`, `not_in_list`, `pattern_mismatch`, `duplicate_key`, `duplicate_value`), counted by code; never cell text | 50 problems per page, counts always |
 
@@ -486,6 +486,32 @@ inventory with a reviewed copy, g3 checks orders against a declared schema; thei
 (`tests/golden_inputs.py`) fix every value and date. The tools README is
 `src/xlsx_agent/tools/README.md`; the Python API, `docs/api-tour.md`; `CHANGELOG.md` has
 0.1.0.
+
+*X4 and X5 as built* (production feedback on 0.1.0, 2026-10-13): **X4, dates.**
+`xlsx_derive` gains `first` and `last` (any column type: the value of the first and the
+last row used, in the table's row order; sources as `min`'s, every cell compared, the
+picked one first or last). `min` and `max` already took dates and gave a date; the tool
+description now says so. What made a "date column" fail: dates stored as text make the
+column `text` (its type is the majority's), and `min`/`max` refuse text. The refusal now
+names the issue (`date_as_text`, or `local_date_text` for text in the locale's day order
+that the workbook was opened without `local_dates` to read), its count and first cells
+(`DeriveError.issue`, `.cells`; the tool error's `details`), and the recovery,
+`coerce: ["date_as_text"]` -- opt-in, listed in `coerced`, never silent (design rule 4).
+With a coercion the column's type is decided with the coerced cells counted as what they
+read as (also for `number_as_text`, which had the same gap). A date stored as text in a
+date column is left out as `date_as_text` (was `wrong_type`). A two-digit year is not
+read: Excel's century rule is not measured. `min`/`max` of a coerced cell give the value
+as read (a number, a date), no longer its text. `xlsx_profile` already gave a date
+column's `min`/`max` as dates and flagged `date_as_text` with its count; it now also gives
+`date_text`, the range of the dates stored as text. **X5, text lengths.** `xlsx_profile`'s
+`text_length` adds `median_words`, `max_words` (runs between white space) and `longest`
+(the address of the longest text in characters). The long-text filter is a query test,
+`words_gt` (text columns; `xlsx_query` and `xlsx_derive`'s `where`): it lists or counts the
+cells over a limit, and as one more enum value in the shared filter schema it was the
+cheapest form (about 7 estimated tokens, against about 25 for a `max_words` parameter on
+`xlsx_profile` or `xlsx_read`). Budget: the loaded core 3,452 estimated, about 5,109 by the
+offline proxy (was 3,425, 5,069); every definition 3,674 (guard 3,700). `describe` is
+unchanged.
 
 ### 0.2 — edit
 
