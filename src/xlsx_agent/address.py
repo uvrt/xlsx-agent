@@ -8,6 +8,7 @@ Every result names what it returns by address, and every tool takes the same for
     'Q3 sales'!B2:B9             a quoted sheet: ' around the name, '' for a quote inside
     #3!F2                        the sheet whose sheetId is 3 (survives a rename)
     t:Products                   a table, a defined name over a range, or a declared region
+    t:Stock!Prices               a defined name local to a sheet (Excel's own spelling)
     t:Stock!A1                   a detected region, named by its header's first cell
     t:Products[Price]            one column of a table, header row excluded
     t:Products/SKU-0042/Price    the row whose key is SKU-0042, column Price
@@ -47,6 +48,27 @@ name, quoted.  The characters Excel refuses in a sheet name and its length limit
 Excel's own rules, not the schema's; they matter when a sheet is added or renamed (E5),
 and are measured from Excel then.
 
+**Table, name and region names** (ECMA-376 Part 1, §18.17, "Names"; a table's
+``displayName``, §18.5.1.2, has "the same character lengths and restrictions" as a defined
+name).  The standard's grammar: a name starts with a letter, ``_`` or ``\\``, and goes on
+with letters, the digits 0-9, ``_`` and ``.``; it is not ``TRUE`` or ``FALSE`` and not a
+cell reference; names are not case-sensitive and are unique in the workbook; an
+implementation "is encouraged to support" at least 255 characters.  :func:`is_name` is
+that rule, and a name this library makes (:meth:`Workbook.declare_region
+<xlsx_agent.workbook.Workbook.declare_region>`) must pass it.  In an address the rule is
+wider, because a ``name`` attribute is an ST_Xstring and a file may hold a name the grammar
+does not allow (``Products?``, say): a ``t:`` name is any non-empty text without white
+space, without the characters the address itself uses (``[ ] / ! '``) and not starting
+with ``#``.  A name outside that is in the workbook but has no ``t:`` address.  Dataset
+ids (``d:``) take the same wider rule for now (O2 defines them).
+
+**Sheet-scoped names.**  A defined name local to a sheet is written as Excel writes it,
+sheet first: ``t:Stock!Prices``, ``t:'Q3 sales'!Rate``, ``t:#3!Rate``.  What follows the
+``!`` is a region's header cell when it reads as one (``A1``; with ``:`` or ``$`` it is
+taken as a cell or range, and refused if it is not one cell) and a name otherwise: a name
+is never a cell reference.  A sheet-local name that looks like a cell past the grid
+(``XFE1``, which the standard allows) has no address in this form.
+
 **Positions and ids.**  ``#3!`` names a sheet by id; ``/#5`` names a row by position.  A
 key that begins with ``#`` is quoted, so the two never meet.
 
@@ -77,6 +99,7 @@ FORMS: dict[str, str] = {
     "quoted sheet": "'Q3 sales'!B2:B9",
     "sheet by id": "#3!F2",
     "table": "t:Products",
+    "sheet-scoped name": "t:Stock!Prices",
     "detected region": "t:Stock!A1",
     "column": "t:Products[Price]",
     "value by key": "t:Products/SKU-0042/Price",
@@ -103,8 +126,13 @@ _BOOLEANS = ("TRUE", "FALSE")
 
 # Characters a bare sheet name may not hold: they delimit, or Excel never allows them.
 _NOT_IN_BARE_SHEET = frozenset("'![]:*?/\\")
-# Characters a table, name, region or dataset id may not hold: the address uses them.
+# Characters a table, name, region or dataset id may not hold in an address: the address
+# uses them (see the module's notes).
 _NOT_IN_NAME = frozenset("[]/!'")
+
+#: The most characters of a name this library makes: the length ECMA-376 encourages an
+#: implementation to support (§18.17, "Names").
+MAX_NAME = 255
 
 _CELLS = re.compile(r"\$?([A-Za-z]{1,3})\$?([0-9]{1,7})(?::\$?([A-Za-z]{1,3})\$?([0-9]{1,7}))?")
 _COLUMNS = re.compile(r"\$?([A-Za-z]{1,3}):\$?([A-Za-z]{1,3})")
@@ -112,7 +140,8 @@ _ROWS = re.compile(r"\$?([0-9]{1,7}):\$?([0-9]{1,7})")
 _POSITION = re.compile(r"#([1-9][0-9]{0,6})")
 
 _RANGE_FORMS = ("cell", "range", "columns", "rows", "quoted sheet", "sheet by id")
-_TABLE_FORMS = ("table", "detected region", "column", "value by key", "row by position")
+_TABLE_FORMS = ("table", "sheet-scoped name", "detected region", "column", "value by key",
+                "row by position")
 _DATASET_FORMS = ("d:by_category", "d:by_category[average]", "d:by_category/Hardware/average",
                   "d:by_category/#2")
 
@@ -178,6 +207,45 @@ def nearest(name: str, candidates: Iterable[str], *, limit: int = 50) -> list[st
         folded.setdefault(candidate.casefold(), candidate)
     close = difflib.get_close_matches(name.casefold(), list(folded), 5, 0.5)
     return [folded[match] for match in close] if close else candidates[:limit]
+
+
+# ------------------------------------------------------------------------------------------
+# Names
+# ------------------------------------------------------------------------------------------
+
+
+def is_name(name: object) -> bool:
+    """Whether ``name`` is a name as ECMA-376 Part 1, §18.17 ("Names") defines one: a
+    letter, ``_`` or ``\\`` first; then letters, the digits 0-9, ``_`` and ``.``; not
+    ``TRUE`` or ``FALSE``; not a cell reference on the grid (``A1`` to ``XFD1048576``) nor
+    an R1C1 one (``R1C1``, ``R``, ``C2``); at most :data:`MAX_NAME` characters.  A
+    "letter" is a Unicode letter.  What a name this library makes must be; a file's own
+    names may be more (see the module's notes)."""
+    if not isinstance(name, str) or not name or len(name) > MAX_NAME:
+        return False
+    first = name[0]
+    if not (first.isalpha() or first in "_\\"):
+        return False
+    if not all(ch.isalpha() or ch in "0123456789_." for ch in name[1:]):
+        return False
+    if name.upper() in _BOOLEANS or _R1C1_LIKE.fullmatch(name):
+        return False
+    return not _on_grid(name)
+
+
+def is_address_name(name: object) -> bool:
+    """Whether ``name`` can stand in a ``t:`` address (the wider rule of the module's
+    notes): non-empty, no white space or control character, none of ``[ ] / ! '``, not
+    starting with ``#``."""
+    return (isinstance(name, str) and bool(name) and not name.startswith("#")
+            and not any(ch.isspace() or ord(ch) < 32 or ch in _NOT_IN_NAME for ch in name))
+
+
+def _on_grid(text: str) -> bool:
+    """``text`` is an A1 reference to a cell on Excel's grid (``$`` allowed)."""
+    match = re.fullmatch(r"\$?([A-Za-z]{1,3})\$?([0-9]{1,7})", text)
+    return bool(match) and column_index(match.group(1)) <= MAX_COLUMN \
+        and 1 <= int(match.group(2)) <= MAX_ROW
 
 
 # ------------------------------------------------------------------------------------------
@@ -353,26 +421,33 @@ class _Selection:
 
 @dataclass(frozen=True)
 class TableAddress(_Selection):
-    """A table, a defined name over a range or a declared region (``t:Products``), or a
+    """A table, a defined name over a range or a declared region (``t:Products``), a
+    defined name local to a sheet (``t:Stock!Prices``: ``scope`` is the sheet), or a
     detected region (``t:Stock!A1``: ``region`` is its header's first cell, ``name`` is
     ``None``); with, optionally, a column (``t:Products[Price]``), a row by key
     (``t:Products/SKU-0042``) or position (``t:Products/#5``), or a value
     (``t:Products/SKU-0042/Price``).
 
     Parsing does not say whether the name is a table, a name or a region, nor whether the
-    key and column exist: the workbook does, once tables are read (R4)."""
+    key and column exist: :meth:`Workbook.resolve <xlsx_agent.workbook.Workbook.resolve>`
+    does."""
 
     name: str | None = None
     region: RangeAddress | None = None
     column: str | None = None
     key: str | None = None
     position: int | None = None
+    scope: SheetRef | None = None
 
     def __post_init__(self) -> None:
         if (self.name is None) == (self.region is None):
             raise ValueError("a table address has a name or a region, one of the two")
         if self.name is not None:
             _check_name(self.name, "a table name")
+            if self.scope is not None and _CELLS.fullmatch(self.name):
+                raise ValueError("a sheet-scoped name is never a cell reference")
+        elif self.scope is not None:
+            raise ValueError("a detected region names its sheet in region, not in scope")
         if self.region is not None and self.region.kind != "cell":
             raise ValueError("a detected region is named by one cell, its header's first")
         self._check_selection()
@@ -390,8 +465,18 @@ class TableAddress(_Selection):
 
     @property
     def text(self) -> str:
-        base = self.name if self.name is not None else self.region.text
+        if self.name is None:
+            base = self.region.text
+        elif self.scope is not None:
+            base = f"{self.scope.text}!{self.name}"
+        else:
+            base = self.name
         return TABLE_PREFIX + base + self._selection_text()
+
+    @property
+    def whole(self) -> "TableAddress":
+        """The table, name or region itself, without a column or row."""
+        return TableAddress(name=self.name, region=self.region, scope=self.scope)
 
     def __str__(self) -> str:
         return self.text
@@ -642,6 +727,13 @@ class _Parser:
         if body.startswith(("'", "#"), start) or "!" in body[start:end]:
             sheet, bang = self.sheet(start)
             end = _name_end(body, bang + 1)
+            token = body[bang + 1:end]
+            if token and ":" not in token and "$" not in token \
+                    and not _CELLS.fullmatch(token):
+                name = self.name(bang + 1, end, "a sheet-scoped name", "t:Stock!Prices")
+                column, key, position = self.selection(end)
+                return TableAddress(name=name, scope=sheet, column=column, key=key,
+                                    position=position)
             area, span = self.where(bang + 1, end)
             if span != "cells" or area.first != area.last:
                 options = None if span != "cells" else \
