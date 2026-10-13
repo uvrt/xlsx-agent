@@ -114,14 +114,17 @@ def test_a_read_from_a_checkpoint_gives_what_a_read_from_the_top_gives(prefix):
 
 
 @pytest.mark.parametrize("extra", ["<!-- <row r='9'/> -->", "<?pi <row r='9'/> ?>",
-                                   "<![CDATA[<row r='9'/>]]>"])
+                                   "<![CDATA[<row r='9'/>]]>", "before"])
 def test_a_sheet_whose_bytes_may_hide_a_tag_gets_no_index(extra):
     rows = _messy_rows(CHECKPOINT_ROWS * 3)
-    if "CDATA" in extra:   # where character data may stand: in a cell's value
+    before = ""
+    if extra == "before":   # an element of another namespace named alike, before the cells
+        before = '<o:sheetData xmlns:o="urn:example:other"/>'
+    elif "CDATA" in extra:   # where character data may stand: in a cell's value
         rows = rows.replace("<v>7</v>", f"<v>7{extra}</v>", 1)
     else:
         rows = rows.replace("</row>", "</row>" + extra, 1)
-    wb = Workbook.open(_with_sheet(rows, strings=5))
+    wb = Workbook.open(_with_sheet(rows, strings=5, before=before))
     assert wb.scan("Data").index is None
     address = f"Data!A{CHECKPOINT_ROWS * 2}:F{CHECKPOINT_ROWS * 2 + 3}"
     assert len(list(wb.read(address))) == 4

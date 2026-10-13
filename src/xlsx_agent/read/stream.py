@@ -221,10 +221,11 @@ class RowIndex:
         each checkpoint's row element found by its start tag in the bytes, the
         ``n``-th tag being the ``n``-th row the parser met.  ``None`` when that cannot be
         relied on: a comment, CDATA section, document type or processing instruction
-        (whose text may hold a tag), or as many tags as rows not found."""
+        (whose text may hold a tag), ``sheetData`` written other than once as a start tag
+        and once as an end tag, or as many tags as rows not found."""
         marks = reader.marks
         if not marks or len(marks) < 2 or b"<!" in data or data.count(b"<?") > 1 \
-                or data.find(b"<?") not in (-1, 0, 3):
+                or data.find(b"<?") not in (-1, 0, 3) or data.count(b"sheetData") != 2:
             return None
         found = _SHEET_DATA_TAG.search(data)
         if found is None:
