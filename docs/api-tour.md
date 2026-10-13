@@ -196,6 +196,32 @@ wb.derive(ds, measures=[{"fn": "max", "column": "revenue", "as": "best"}]).rows
 In the tool layer `xlsx_derive` keeps the dataset in the session as `d:by_region`, which
 `xlsx_read` reads (with `sources: true`) after its workbook is closed too.
 
+## Workbook tables into slides and documents
+
+A table's rows as an ooxml-edit `Dataset` -- what a deck or document tool places when given
+`from: "t:Stock"` (pptx-agent's `ppt_add_table`, the shared `edit_chart`) -- typed as read,
+nothing coerced, each value with its cell by key where the table has a key column, else its
+cell address:
+
+```python
+wb.dataset("t:Stock").sources[0][3]      # ('Stock!D2',): several key candidates, none named
+wb.declare_key("t:Stock", "SKU")
+rows = wb.dataset("t:Stock/{SKU-0003,SKU-0001}")   # or t:Stock, t:Stock[Qty], t:Stock/*/Qty
+rows.columns                             # ('SKU', 'Item', 'Category', 'Qty', 'Price')
+rows.rows[0]                             # ('SKU-0003', 'Wall plug 6 mm', 'Hardware', 450, 0.05)
+rows.sources[0][3]                       # ('t:Stock/SKU-0003/Qty',)
+
+from xlsx_agent import merge_sources
+merge_sources(["Stock!D2", "Stock!D3", "Stock!D4"])        # ['Stock!D2:D4']
+merge_sources(["t:Stock/SKU-0001/Qty", "t:Stock/SKU-0002/Qty"])
+# ['t:Stock/{SKU-0001,SKU-0002}/Qty']
+```
+
+In the tool layer the xlsx format registers this as its `t:` resolver and `merge_sources`
+(ooxml-edit 0.22.0, O3): one session holding a workbook and a deck fills a slide table or a
+chart from `t:Stock`, and the result names the cells each placed value came from. The
+workbook is only read.
+
 ## Compare
 
 ```python

@@ -54,7 +54,8 @@ from .address import (FORMS, Address, AddressError, DatasetAddress, NameNotFound
                       is_name, needs_quotes, parse_address, quote_sheet)
 from .compare import (CellChange, ColumnChange, Diff, DuplicateKey, RowChange,
                       SheetChange, TableDiff)
-from .dataset import DatasetSelection, DatasetTable, DatasetValue, as_dataset
+from .dataset import (DatasetSelection, DatasetTable, DatasetValue, as_dataset,
+                      merge_sources, table_dataset)
 from .derive import Derived, DeriveError, Provenance, Total
 from .find import Found
 from .package import REFUSALS, KindMismatchWarning, OpenError
@@ -77,5 +78,5 @@ __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellC
            "OpenError", "Problem", "QueryError", "QueryResult", "RangeAddress", "RefAddress",
            "Provenance", "Region", "RegionError", "Selection", "Sheet", "SheetRef", "SheetScan",
            "TableAddress", "Total", "UnclearRegion", "Value", "Workbook", "__version__",
-           "as_dataset", "format_address", "is_name", "needs_quotes", "parse_address",
-           "quote_sheet"]
+           "as_dataset", "format_address", "is_name", "merge_sources", "needs_quotes",
+           "parse_address", "quote_sheet", "table_dataset"]

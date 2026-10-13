@@ -401,7 +401,7 @@ descriptions and the optional `sheets` and `charts` subpackages.
 | --- | --- | --- |
 | **O1** (0.18.0) | The shared tools learn kind `xlsx`: `shared.KINDS`; `describe`'s and `find_text`'s descriptions say what a workbook returns and that `range` takes a sheet, range or table; `save_document`'s `format` enum gains `xlsx`, `xlsm`, `xltx`; `new_document`'s `kind` gains `xlsx`. The deck and Word cores are re-counted, since the shared definitions are sent to them too | R6 (describe, find_text); E1 and E9 (save, new) |
 | **O2** (0.20.0) | A session-level **dataset store**: `Session.datasets`, `Call.define_dataset(id, dataset)` and `Call.dataset(address)`; `d:<id>` resolved by the dispatcher in a tool's declared fields (as `Tool.refs` declares ref fields), refused with the known ids as `valid_options`; a dataset records its source document and that document's `version`, outlives `close_document`, and is marked `stale` (never refreshed silently) once its source changes; `Limits.max_datasets` and `Limits.max_dataset_cells`. Format-neutral: a dataset is columns, rows and sources | R11 |
-| **O3** | Consumers of datasets: `edit_chart`'s `add`, `set_values` and `add_series` take `from: "d:<id>"` with a column mapping, and the chart keeps the dataset's sources in its result; pptx-agent's `ppt_add_table`/`ppt_edit_table` and docx-agent's table path take the same. Changes in ooxml-edit, pptx-agent and docx-agent, each held to its own core budget | after 0.1 (it is what makes `d:` cross-format) |
+| **O3** (0.22.0) | Consumers of datasets: `edit_chart`'s `add`, `set_values` and `add_series` take `from: "d:<id>"` with a column mapping, and the chart keeps the dataset's sources in its result; pptx-agent's `ppt_add_table`/`ppt_edit_table` and docx-agent's table path take the same. Changes in ooxml-edit, pptx-agent and docx-agent, each held to its own core budget | after 0.1 (it is what makes `d:` cross-format). Landed in ooxml-edit 0.22.0 (`edit_chart`'s `from`, the `DocumentFormat.datasets` resolver hook and `merge_sources`) and pptx-agent's tables; xlsx-agent's `t:` resolver is X1 below |
 | **O4** | **Lift `charts/workbook.py`'s cell writer** into a public, optional `ooxml_edit.sheets` (moved with its history, `charts.workbook` a re-export), with what a whole workbook needs: a shared-string index built once, booleans, formulas, a style index, `r`-less rows; chart outputs byte-identical in both siblings' suites | E1 |
 | **O5** | A chart host for a workbook: in a `.xlsx` a chart's series point at the host's own sheets, not at an embedded workbook, so `ooxml_edit.charts` writes the host's cells through O4 | E9 |
 | O6 (small) | `ooxml_edit.xml.iterparse_xml`: `iterparse` with `parse_xml`'s safe options, so they live in one place | R3 (until it lands, R3 uses the same options locally, with a test that they match) |
@@ -552,6 +552,31 @@ candidates and none declared, nothing changes. **Budget**: only `xlsx_read`'s ta
 mentions `*`: the loaded core 3,462 estimated, about 5,124 by the offline proxy (was
 3,452, 5,109); every definition 3,684 (guard 3,700). The goldens are unchanged (their
 tables have no key column). The strict check (`strict_problems`) is clean.
+
+*X1 as built* (production feedback, 2026-10-13; the O3 consumer side): **Workbook tables
+as sources for decks and documents.** The xlsx format registers ooxml-edit's resolver hook
+for `t:` (`DocumentFormat.datasets`) and `merge_sources`, so a session holding a workbook
+and a deck fills pptx-agent's `ppt_add_table`/`ppt_edit_table` and the shared `edit_chart`
+straight from a table: `from: "t:Products"` (or `d2/t:Products` with several workbooks).
+`table_dataset` (`Workbook.dataset`) gives the rows: the whole table (`t:Products`,
+`/*`, `/*/*`), one column (`[Price]`, `/*/Price`), a key set's rows in its order, or a row;
+one value is refused as `not_rows` (`invalid_arguments`, the table and its column as the
+options). Values are `xlsx_read`'s: numbers, dates as ISO 8601 text, text, bools, error
+codes, blanks as `None`; issues are not coerced (a number stored as text stays text, and
+`edit_chart` refuses it naming its cell). A column's type label is its values' one type.
+Sources follow X2's rule: by key (`t:Products/SKU-0042/Price`) when the key column --
+declared, or the one detected -- names every row alone, else the cell address; the merger
+X2's derive-from-a-dataset used (`dataset.merge_sources`, factored out of
+`DatasetTable.sources_of`) writes a placed column's as ranges or one key set. The session's
+`Limits.max_dataset_cells` is applied before any cell is read (`too_many_cells`, `limit`;
+the dispatcher checks again after). Nothing is written to the workbook: no undo step, the
+version and the bytes unchanged. The cross-format tests use pptx-agent (and pptx2svg, which
+its layout checks measure with) as test-only dependencies, installed in CI from their
+repositories. docx-agent's tables take the same `from` when they land there. **Budget**: no
+tool definition changes -- the loaded core stays 3,462 estimated, about 5,124 by the
+offline proxy; every definition 3,684 (guard 3,700); `strict_problems` is clean. The
+workbook prompt gains one sentence (a slide or document table or chart takes `t:` or
+`d:`).
 
 ### 0.2 — edit
 

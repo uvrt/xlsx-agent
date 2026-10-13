@@ -5,6 +5,19 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **Tables as sources** (X1; ooxml-edit's O3, whose 0.22.0 is now the floor): the xlsx
+  format registers a `t:` resolver and `merge_sources`, so pptx-agent's `ppt_add_table` and
+  `ppt_edit_table` and the shared `edit_chart` take a workbook's table as their rows
+  (`from: "t:Products"`, `t:Products[Price]`, `t:Products/*/Price`, a key set's rows). Values
+  typed as `xlsx_read` gives them, nothing coerced; each value's source is its cell by key
+  where the table has a key column (as a derive's), else its cell address, and a placed
+  column's are merged into ranges or one key set. One value is refused
+  (`invalid_arguments`, `not_rows`), and a table over `Limits.max_dataset_cells` before a
+  cell is read (`limit`). The workbook is only read. In the library:
+  `Workbook.dataset(address)` (`table_dataset`) and `merge_sources`. No tool definition
+  changes; the workbook prompt says that a slide or document table takes `t:` or `d:`.
+  Tests fill a deck's table and chart from a workbook in one session (pptx-agent and
+  pptx2svg join the `test` extra).
 - **Dates** (X4): `xlsx_derive`'s `first` and `last` (row order, any column);
   `coerce=["date_as_text"]`; a refusal of a column of dates or numbers stored as text names
   the issue, its count and first cells, and the coercion that reads them; `date_as_text`
