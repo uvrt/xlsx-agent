@@ -9,6 +9,15 @@
     wb.sheets        # [Sheet(name='Stock', id=3, state='visible', protected=False, type='worksheet')]
     wb.to_bytes()    # the bytes that were opened, while nothing has changed
 
+and its cells, typed, streamed from the sheet (:mod:`xlsx_agent.read`)::
+
+    wb = Workbook.open("inventory.xlsx", locale=Locale(decimal=",", thousands="."))
+    wb.cell("Stock!F2")                  # Value(sheet='Stock', row=2, column=6, v=12.5, t='number')
+    for row in wb.read("Stock!A:C"):     # whole columns, clipped to the used range; lazy
+        ...
+    wb.used_range("Stock")               # Area A1:H40, computed from the cells
+    wb.problems                          # [Problem(code='no_cached_value', address='Stock!F7', count=1)]
+
 Transitional and strict packages (``purl.oclc.org`` namespaces) are read alike.
 """
 
@@ -16,9 +25,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import BinaryIO
+from typing import BinaryIO, Iterator
 
 from lxml import etree
+from ooxml_edit.charts.workbook import Area
 from ooxml_edit.opc import OpcPackage
 from ooxml_edit.tools.limits import Limits
 from ooxml_edit.xml import Element
@@ -26,6 +36,10 @@ from ooxml_edit.xml import Element
 from .address import (NameNotFound, RangeAddress, SheetRef, TableAddress, nearest,
                       parse_address, quote_sheet)
 from .package import OpenError, open_package, read_source, workbook_part
+from .read.stream import SheetReader, SheetScan, read_area, scan
+from .read.strings import SharedStrings
+from .read.styles import NumberFormat, Styles
+from .read.types import Locale, Problem, Value
 from .xml import iterparse_xml
 
 #: SpreadsheetML's main namespace, transitional and strict.
@@ -73,21 +87,28 @@ class Sheet:
 class Workbook:
     """An open workbook.  Made by :meth:`open`."""
 
-    def __init__(self, package: OpcPackage, *, part: str, kind: str, data: bytes | None = None) -> None:
+    def __init__(self, package: OpcPackage, *, part: str, kind: str, data: bytes | None = None,
+                 locale: Locale | None = None) -> None:
         #: The ooxml-edit package: every part as the bytes that were read.
         self.package = package
         #: The workbook part (``xl/workbook.xml`` in every file Excel writes).
         self.part = part
         #: ``"xlsx"``, ``"xlsm"``, ``"xltx"`` or ``"xltm"``: what the workbook part declares.
         self.kind = kind
+        #: How text is read as numbers and dates, and the language of the language-dependent
+        #: built-in number formats: the caller's (:class:`~xlsx_agent.read.types.Locale`).
+        self.locale = locale or Locale()
         self._data = data
         self._sheets: list[Sheet] | None = None
+        self._strings: SharedStrings | None = None
+        self._styles: Styles | None = None
+        self._scans: dict[str, SheetScan] = {}
 
     # -- lifecycle -------------------------------------------------------------------------
 
     @classmethod
     def open(cls, source: "str | os.PathLike[str] | bytes | BinaryIO | OpcPackage", *,
-             limits: Limits | None = None) -> "Workbook":
+             limits: Limits | None = None, locale: Locale | None = None) -> "Workbook":
         """Open a ``.xlsx``, ``.xlsm``, ``.xltx`` or ``.xltm`` from a path, bytes, a binary
         file or an :class:`~ooxml_edit.opc.OpcPackage`.
 
@@ -101,16 +122,20 @@ class Workbook:
 
         The workbook part and the sheet list are read here, so a part the safe parser
         refuses (an entity bomb, XML that is not well-formed) refuses the workbook now,
-        with the part's name (``code`` ``"damaged"``), rather than at a later read."""
+        with the part's name (``code`` ``"damaged"``), rather than at a later read.
+
+        ``locale`` is how text is read as numbers and dates, and the language the
+        language-dependent built-in number formats are read in; ``Locale()`` (``.`` as the
+        decimal separator) when ``None``.  It is the caller's setting, never a model's."""
         if isinstance(source, OpcPackage):
             part, kind = workbook_part(source)
-            workbook = cls(source, part=part, kind=kind)
+            workbook = cls(source, part=part, kind=kind, locale=locale)
         else:
             limits = limits or Limits()
             data = read_source(source, limits)
             package = open_package(data, limits)
             part, kind = workbook_part(package, source)
-            workbook = cls(package, part=part, kind=kind, data=data)
+            workbook = cls(package, part=part, kind=kind, data=data, locale=locale)
         workbook._sheets = workbook._read_sheets()
         return workbook
 
@@ -200,6 +225,154 @@ class Workbook:
             return False
         return any(_true(node.get(attribute)) for attribute in ("lockStructure", "lockWindows"))
 
+    @property
+    def date1904(self) -> bool:
+        """The workbook uses the 1904 date system (``workbookPr date1904``); else 1900."""
+        node = self._child("workbookPr")
+        return node is not None and _true(node.get("date1904"))
+
+    @property
+    def calculation(self) -> list[str]:
+        """Why cached values may be stale: ``"full_calc_on_load"`` (``calcPr
+        fullCalcOnLoad``: the file asks for a full recalculation when it opens) and
+        ``"manual_calculation"`` (saved with ``calcMode="manual"``)."""
+        node = self._child("calcPr")
+        if node is None:
+            return []
+        out = []
+        if _true(node.get("fullCalcOnLoad")):
+            out.append("full_calc_on_load")
+        if (node.get("calcMode") or "").strip() == "manual":
+            out.append("manual_calculation")
+        return out
+
+    @property
+    def problems(self) -> list[Problem]:
+        """What is odd about the workbook, by code and address, never by content: the
+        :attr:`calculation` flags once each, then, per worksheet, each issue its cells
+        have (``no_cached_value``, ``number_as_text``, ``at_limit``, ``volatile``...) with
+        its first address and count.  Every worksheet is scanned once (streamed) the first
+        time this is asked."""
+        out = [Problem(code) for code in self.calculation]
+        for sheet in self.sheets:
+            if sheet.part is not None and sheet.type in _CELL_SHEETS:
+                out.extend(self.scan(sheet).problems)
+        return out
+
+    # -- cells -----------------------------------------------------------------------------
+
+    def _related(self, kind: str) -> str | None:
+        """The workbook's part related by a relationship whose type ends in ``kind``
+        (``"sharedStrings"``, ``"styles"``): transitional and strict alike."""
+        for rel in self.package.relationships(self.part).values():
+            if not rel.is_external and rel.type.rpartition("/")[2] == kind \
+                    and rel.target_part is not None and self.package.has_part(rel.target_part):
+                return rel.target_part
+        return None
+
+    @property
+    def strings(self) -> SharedStrings:
+        """The shared-string table, read (streamed) the first time a cell needs it."""
+        if self._strings is None:
+            part = self._related("sharedStrings")
+            self._strings = SharedStrings(self.package.read(part) if part else None)
+        return self._strings
+
+    @property
+    def styles(self) -> Styles:
+        """``styles.xml``'s number formats, read once."""
+        if self._styles is None:
+            part = self._related("styles")
+            root = _parsed(part, lambda: self.package.tree(part)) if part else None
+            self._styles = Styles(root, self.locale.language)
+        return self._styles
+
+    def number_format(self, style: int) -> NumberFormat:
+        """The number format of a cell whose ``s`` is ``style`` (a ``cellXfs`` index)."""
+        return self.styles.format(style)
+
+    def _cell_sheet(self, sheet: "Sheet | str | SheetRef") -> Sheet:
+        if isinstance(sheet, Sheet):
+            found = sheet
+        elif isinstance(sheet, SheetRef):
+            found = self.sheet_of(sheet)
+        else:
+            found = self.sheet(sheet)
+        if found.type not in _CELL_SHEETS:
+            raise ValueError(f"sheet {quote_sheet(found.name) if found.name else found.id} "
+                             f"is a {found.type or 'sheet of no known type'} and holds no cells")
+        return found
+
+    def _reader(self, sheet: Sheet, *, formats: bool = False) -> SheetReader:
+        data = self.package.read(sheet.part) if sheet.part is not None else None
+        name = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
+        return SheetReader(data or b"", sheet=name, hidden=not sheet.visible,
+                           strings=self.strings, styles=self.styles, date1904=self.date1904,
+                           locale=self.locale, formats=formats)
+
+    def _stream(self, sheet: Sheet, run):
+        """``run()`` over a sheet's part, with the parser's refusal turned into
+        :class:`OpenError`.  ``run`` may be a generator function: its items are passed on."""
+        return _guarded(sheet.part or f"sheet #{sheet.id}", run)
+
+    def scan(self, sheet: "Sheet | str | SheetRef") -> SheetScan:
+        """One full streamed pass over a sheet, done once and kept: the used range
+        computed from the cells, merges, ordering and the issues met
+        (:class:`~xlsx_agent.read.stream.SheetScan`)."""
+        sheet = self._cell_sheet(sheet)
+        key = sheet.part or f"#{sheet.id}"
+        if key not in self._scans:
+            self._scans[key] = _parsed(key, lambda: scan(self._reader(sheet)))
+        return self._scans[key]
+
+    def used_range(self, sheet: "Sheet | str | SheetRef") -> Area | None:
+        """The used range: the smallest area holding every cell with a value or a formula,
+        computed from the cells (a ``dimension`` is never trusted); ``None`` when there
+        are none."""
+        return self.scan(sheet).used
+
+    def merges(self, sheet: "Sheet | str | SheetRef") -> list[Area]:
+        """The sheet's merged areas, in the order the file gives them."""
+        return list(self.scan(sheet).merges)
+
+    def cells(self, sheet: "Sheet | str | SheetRef", *, formats: bool = False) -> Iterator[Value]:
+        """Every cell the sheet stores, typed, in the order of the file, streamed (a cell
+        with only a style comes as ``blank``).  ``formats`` puts each value's format code on
+        it."""
+        sheet = self._cell_sheet(sheet)
+        return self._stream(sheet, lambda: self._reader(sheet, formats=formats).values())
+
+    def read(self, address: "str | RangeAddress", *, formats: bool = False) -> Iterator[list[Value]]:
+        """The rows of a cell or range (``Stock!A1:H40``, ``#3!B2``), each a list of
+        values from the range's first column to its last, blanks filled in; whole columns
+        and rows (``Stock!A:A``, ``Stock!2:5``) clipped to the used range.
+
+        Lazy: rows are read as they are asked for, and the pass stops after the range's
+        last row.  The sheet is scanned once first (:meth:`scan`: the used range, and
+        whether its rows are in order; a sheet whose rows are not has the range's cells
+        gathered before the first row is given).  A table, dataset or ref address is not
+        a range: ``ValueError``."""
+        if isinstance(address, str):
+            address = parse_address(address)
+        if not isinstance(address, RangeAddress):
+            raise ValueError(f"a {address.kind} address is read from a later milestone; "
+                             "give a cell or range, as Stock!A1:H40")
+        sheet = self._cell_sheet(self.sheet_of(address))
+        found = self.scan(sheet)
+        area = address.clipped(found.used)
+        if area is None:
+            return iter(())
+        return self._stream(sheet, lambda: read_area(self._reader(sheet, formats=formats),
+                                                     area, found.ordered))
+
+    def cell(self, address: "str | RangeAddress", *, formats: bool = False) -> Value:
+        """One cell's value (``Stock!F2``); ``blank`` when the sheet stores nothing there."""
+        if isinstance(address, str):
+            address = parse_address(address)
+        if not isinstance(address, RangeAddress) or address.kind != "cell":
+            raise ValueError("a cell address names one cell, as Stock!F2")
+        return next(iter(self.read(address, formats=formats)))[0]
+
     def _read_sheets(self) -> list[Sheet]:
         holder = self._child("sheets")
         if holder is None:
@@ -230,6 +403,17 @@ class Workbook:
             return False  # the element's name is spelt out in any 8-bit encoding
         attribute = "content" if kind == "chartsheet" else "sheet"
         return _parsed(part, lambda: _scan_protection(data, attribute))
+
+
+#: The sheet types that hold cells (a chart sheet and a dialog sheet hold none).
+_CELL_SHEETS = ("worksheet", "macrosheet")
+
+
+def _guarded(part: str, run) -> Iterator:
+    try:
+        yield from run()
+    except etree.XMLSyntaxError:
+        raise OpenError("damaged", f"{part} cannot be parsed as safe, well-formed XML") from None
 
 
 def _scan_protection(data: bytes, attribute: str) -> bool:
