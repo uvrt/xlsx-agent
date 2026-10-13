@@ -16,16 +16,18 @@ the rounding, the counts (``matched``, ``used``, ``groups``), what was left out 
 (``excluded`` per measure, ``left_out`` per column, by reason, with first addresses),
 ``coerced``, ``not_compared``, ``hidden``, the ``totals`` shares are fractions of, the
 ``pivot_columns``; and its first rows, each value typed with its address
-(``d:by_region/#2/total``) and its sources -- **at most** :data:`SOURCES_SHOWN` **ranges a
-value**, the rest counted in ``more`` -- within ``Limits.max_list_items`` rows and
+(``d:by_region/#2/total``) and its sources -- by key when the table has a key column
+(``t:Sales/{S-01,S-04}/Amount``), else ranges (:mod:`xlsx_agent.derive`) -- **at most**
+:data:`SOURCES_SHOWN` **a value**, counted in units (a range, or one key of a key set),
+the rest counted in ``more`` -- within ``Limits.max_list_items`` rows and
 ``Limits.max_result_chars``.  ``cut`` says what was left for ``xlsx_read``, and ``next``
 gives the target and cursor that continue it there.
 
 **xlsx_read of a dataset** (:func:`read_dataset`): ``d:by_region`` (its rows),
 ``d:by_region[total]``, ``d:by_region/#2``, ``d:by_region/North`` (one key column) and
 ``d:by_region/North/total``, paged as cells are, with ``sources`` adding each value's
-first :data:`SOURCES_SHOWN` ranges; one value with ``sources`` pages through all of its
-ranges instead.  A dataset outlives its workbook: no ``doc`` is needed.  ``dataset`` says
+first :data:`SOURCES_SHOWN` units; one value with ``sources`` pages through all of its
+units instead, ``limit`` a page, a page's keys of one column written as one key set.  A dataset outlives its workbook: no ``doc`` is needed.  ``dataset`` says
 where it came from and whether it is ``stale`` (its source has changed since; it is never
 refreshed) or its source ``closed``; the toolbox adds a warning when it is stale.
 
@@ -41,14 +43,14 @@ from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, in
                               string, tool)
 
 from ..address import DatasetAddress, parse_address
-from ..dataset import DatasetTable
+from ..dataset import DatasetTable, cut_sources, join_units, source_units
 from ..derive import COERCIONS, FUNCTIONS, MAX_DIGITS, MAX_ROWS, derive
 from .docformat import KIND, handler
 from .query import SORT, WHERE
 from .read import _MARGIN, READ_ROWS, _Annotations, _cursor, _page, _read_cursor, _size
 
-#: The most source ranges a value shows in a result; the rest are counted (ROADMAP.md,
-#: "Design rules", 2).
+#: The most source units (a range, or one key of a key set) a value shows in a result; the
+#: rest are counted (ROADMAP.md, "Design rules", 2).
 SOURCES_SHOWN = 8
 
 #: How long a text value in a page of a dataset may be before it is cut.
@@ -208,12 +210,12 @@ def _derived_result(call: Any, name: str, derived: Any, table: DatasetTable) -> 
 
 
 def _shown(sourced: dict[str, Any]) -> dict[str, Any]:
-    """A sourced value's dict with :data:`SOURCES_SHOWN` ranges at most, the rest
+    """A sourced value's dict with :data:`SOURCES_SHOWN` units at most, the rest
     counted."""
-    sources = sourced.get("sources", [])
-    if len(sources) > SOURCES_SHOWN:
-        sourced["sources"] = sources[:SOURCES_SHOWN]
-        sourced["more"] = len(sources) - SOURCES_SHOWN
+    shown, more = cut_sources(sourced.get("sources", []), SOURCES_SHOWN)
+    if more:
+        sourced["sources"] = list(shown)
+        sourced["more"] = more
     return sourced
 
 
@@ -288,24 +290,30 @@ def read_dataset(call: Any, target: str, *, sources: bool, limit: int | None,
 
 def _value_sources(table: DatasetTable, selection: Any, data: dict[str, Any], chars: int,
                    limit: int, cursor: str | None) -> Result:
-    """One value and its sources, every one of them, paged ``limit`` at a time."""
+    """One value and its sources, every one of them, paged ``limit`` units at a time (a
+    range, or one key of a key set; a page's keys of one column joined in one key set)."""
     position, offset = selection.first, selection.offsets[0]
-    every = table.cell_sources(position, offset)
+    every = source_units(table.cell_sources(position, offset))
     total = len(every)
     token = selection.text + " sources"
     start, _ = _read_cursor(cursor, token, max(total, 1), 1)
     data["value"] = table.value(position, offset).as_dict()
     budget = chars - _MARGIN - _size({**data, "cut": _CUT_ROOM}) - 80
-    shown: list[str] = []
+    taken = 0
     used = 0
-    for text in every[start:start + limit]:
-        size = _size(text) + 1
-        if shown and used + size > budget:
+    for column, text in every[start:start + limit]:
+        # a key adds itself and a comma; a range or a new key set its whole text
+        size = _size(text) + 1 if column is None or taken == 0 \
+            or every[start + taken - 1][0] != column else len(text) + 3
+        if column is not None and (taken == 0 or every[start + taken - 1][0] != column):
+            size += _size(column.text) + 4
+        if taken and used + size > budget:
             break
-        shown.append(text)
+        taken += 1
         used += size
+    shown = join_units(every[start:start + taken])
     data["sources"] = shown
-    end = start + len(shown)
+    end = start + taken
     next_cursor = None
     if end < total:
         data["cut"] = {"sources": total - end}

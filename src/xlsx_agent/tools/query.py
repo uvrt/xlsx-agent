@@ -77,8 +77,7 @@ def xlsx_query(call: Any, doc: str, table: str, columns: list[str] | None = None
     """``xlsx_query``'s workbook handler (see the module's notes)."""
     workbook = call.document
     address = parse_address(table)
-    if not isinstance(address, TableAddress) or address.key is not None \
-            or address.position is not None or address.column is not None:
+    if not isinstance(address, TableAddress) or not address.is_whole:
         raise ToolError("invalid_arguments", "xlsx_query takes a table or region (t:Products); "
                         "name its columns in columns", field="table")
     region = workbook.region(address)

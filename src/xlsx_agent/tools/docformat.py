@@ -84,6 +84,8 @@ REGION_CODES: dict[str, str] = {
     "position_out_of_range": "not_found",
     "no_key_column": "refused",         # the candidates are the valid options
     "duplicate_key": "ambiguous",       # the rows are the valid options, by position
+    "no_key": "refused",                # a row whose key cell is no key; by position
+    "no_key_set": "invalid_arguments",  # a dataset's rows are named one by one
     "header_unclear": "refused",        # declare the region
     "no_header": "not_found",
     "bad_table": "refused",

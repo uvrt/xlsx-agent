@@ -274,8 +274,7 @@ def _pairs(a: "Workbook", b: "Workbook", tables: Any
 def _region(workbook: "Workbook", address: "str | TableAddress") -> Region:
     if isinstance(address, str):
         address = TableAddress.parse(address)
-    if not isinstance(address, TableAddress) or address.key is not None \
-            or address.position is not None or address.column is not None:
+    if not isinstance(address, TableAddress) or not address.is_whole:
         raise ValueError("compare takes tables or regions (t:Products), not their columns "
                          "or rows")
     return workbook.region(address)

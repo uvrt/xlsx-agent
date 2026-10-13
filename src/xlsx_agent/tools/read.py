@@ -90,8 +90,8 @@ CURSOR = string("next_cursor of the previous page, with the same target.", optio
       {"doc": string("Document id; not needed for a dataset (d:).", optional=True),
        "target": string("A cell or range (Stock!A1:H40, Stock!A:C), table or region "
                         "(t:Products: its data rows), column (t:Products[Price]), row "
-                        "(t:Products/#5, t:Products/SKU-0042) or value; or a dataset "
-                        "(d:by_region), as tables."),
+                        "(t:Products/#5, t:Products/SKU-0042) or value; * is every row "
+                        "(t:Products/*/Price); or a dataset (d:by_region), as tables."),
        "formats": boolean("Add format, the number format code. Default false.", optional=True),
        "formulas": boolean("Add f, the formula text. Default false.", optional=True),
        "comments": boolean("Add comment (author, text). Default false.", optional=True),
@@ -131,6 +131,9 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     area = found.area
     total = 0 if area is None else area.last.row - area.first.row + 1
     width = 0 if area is None else area.last.column - area.first.column + 1
+    if found.rows is not None:          # a key set: its rows, in its order
+        total = len(found.rows)
+        width = found.rows[0].last.column - found.rows[0].first.column + 1
     start_row, start_column = _read_cursor(cursor, found.text, total, width)
 
     data: dict[str, Any] = {"target": found.text}
@@ -146,32 +149,45 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
         else:  # a region too wide for its names on every page: describe and xlsx_profile
             names_cut = len(found.columns)
     data["rows"] = []
-    if area is None:
+    if area is None and not found.rows:
         return Result(summary=f"{found.label}: no cells to read", data=data, total=0)
 
-    top = area.first.row + start_row
-    bottom = min(area.last.row, top + rows_limit - 1)
-    page = Area(Cell(top, area.first.column), Cell(bottom, area.last.column))
     sheet = found.sheet_object
+    if found.rows is not None:
+        pages = found.rows[start_row:start_row + rows_limit]
+        rows = workbook._read_rows([RangeAddress(found.ref, a) for a in pages],
+                                   formats=formats)
+        more = start_row + len(pages) < total
+        single = False
+    else:
+        top = area.first.row + start_row
+        bottom = min(area.last.row, top + rows_limit - 1)
+        pages = [Area(Cell(top, area.first.column), Cell(bottom, area.last.column))]
+        rows = workbook.read(RangeAddress(found.ref, pages[0]), formats=formats)
+        more = bottom < area.last.row
+        single = area.first == area.last
     annotate = _Annotations(workbook, sheet, comments=comments, hyperlinks=hyperlinks)
     # What lies over the page besides its cells, as wide as the page can be: its length is
     # kept out of the budget for the cells, and only shrinks once the page is known.
-    extras = _extras(workbook, sheet, found.ref, page, merges)
+    extras = _extras(workbook, sheet, found.ref, pages, merges)
     budget = chars - _MARGIN - _size({**data, **extras, "cut": _CUT_ROOM}) \
         - len(_summary(found.label, 1, total, total, True))
-    single = area.first == area.last
     cap = None if single else TEXT_SHOWN
 
-    shown, cut_text, stop, full = _page(
-        workbook.read(RangeAddress(found.ref, page), formats=formats), start_row, start_column,
-        budget, annotate, formulas, cap)
-    if stop is None and bottom < area.last.row:
-        stop = (bottom - area.first.row + 1, 0)
+    shown, cut_text, stop, full = _page(rows, start_row, start_column, budget, annotate,
+                                        formulas, cap)
+    if stop is None and more:
+        stop = (start_row + (len(pages) if found.rows is not None
+                             else bottom - top + 1), 0)
 
     data["rows"] = shown
     # The rows given, each with one cell at least: from the page's first, one after another.
-    covered = Area(Cell(top, area.first.column),
-                   Cell(top + max(len(shown), 1) - 1, area.last.column))
+    given = max(len(shown), 1)
+    if found.rows is not None:
+        covered = pages[:given]
+    else:
+        covered = [Area(Cell(top, area.first.column),
+                        Cell(top + given - 1, area.last.column))]
     data.update(_extras(workbook, sheet, found.ref, covered, merges))
     cut: dict[str, Any] = {}
     next_cursor = None
@@ -235,11 +251,14 @@ class _Found:
     without a key (cell content: never in a summary, which the call log keeps); ``ref`` the
     sheet (by name); ``sheet`` both its forms, as a result names a sheet; ``area`` the
     cells to read (``None``: none); ``requested`` the rectangle asked for, when it was
-    clipped; ``columns`` the region's column names, for a ``t:`` address."""
+    clipped; ``columns`` the region's column names, for a ``t:`` address; ``rows`` a key
+    set's rows, one area each, in its order (``area`` is then ``None``)."""
 
     def __init__(self, text: str, ref: SheetRef, sheet: Any, sheet_object: Any,
                  area: Area | None, requested: str | None = None,
-                 columns: list[str] | None = None, label: str | None = None) -> None:
+                 columns: list[str] | None = None, label: str | None = None,
+                 rows: list[Area] | None = None) -> None:
+        self.rows = rows
         self.text = text
         self.label = label or text
         self.ref = ref
@@ -255,7 +274,8 @@ def _cells(workbook: Any, target: str, key_column: str | None) -> _Found:
     if isinstance(address, RefAddress):
         raise ToolError("not_found", f"no call has defined {address.text}", field="target")
     if key_column is not None and not (isinstance(address, TableAddress)
-                                       and address.key is not None):
+                                       and (address.key is not None
+                                            or address.keys is not None)):
         raise ToolError("invalid_arguments", "key_column is for a row or value by key "
                         "(t:Products/SKU-0042)", field="key_column")
     if isinstance(address, TableAddress):
@@ -267,8 +287,12 @@ def _cells(workbook: Any, target: str, key_column: str | None) -> _Found:
         label = selection.address
         if address.key is not None:
             label = f"a {selection.kind} by key of {region.address.text}"
+        rows = None
+        if address.keys is not None:
+            label = f"{len(address.keys)} {selection.kind} by key of {region.address.text}"
+            rows = [a.area for a in selection.areas]
         return _Found(selection.address, region.range.sheet, _forms(workbook, sheet), sheet,
-                      area, columns=columns, label=label)
+                      area, columns=columns, label=label, rows=rows)
     sheet = _sheet(workbook, workbook.sheet_of(address))
     ref = SheetRef(name=sheet.name) if sheet.name else SheetRef(id=sheet.id)
     area = address.area
@@ -386,14 +410,18 @@ def _fit(value: Value, annotate: _Annotations, formulas: bool,
         cap = cap // 2 if cap > 64 else 0
 
 
-def _extras(workbook: Any, sheet: Any, ref: SheetRef, area: Area, merges: bool) -> dict:
-    """The merged areas (when asked) and array blocks that overlap ``area``."""
+def _extras(workbook: Any, sheet: Any, ref: SheetRef, areas: list[Area], merges: bool) -> dict:
+    """The merged areas (when asked) and array blocks that overlap any of ``areas``."""
     out: dict[str, Any] = {}
+
+    def over(block: Area) -> bool:
+        return any(_overlaps(block, area) for area in areas)
+
     if merges:
-        found = [RangeAddress(ref, m).text for m in workbook.merges(sheet) if _overlaps(m, area)]
+        found = [RangeAddress(ref, m).text for m in workbook.merges(sheet) if over(m)]
         if found:
             out["merges"] = found
-    blocks = [RangeAddress(ref, b).text for b in workbook.arrays(sheet) if _overlaps(b, area)]
+    blocks = [RangeAddress(ref, b).text for b in workbook.arrays(sheet) if over(b)]
     if blocks:
         out["arrays"] = blocks
     return out
@@ -434,8 +462,8 @@ def xlsx_profile(call: Any, doc: str, target: str, columns: list[str] | None = N
     """``xlsx_profile``'s workbook handler (see the module's notes)."""
     workbook = call.document
     address = parse_address(target)
-    if not isinstance(address, TableAddress) or address.key is not None \
-            or address.position is not None:
+    if not isinstance(address, TableAddress) or address.kind not in ("table", "region",
+                                                                     "column"):
         raise ToolError("invalid_arguments", "xlsx_profile takes a table or region (t:Products) "
                         "or one of its columns (t:Products[Price])", field="target")
     if address.column is not None and columns:

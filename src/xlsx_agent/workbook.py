@@ -27,6 +27,7 @@ address resolves against::
     wb.names                             # [DefinedName(name='Prices', scope=None, ...)]
     wb.resolve("t:Products/SKU-0042/Price", key="SKU").range    # Stock!C7
     wb.read("t:Products[Price]")         # the column's data cells, as any range is read
+    wb.expand("t:Products/*/Price")      # ['t:Products/SKU-0001/Price', ...]: by key
     wb.declare_region("Returns", "Returns!A3:F200", header_rows=2, headers=[...])
 
 and what each column holds (:mod:`xlsx_agent.profile`), and the whole workbook at a
@@ -62,7 +63,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, BinaryIO, Iterator, Mapping, Sequence
 
 from lxml import etree
-from ooxml_edit.charts.workbook import Area
+from ooxml_edit.charts.workbook import Area, Cell
 from ooxml_edit.opc import OpcPackage
 from ooxml_edit.tools import Dataset
 from ooxml_edit.tools.limits import Limits
@@ -386,6 +387,25 @@ class Workbook:
         :mod:`xlsx_agent.read.regions` for how keys, columns and names are matched."""
         return self.regions.resolve(address, key=key)
 
+    def expand(self, address: "str | TableAddress", *, key: str | None = None) -> list[str]:
+        """What a ``t:`` address covers, one address by key per cell (per row, without a
+        column), in the table's row order: ``t:Products/*/Price`` gives
+        ``t:Products/SKU-0001/Price``, ... -- a coverage selector, for checking that a set
+        of addresses (a derived value's sources, say, which name cells by key) holds every
+        one::
+
+            required = set(wb.expand("t:Products/*/Price"))
+            used = {a for s in sources for a in wb.expand(s)}
+            missing = required - used
+
+        ``t:Products/*/*`` gives every value, ``t:Products/SKU-0042/*`` each of one row's,
+        a key set each of its own, ``t:Products`` and ``t:Products/*`` every row.  The keys
+        are the key column's (``key``, else the region's own); a row without a key, or with
+        one another row shares, is refused (``no_key``, ``duplicate_key``), never named by
+        a key that would not name it alone.  See
+        :meth:`~xlsx_agent.read.regions.Regions.expand`."""
+        return [a.text for a in self.regions.expand(address, key=key)]
+
     def declare_region(self, name: str, where: "str | RangeAddress", *, header_rows: int = 1,
                        headers: "list[str] | None" = None, key: str | None = None) -> Region:
         """Declare a region over a range (``Returns!A3:F200``), usable as ``t:<name>`` from
@@ -398,6 +418,15 @@ class Workbook:
         it."""
         return self.regions.declare(name, where, header_rows=header_rows, headers=headers,
                                     key=key)
+
+    def declare_key(self, address: "str | TableAddress", column: str) -> Region:
+        """Name ``column`` the key column of a table, name or region (``t:Products``) from
+        then on: rows by key look their keys up in it, :meth:`expand` names cells by it,
+        and a derived value's sources are written by it (``t:Products/{SKU-0003,
+        SKU-0007}/Price``) -- the caller's setting, for a table with several columns that
+        could be its key, or none that is.  A region declared with ``key=`` keeps its own.
+        See :meth:`~xlsx_agent.read.regions.Regions.declare_key`."""
+        return self.regions.declare_key(address, column)
 
     def detect_region(self, where: "str | RangeAddress | TableAddress") -> Region:
         """The region whose single-row header starts at a cell (``t:Stock!A1``); see
@@ -415,8 +444,7 @@ class Workbook:
         address that names no column, or a row or value of one."""
         if isinstance(address, str):
             address = TableAddress.parse(address)
-        if not isinstance(address, TableAddress) or address.column is None \
-                or address.key is not None or address.position is not None:
+        if not isinstance(address, TableAddress) or address.kind != "column":
             raise ValueError("a column address names one column of a table, as t:Products[Price]")
         region = self.table(address.whole, key=key)
         return Column(self, region, address.column)
@@ -661,7 +689,8 @@ class Workbook:
         values from the range's first column to its last, blanks filled in; whole columns
         and rows (``Stock!A:A``, ``Stock!2:5``) clipped to the used range.  A ``t:``
         address is read as the cells :meth:`resolve` gives it (a table's data rows, a
-        column's, a row, a value; nothing when it has no data rows).
+        column's, a row, a value; nothing when it has no data rows); a key set's rows
+        in the set's order (``t:Products/{SKU-0042,SKU-0007}/Price``).
 
         Lazy: rows are read as they are asked for, and the pass stops after the range's
         last row.  The sheet is scanned once first (:meth:`scan`: the used range, and
@@ -677,7 +706,10 @@ class Workbook:
         if isinstance(address, str):
             address = parse_address(address)
         if isinstance(address, TableAddress):
-            selected = self.resolve(address).range
+            selection = self.resolve(address)
+            if selection.positions:
+                return self._read_rows(selection.areas, formats=formats, columns=columns)
+            selected = selection.range
             if selected is None:
                 return iter(())
             address = selected
@@ -692,6 +724,20 @@ class Workbook:
         return self._stream(sheet, lambda: read_area(self._reader(sheet, formats=formats),
                                                      area, found.ordered, found.index,
                                                      columns))
+
+    def _read_rows(self, areas: "list[RangeAddress]", *, formats: bool = False,
+                   columns: "set[int] | None" = None) -> Iterator[list[Value]]:
+        """The rows of ``areas`` (one row each, on one sheet, alike in columns), in their
+        order: one read through the rows they span, keeping theirs."""
+        wanted = {a.area.first.row for a in areas}
+        first, last = areas[0].area.first, areas[0].area.last
+        span = RangeAddress(areas[0].sheet, Area(Cell(min(wanted), first.column),
+                                                 Cell(max(wanted), last.column)))
+        found = {}
+        for row in self._read(span, formats=formats, columns=columns):
+            if row and row[0].row in wanted:
+                found[row[0].row] = row
+        return iter([found[a.area.first.row] for a in areas])
 
     def _rows_apart(self, address: RangeAddress) -> bool:
         """Whether rows of the range's sheet far apart are read as well by a read for each

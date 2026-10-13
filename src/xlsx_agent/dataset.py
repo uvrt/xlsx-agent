@@ -5,14 +5,18 @@
                    measures=[{"fn": "sum", "column": "Amount", "as": "total"}], id="by_region")
     data = ds.dataset()            # ooxml_edit.tools.Dataset: columns, rows, sources, types
     data.rows                      # (("North", 3.68), ("South", 0.13), ...): rounded
-    data.sources[0][1]             # ("Sales!C2:C3", "Sales!C5"): the cells of North's total
+    data.sources[0][1]             # ("Sales!C2:C3", "Sales!C5"): the cells of North's total;
+                                   # by key when the table has a key column:
+                                   # ("t:Sales/{S-01,S-02,S-04}/Amount",)
     table = DatasetTable(data, "by_region")
     table.read("d:by_region[total]")          # [[DatasetValue(d:by_region/#1/total)], ...]
     wb.derive(ds, measures=[{"fn": "max", "column": "total"}])   # from the dataset
 
 **What a dataset is.**  ooxml-edit's :class:`~ooxml_edit.tools.Dataset` (O2): columns,
-rows, and beside every value its sources as address strings (``Sales!C2:C3``), which the
-tool layer stores and hands on and never reads.  :func:`as_dataset` makes one of a
+rows, and beside every value its sources as address strings -- by key
+(``t:Sales/{S-01,S-02}/Amount``) when the table has a key column, else ranges
+(``Sales!C2:C3``; :mod:`xlsx_agent.derive`) -- which the tool layer stores and hands on and
+never reads.  :func:`as_dataset` makes one of a
 :class:`~xlsx_agent.derive.Derived`: the rows as reported (rounded), the key columns as
 ``keys``, each column's type as its label, and the :class:`Derived` itself as ``detail``,
 where the unrounded values stay (ROADMAP.md, "Design rules", 3).  In a tool session it is
@@ -34,8 +38,14 @@ ISO text is a date), and filters, groups, measures, bins, pivots and sorts work 
 sheet.  A :class:`Derived`'s **unrounded** values are measured, so rounding happens once,
 at the end.  **Provenance carries through**: a value derived from a dataset has as its
 sources the cells the dataset's values came from -- the original cells, merged into
-compact ranges again -- not the dataset's positions; ``count`` is how many of the
-dataset's values it used, and what was left out is named by their ``d:`` addresses.
+compact ranges again, or the keys of one table's column gathered into one key set, in the
+order first met -- not the dataset's positions; ``count`` is how many of the dataset's
+values it used, and what was left out is named by their ``d:`` addresses.
+
+**Source units.**  A range is one source and a key set one per key: what a result shows
+of a value's sources is its first :data:`~xlsx_agent.tools.derive.SOURCES_SHOWN` units
+(:func:`cut_sources`), ``more`` counting the rest, and a read of one value's sources pages
+through them by unit, a page's keys of one column gathered into one key set again.
 """
 
 from __future__ import annotations
@@ -47,7 +57,7 @@ from ooxml_edit.charts.workbook import Area, Cell
 from ooxml_edit.tools import DATASET_PREFIX, Dataset
 
 from .address import (AddressError, DatasetAddress, NameNotFound, RangeAddress, SheetRef,
-                      nearest, parse_address)
+                      TableAddress, nearest, parse_address)
 from .read.regions import RegionError, key_text
 from .read.types import TYPES, Value
 
@@ -64,7 +74,7 @@ class DatasetValue(Value):
     ``row`` its position (from 1), ``column`` its column's (from 1), ``name`` the column's
     name, ``dataset`` the dataset's id; :attr:`a` its address, ``d:by_region/#2/total``.
     ``sources``, when asked for, the first of the cells it came from, and ``more`` how many
-    others there are."""
+    others there are (in units: a range, or one key of a key set; :func:`cut_sources`)."""
 
     dataset: str = UNNAMED
     name: str = ""
@@ -188,9 +198,7 @@ class DatasetTable:
                            v=v, t=_type(v, self.labels[offset]), dataset=self.id,
                            name=self.columns[offset])
         if sources is not None:
-            given = self.cell_sources(position, offset)
-            out.sources = given[:sources]
-            out.more = max(len(given) - sources, 0)
+            out.sources, out.more = cut_sources(self.cell_sources(position, offset), sources)
         return out
 
     def cell_sources(self, position: int, offset: int) -> tuple[str, ...]:
@@ -204,15 +212,18 @@ class DatasetTable:
         for position in range(1, self.rows + 1):
             yield [self.value(position, o, measured=True) for o in range(width)]
 
-    def sources_of(self, offset: int, runs: Sequence[int]) -> tuple[RangeAddress | str, ...]:
+    def sources_of(self, offset: int, runs: Sequence[int]
+                   ) -> "tuple[RangeAddress | TableAddress | str, ...]":
         """The cells behind the values of column ``offset`` in the rows ``runs`` (first
         and last positions, flat): every source of each, a column's cells merged into
-        compact ranges (a run of rows one range, as a derive writes them), in the order
-        first met; a source that is not one column's cells is kept as it is, once."""
+        compact ranges (a run of rows one range, as a derive writes them), and the keys
+        of one table's column into one key set, each in the order first met; a source that
+        is neither is kept as it is, once."""
         held = self.dataset.sources
         if held is None:
             return ()
         spans: dict[tuple[SheetRef, int], list[tuple[int, int]]] = {}
+        keyed: dict[TableAddress, dict[str, None]] = {}
         other: dict[Any, None] = {}
         for i in range(0, len(runs), 2):
             for position in range(runs[i], runs[i + 1] + 1):
@@ -220,6 +231,10 @@ class DatasetTable:
                     area = _column_area(text)
                     if area is None:
                         other.setdefault(text, None)
+                    elif isinstance(area[0], TableAddress):
+                        group = keyed.setdefault(area[0], {})
+                        for key in area[1]:
+                            group.setdefault(key, None)
                     else:
                         sheet, column, first, last = area
                         spans.setdefault((sheet, column), []).append((first, last))
@@ -234,6 +249,7 @@ class DatasetTable:
                     merged.append([first, last])
             out.extend(RangeAddress(sheet, Area(Cell(a, column), Cell(b, column)))
                        for a, b in merged)
+        out.extend(_by_keys(column, list(keys)) for column, keys in keyed.items())
         out.extend(other)
         return tuple(out)
 
@@ -243,8 +259,10 @@ class DatasetTable:
         """What a ``d:`` address names here (see the module's notes):
         :class:`~xlsx_agent.address.NameNotFound` for an unknown column or key;
         :class:`~xlsx_agent.read.regions.RegionError` for a position past the end
-        (``position_out_of_range``), a key without one key column (``no_key_column``) or a
-        key two rows share (``duplicate_key``)."""
+        (``position_out_of_range``), a key without one key column (``no_key_column``), a
+        key two rows share (``duplicate_key``) or a key set (``no_key_set``).  ``*`` is
+        every row (``d:by_region/*/total``, the column) or every column
+        (``d:by_region/#2/*``, the row)."""
         if isinstance(address, str):
             parsed = parse_address(address)
             if not isinstance(parsed, DatasetAddress):
@@ -256,8 +274,13 @@ class DatasetTable:
             offsets = (self.column_index(address.column),)
         column = self.columns[offsets[0]] if address.column is not None else None
         whole = DatasetAddress(self.id)
+        if address.keys is not None:
+            raise RegionError("no_key_set", f"a dataset's rows are named one by one, by key "
+                              f"or by position ({whole.text}/#1); a key set is for tables",
+                              address=whole.text, valid_options=[f"{whole.text}/#1"])
+        any_ = {"any_row": address.any_row, "any_column": address.any_column}
         if address.key is None and address.position is None:
-            text = DatasetAddress(self.id, column=column).text
+            text = DatasetAddress(self.id, column=column, **any_).text
             return DatasetSelection(text, address.kind, 1, self.rows, offsets)
         if address.position is not None:
             position = address.position
@@ -266,7 +289,8 @@ class DatasetTable:
                                   "rows", address=whole.text)
         else:
             position = self._find_key(address.key)
-        text = DatasetAddress(self.id, column=column, position=position).text
+        text = DatasetAddress(self.id, column=column, position=position,
+                              any_column=address.any_column).text
         return DatasetSelection(text, address.kind, position, position, offsets)
 
     def _find_key(self, wanted: str) -> int:
@@ -295,6 +319,45 @@ class DatasetTable:
                 for p in range(selection.first, selection.last + 1)]
 
 
+def source_units(sources: Sequence[str]) -> list[tuple[Any, str]]:
+    """Sources as units: a key set's keys one by one, as ``(column, key)`` with the
+    table's column address; any other source as ``(None, text)``."""
+    out: list[tuple[Any, str]] = []
+    for text in sources:
+        area = _column_area(text)
+        if area is not None and isinstance(area[0], TableAddress):
+            out.extend((area[0], key) for key in area[1])
+        else:
+            out.append((None, text))
+    return out
+
+
+def join_units(units: Sequence[tuple[Any, str]]) -> list[str]:
+    """Units (:func:`source_units`) as sources again: a run of keys of one column as one
+    key set."""
+    out: list[str] = []
+    column, keys = None, []
+    for unit_column, text in list(units) + [(None, None)]:
+        if unit_column is not None and unit_column == column:
+            keys.append(text)
+            continue
+        if column is not None:
+            out.append(_by_keys(column, keys).text)
+        column, keys = unit_column, [text]
+        if unit_column is None and text is not None:
+            out.append(text)
+    return out
+
+
+def cut_sources(sources: Sequence[str], shown: int) -> tuple[tuple[str, ...], int]:
+    """The first ``shown`` units of ``sources`` (a range, or one key of a key set) as
+    sources, and how many units are left."""
+    units = source_units(sources)
+    if len(units) <= shown:
+        return tuple(sources), 0
+    return tuple(join_units(units[:shown])), len(units) - shown
+
+
 def _type(v: Any, label: str | None) -> str:
     """A dataset value's type: its column's label when the value can be one, else its
     own (a bool, a number, text, nothing)."""
@@ -312,9 +375,21 @@ def _type(v: Any, label: str | None) -> str:
 _AREAS: dict[str, Any] = {}
 
 
-def _column_area(text: str) -> tuple[SheetRef, int, int, int] | None:
+def _by_keys(column: TableAddress, keys: list[str]) -> TableAddress:
+    """``column`` (a table's column address, ``t:Sales[Amount]``) as the values of
+    ``keys``: one key, or a key set."""
+    if len(keys) == 1:
+        return TableAddress(name=column.name, region=column.region, scope=column.scope,
+                            key=keys[0], column=column.column)
+    return TableAddress(name=column.name, region=column.region, scope=column.scope,
+                        keys=tuple(keys), column=column.column)
+
+
+def _column_area(text: str) -> tuple | None:
     """``text`` as a sheet, a column and its first and last rows, when it names cells of
-    one column (``Sales!C2:C9``); ``None`` otherwise."""
+    one column (``Sales!C2:C9``); as a table's column (``t:Sales[Amount]``) and the keys
+    of its rows, when it names values by key (``t:Sales/{S-01,S-02}/Amount``); ``None``
+    otherwise."""
     if text in _AREAS:
         return _AREAS[text]
     found = None
@@ -326,6 +401,11 @@ def _column_area(text: str) -> tuple[SheetRef, int, int, int] | None:
             and address.area.first.column == address.area.last.column:
         area = address.area
         found = (address.sheet, area.first.column, area.first.row, area.last.row)
+    elif isinstance(address, TableAddress) and address.column is not None \
+            and (address.key is not None or address.keys is not None):
+        found = (TableAddress(name=address.name, region=address.region,
+                              scope=address.scope, column=address.column),
+                 address.keys if address.keys is not None else (address.key,))
     if len(_AREAS) < 4096:
         _AREAS[text] = found
     return found

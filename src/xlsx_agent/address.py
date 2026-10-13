@@ -15,6 +15,11 @@ Every result names what it returns by address, and every tool takes the same for
     t:Products/SKU-0042/Price    the row whose key is SKU-0042, column Price
     t:Products/'A/7'/Price       a key holding / or ' is quoted, as a sheet name is
     t:Products/#5                the fifth data row (a position, not an id)
+    t:Products/*/Price           every row's Price: a selector (Workbook.expand gives each
+                                 value by key); t:Products/*/* every value, t:Products/*
+                                 every row, t:Products/SKU-0042/* each value of one row
+    t:Products/{SKU-0042,SKU-0043}/Price
+                                 the rows whose keys are listed, column Price: a key set
     d:by_category                a derived dataset; d:by_category[average],
                                  d:by_category/Hardware/average as for tables
     $step1                       a ref: a name a call gave to what it made
@@ -83,6 +88,19 @@ rows are.  It keeps R2's grammar -- a sheet, ``!``, then where on it -- with not
 **Positions and ids.**  ``#3!`` names a sheet by id; ``/#5`` names a row by position.  A
 key that begins with ``#`` is quoted, so the two never meet.
 
+**Selectors and key sets.**  ``*`` in a row's place is every data row, in the table's order
+when it is expanded (``t:Products/*/Price``: the cells of ``t:Products[Price]``;
+``t:Products/*``: the table); ``*`` in a column's place is every column
+(``t:Products/SKU-0042/*``: the row).  A selector reads as the cells it covers, and
+:meth:`Workbook.expand <xlsx_agent.workbook.Workbook.expand>` gives each of them by key
+(``t:Products/SKU-0042/Price``...), so that a caller can check that a set of addresses
+covers every one.  A key set, ``{`` keys ``,`` ... ``}``, names the rows whose keys are
+listed, in that order: what a derived value's sources are written as when its table has a
+key column (:mod:`xlsx_agent.derive`).  A key that is ``*``, or begins with ``{``, is
+quoted (``'*'``); in a set, so is a key holding ``,`` ``{`` or ``}``.  A set of one key is
+that key; a key listed twice is listed once.  ``#5`` has no place in a set: a position is
+not an id.
+
 **No cell content in diagnostics** (ROADMAP.md, "Design rules", 7).  A key is cell
 content, so an :class:`AddressError`'s message names the problem and where it is in the
 address (a 1-based character position), never the address's text; sheet and table names
@@ -116,6 +134,8 @@ FORMS: dict[str, str] = {
     "column": "t:Products[Price]",
     "value by key": "t:Products/SKU-0042/Price",
     "row by position": "t:Products/#5",
+    "every row": "t:Products/*/Price",
+    "key set": "t:Products/{SKU-0042,SKU-0043}/Price",
     "dataset": "d:by_category",
     "ref": "$step1",
 }
@@ -156,11 +176,14 @@ _POSITION = re.compile(r"#([1-9][0-9]{0,6})")
 
 _RANGE_FORMS = ("cell", "range", "columns", "rows", "sheet", "quoted sheet", "sheet by id")
 _TABLE_FORMS = ("table", "sheet-scoped name", "detected region", "column", "value by key",
-                "row by position")
+                "row by position", "every row", "key set")
 _DATASET_ID_RULE = ("a dataset id is a letter or _, then letters, digits, _ . or -; at most "
                     "64 characters")
 _DATASET_FORMS = ("d:by_category", "d:by_category[average]", "d:by_category/Hardware/average",
-                  "d:by_category/#2")
+                  "d:by_category/#2", "d:by_category/*/average")
+
+#: The wildcard: every row, in a row's place; every column, in a column's.
+ANY = "*"
 
 
 # ------------------------------------------------------------------------------------------
@@ -411,15 +434,32 @@ class RangeAddress:
 
 class _Selection:
     """What table and dataset addresses share: a column, a row (by key or by position),
-    or a value (a row and a column)."""
+    or a value (a row and a column); or a selector (``*`` for every row, or every column)
+    or a key set (``keys``: several rows by key)."""
 
     column: str | None
     key: str | None
     position: int | None
+    keys: tuple[str, ...] | None
+    any_row: bool
+    any_column: bool
 
     def _check_selection(self) -> None:
-        if self.key is not None and self.position is not None:
-            raise ValueError("a row is named by key or by position, not both")
+        rows = [self.key is not None, self.position is not None, self.keys is not None,
+                bool(self.any_row)]
+        if sum(rows) > 1:
+            raise ValueError("a row is named by key, by position, by a key set or by *, "
+                             "one of them")
+        if self.any_column and (self.column is not None or not any(rows)):
+            raise ValueError("* for every column follows a row (t:Products/SKU-0042/*), "
+                             "in place of a column")
+        if self.keys is not None:
+            if isinstance(self.keys, (str, bytes)) or len(self.keys) < 2 or not all(
+                    isinstance(k, str) and k for k in self.keys):
+                raise ValueError("a key set holds two or more non-empty keys (one key is "
+                                 "written as a key)")
+            if len(set(self.keys)) != len(self.keys):
+                raise ValueError("a key set lists each key once")
         if self.column is not None and (not isinstance(self.column, str) or not self.column):
             raise ValueError("a column name is a non-empty string")
         if self.key is not None and (not isinstance(self.key, str) or not self.key):
@@ -431,17 +471,40 @@ class _Selection:
 
     @property
     def _selected(self) -> str | None:
-        has_row = self.key is not None or self.position is not None
-        if has_row:
+        if self.keys is not None:
+            return "values" if self.column is not None else "rows"
+        if self.key is not None or self.position is not None:
             return "value" if self.column is not None else "row"
         return "column" if self.column is not None else None
 
+    @property
+    def is_whole(self) -> bool:
+        """Names all of the table (or dataset): no column or row, or ``*`` for both
+        (``t:Products``, ``t:Products/*``, ``t:Products/*/*``)."""
+        return self._selected is None
+
+    @property
+    def is_selector(self) -> bool:
+        """Holds a ``*`` (``t:Products/*/Price``, ``t:Products/SKU-0042/*``)."""
+        return bool(self.any_row or self.any_column)
+
     def _selection_text(self) -> str:
-        has_row = self.key is not None or self.position is not None
+        has_row = self.key is not None or self.position is not None or \
+            self.keys is not None or self.any_row
         if not has_row:
             return "" if self.column is None else f"[{_escape_column(self.column)}]"
-        row = f"#{self.position}" if self.position is not None else _segment(self.key, row=True)
-        column = "" if self.column is None else "/" + _segment(self.column, row=False)
+        if self.any_row:
+            row = ANY
+        elif self.position is not None:
+            row = f"#{self.position}"
+        elif self.keys is not None:
+            row = "{" + ",".join(_set_item(k) for k in self.keys) + "}"
+        else:
+            row = _segment(self.key, row=True)
+        if self.any_column:
+            column = "/" + ANY
+        else:
+            column = "" if self.column is None else "/" + _segment(self.column, row=False)
         return f"/{row}{column}"
 
 
@@ -464,6 +527,9 @@ class TableAddress(_Selection):
     key: str | None = None
     position: int | None = None
     scope: SheetRef | None = None
+    keys: tuple[str, ...] | None = None
+    any_row: bool = False
+    any_column: bool = False
 
     def __post_init__(self) -> None:
         if (self.name is None) == (self.region is None):
@@ -481,7 +547,9 @@ class TableAddress(_Selection):
     @property
     def kind(self) -> str:
         """``"table"`` or ``"region"`` (the whole of it), ``"column"``, ``"row"`` or
-        ``"value"``."""
+        ``"value"``; ``"rows"`` or ``"values"`` for a key set (with a column: values).  A
+        selector is what it covers: ``t:Products/*/Price`` a column, ``t:Products/*`` the
+        table, ``t:Products/SKU-0042/*`` a row."""
         return self._selected or ("region" if self.region is not None else "table")
 
     @property
@@ -501,7 +569,7 @@ class TableAddress(_Selection):
 
     @property
     def whole(self) -> "TableAddress":
-        """The table, name or region itself, without a column or row."""
+        """The table, name or region itself, without a column, row or selector."""
         return TableAddress(name=self.name, region=self.region, scope=self.scope)
 
     def __str__(self) -> str:
@@ -523,6 +591,9 @@ class DatasetAddress(_Selection):
     column: str | None = None
     key: str | None = None
     position: int | None = None
+    keys: tuple[str, ...] | None = None
+    any_row: bool = False
+    any_column: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.id, str) or not DATASET_ID.fullmatch(self.id):
@@ -531,7 +602,9 @@ class DatasetAddress(_Selection):
 
     @property
     def kind(self) -> str:
-        """``"dataset"`` (the whole of it), ``"column"``, ``"row"`` or ``"value"``."""
+        """``"dataset"`` (the whole of it), ``"column"``, ``"row"``, ``"value"``, or
+        ``"rows"``/``"values"`` for a key set; a selector is what it covers, as for
+        tables."""
         return self._selected or "dataset"
 
     @property
@@ -760,9 +833,7 @@ class _Parser:
             if token and ":" not in token and "$" not in token \
                     and not _CELLS.fullmatch(token):
                 name = self.name(bang + 1, end, "a sheet-scoped name", "t:Stock!Prices")
-                column, key, position = self.selection(end)
-                return TableAddress(name=name, scope=sheet, column=column, key=key,
-                                    position=position)
+                return TableAddress(name=name, scope=sheet, **self.selection(end))
             if end == bang + 1:
                 self.fail("a detected region is named by one cell, its header's first: "
                           "t:Stock!A1; a whole sheet has no t: form", end)
@@ -773,11 +844,9 @@ class _Parser:
                 self.fail("a detected region is named by one cell, its header's first: "
                           "t:Stock!A1", bang + 1, options)
             region = RangeAddress(sheet, area)
-            column, key, position = self.selection(end)
-            return TableAddress(region=region, column=column, key=key, position=position)
+            return TableAddress(region=region, **self.selection(end))
         name = self.name(start, end, "a table name", "t:Products")
-        column, key, position = self.selection(end)
-        return TableAddress(name=name, column=column, key=key, position=position)
+        return TableAddress(name=name, **self.selection(end))
 
     def dataset(self) -> DatasetAddress:
         self.forms = list(_DATASET_FORMS)
@@ -786,8 +855,7 @@ class _Parser:
         name = self.name(start, end, "a dataset id", "d:by_category")
         if not DATASET_ID.fullmatch(name):
             self.fail(_DATASET_ID_RULE, start)
-        column, key, position = self.selection(end)
-        return DatasetAddress(name, column=column, key=key, position=position)
+        return DatasetAddress(name, **self.selection(end))
 
     def name(self, start: int, end: int, what: str, example: str) -> str:
         name = self.body[start:end]
@@ -800,38 +868,106 @@ class _Parser:
                 self.fail(f"{what} has no spaces and none of [ ] / ! '", start + k)
         return name
 
-    def selection(self, at: int) -> tuple[str | None, str | None, int | None]:
-        """``[column]``, ``/key``, ``/#n``, ``/key/column`` or ``/#n/column`` from ``at`` to
-        the end, as ``(column, key, position)``."""
+    def selection(self, at: int) -> dict:
+        """``[column]``, ``/row`` or ``/row/column`` from ``at`` to the end, a row being a
+        key, ``#n``, ``*`` or a key set ``{a,b}`` and a column a name or ``*``; as the
+        address's fields."""
         body = self.body
+        out: dict = {}
         if at == len(body):
-            return None, None, None
+            return out
         if body[at] == "[":
             column, end = self.bracketed(at)
             if end != len(body):
                 self.fail("a column in [ ] ends the address; a value is written "
                           "t:Products/key/Column", end)
-            return column, None, None
+            return {"column": column}
         if body[at] != "/":
             self.fail("a name is followed by [column] or /row", at)
-        row, end, quoted = self.segment(at + 1)
-        key = position = None
-        if not quoted and row.startswith("#"):
-            match = _POSITION.fullmatch(row)
-            if match is None:
-                self.fail("a row position is # and a whole number from 1, as in /#5; "
-                          "a key that starts with # is quoted", at + 1)
-            position = int(match.group(1))
-            if position > MAX_ROW:
-                self.fail(f"a row position is at most {MAX_ROW}", at + 1)
+        if body.startswith("{", at + 1):
+            keys, end = self.key_set(at + 1)
+            if len(keys) == 1:
+                out["key"] = keys[0]
+            else:
+                out["keys"] = tuple(keys)
         else:
-            key = row
+            row, end, quoted = self.segment(at + 1)
+            if not quoted and row == ANY:
+                out["any_row"] = True
+            elif not quoted and row.startswith("#"):
+                match = _POSITION.fullmatch(row)
+                if match is None:
+                    self.fail("a row position is # and a whole number from 1, as in /#5; "
+                              "a key that starts with # is quoted", at + 1)
+                position = int(match.group(1))
+                if position > MAX_ROW:
+                    self.fail(f"a row position is at most {MAX_ROW}", at + 1)
+                out["position"] = position
+            else:
+                out["key"] = row
         if end == len(body):
-            return None, key, position
-        column, end, _ = self.segment(end + 1)
-        if end != len(body):
-            self.fail("an address has at most a row and a column after the name", end)
-        return column, key, position
+            return out
+        column, after, quoted = self.segment(end + 1)
+        if after != len(body):
+            self.fail("an address has at most a row and a column after the name", after)
+        if not quoted and column == ANY:
+            out["any_column"] = True
+        else:
+            out["column"] = column
+        return out
+
+    def key_set(self, at: int) -> tuple[list[str], int]:
+        """A key set from the ``{`` at ``at``: keys, bare or quoted, between commas; the
+        keys (each once, in order) and the index after the ``}``."""
+        body = self.body
+        keys: dict[str, None] = {}
+        i = at + 1
+        while True:
+            if body.startswith("'", i):
+                parts, j = [], i + 1
+                while True:
+                    k = body.find("'", j)
+                    if k < 0:
+                        self.fail("a quoted key has no closing quote", i)
+                    parts.append(body[j:k])
+                    if body.startswith("''", k):
+                        parts.append("'")
+                        j = k + 2
+                        continue
+                    j = k + 1
+                    break
+                if j == i + 2:
+                    self.fail("a key is never empty", i)
+                value = "".join(parts)
+            else:
+                j = i
+                while j < len(body) and body[j] not in ",}":
+                    if body[j] in "{/'":
+                        self.fail("in a key set, a key holding / ' { , or } is quoted", j)
+                    j += 1
+                value = body[i:j]
+                if not value:
+                    self.fail("a key set lists keys between { and }, as {A1,B2}", i)
+                if value != value.strip():
+                    self.fail("a key with space at either end is quoted", i)
+                if value == ANY:
+                    self.fail("* is every row, not a key: write t:Products/*/Price, or "
+                              "quote a key that is *", i)
+                if value.startswith("#"):
+                    self.fail("a key set lists keys, not positions; a key that starts "
+                              "with # is quoted", i)
+            keys.setdefault(value, None)
+            if j >= len(body):
+                self.fail("a key set has no closing }", at)
+            if body[j] == ",":
+                i = j + 1
+                continue
+            if body[j] != "}":
+                self.fail("in a key set, a key is followed by , or }", j)
+            end = j + 1
+            if end != len(body) and body[end] != "/":
+                self.fail("a key set is followed by / and a column, or the end", end)
+            return list(keys), end
 
     def segment(self, at: int) -> tuple[str, int, bool]:
         """A key or column after a ``/``: bare up to the next ``/``, or quoted (``'A/7'``,
@@ -914,8 +1050,16 @@ def _check_name(name: object, what: str) -> None:
 
 def _segment(value: str, *, row: bool) -> str:
     """A key (``row``) or a column after a ``/``, quoted when it must be."""
-    if ("/" in value or "'" in value or value != value.strip()
-            or (row and value.startswith("#"))):
+    if ("/" in value or "'" in value or value != value.strip() or value == ANY
+            or (row and value.startswith(("#", "{")))):
+        return "'" + value.replace("'", "''") + "'"
+    return value
+
+
+def _set_item(value: str) -> str:
+    """A key in a key set, quoted when it must be."""
+    if any(ch in value for ch in "/',{}") or value != value.strip() or value == ANY \
+            or value.startswith("#"):
         return "'" + value.replace("'", "''") + "'"
     return value
 

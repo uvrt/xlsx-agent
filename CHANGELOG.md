@@ -10,6 +10,14 @@ has the detail of every milestone.
   the issue, its count and first cells, and the coercion that reads them; `date_as_text`
   is its own reason for a cell left out; `xlsx_profile` gives the range of dates stored as
   text (`date_text`).
+- **Addresses by key** (X2): `*` for every row or column (`t:Products/*/Price`,
+  `t:Products/SKU-0042/*`) and key sets (`t:Products/{SKU-0042,SKU-0043}/Price`) in
+  `xlsx_read` and the library; `Workbook.expand` gives what an address covers one cell at
+  a time, by key (a coverage selector); `Workbook.declare_key` names a table's key column.
+  A derived value's sources are written by key when its table has a key column, and so
+  still name the same cells after rows are inserted or sorted (ranges otherwise, as
+  before); results count sources in units (a range, or one key). A key that is `*` or
+  begins with `{` is now quoted: a bare one no longer parses as a key.
 - **Text lengths** (X5): `xlsx_profile` gives median and max words beside characters and
   the address of the longest text; the `words_gt` filter finds text over a word limit.
 
