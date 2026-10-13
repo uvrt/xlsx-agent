@@ -71,7 +71,28 @@ A value read is the one stored: a date as ISO 8601 (`'2026-07-01'`, with its `se
 formula's cached value (none is `blank` with `issue='no_cached_value'`), no display
 string. Every form of address is in ROADMAP.md, "Addresses": `Sales!A1:E3`, `#1!E2` (by
 sheet id), `t:Sales`, `t:Sales[Revenue]`, `t:Stock/SKU-0002/Price`, `t:Sales/#5`,
-`d:by_region`.
+`t:Stock/*/Price`, `t:Stock/{SKU-0002,SKU-0007}/Price`, `d:by_region`.
+
+**Addresses by key** name a row by its key column's value, so they keep naming the same
+cell when a consultant inserts, deletes or sorts rows (a position, `t:Sales/#5`, or a
+range does not). `*` is every row (or every column), and `expand` gives what an address
+covers one cell at a time, by key -- a coverage selector:
+
+```python
+wb.declare_key("t:Stock", "SKU")         # the caller's choice, when several columns could
+                                         # be the key; one detected key needs none
+wb.read("t:Stock/{SKU-0007,SKU-0002}/Price")   # those rows, in that order
+wb.expand("t:Stock/*/Price")             # ['t:Stock/SKU-0001/Price', 't:Stock/SKU-0002/Price', ...]
+wb.expand("t:Stock/SKU-0002/*")          # each value of one row
+required = set(wb.expand("t:Stock/*/Price"))
+used = {a for s in sources for a in wb.expand(s)}     # e.g. a derived value's sources
+missing = required - used                # cells no slide, check or plan used
+```
+
+A key is a cell's text, exactly (`007` is not the number 7), or a whole number's digits (the
+text `7` and the number 7 are one key); a blank, a fraction, a date and a boolean are no
+key. A row whose key another row shares is refused (`duplicate_key`), and `expand` refuses
+a row without a key (`no_key`), each with the rows by position: never the first of them.
 
 Merged or multi-row headers are declared, never guessed:
 
@@ -135,6 +156,18 @@ ds.rows
 #  {'Region': 'West', 'revenue': 470.9, 'orders': 3}, ...]
 ds.sources["North"]["revenue"]           # Sales!E2, E5, E9, E13, E17 (RangeAddress each)
 ds.excluded                              # {} -- else per measure, per reason, with addresses
+```
+
+When the table has a key column -- declared, or the one column that is unique, never blank,
+text or whole numbers -- each value's sources are written by key instead, one key set in
+the table's order, which still names the same cells after rows are inserted or sorted:
+
+```python
+by_category = wb.derive("t:Stock", group_by=["Category"],
+                        measures=[{"fn": "sum", "column": "Qty"}])
+by_category.source_key                   # 'SKU'
+[str(s) for s in by_category.provenance[0]["sum Qty"].sources]
+# ['t:Stock/{SKU-0001,SKU-0002,SKU-0003}/Qty']
 ```
 
 The measures are `count`, `sum`, `mean`, `median`, `min`, `max`, `first`, `last`, `share`

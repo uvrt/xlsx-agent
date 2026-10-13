@@ -83,7 +83,14 @@ the range of a column's dates stored as text (`date_text`) beside its flag.
 **Datasets (`d:`).** `xlsx_derive` keeps its figures in the session as a dataset,
 `d:<id>`: columns, rows, and beside every value the cells it came from. `xlsx_read` reads
 it back (`{"target": "d:by_region", "sources": true}`, no `doc` needed), `xlsx_derive`
-derives from it again, and it outlives `close_document`. A dataset whose workbook has
+derives from it again, and it outlives `close_document`. When the table has a key column
+(the one `describe` reports, or one the caller declares with `Workbook.declare_key` on the
+session's workbook), a value's sources are written by key, `t:Stock/{SKU-0001,SKU-0004}/Qty`:
+they name the same cells after a consultant inserts or sorts rows, where ranges would not.
+Without one they are ranges, as before. `xlsx_read` takes `*` for every row
+(`t:Stock/*/Price`) and key sets (`t:Stock/{SKU-0001,SKU-0004}/Price`, read in that
+order); `Workbook.expand` turns either into one address per cell, for a check that every
+required cell was used. A dataset whose workbook has
 changed since is marked stale, never refreshed. Datasets are ooxml-edit's, so one session
 can hold a workbook beside a deck or a document -- one toolbox with each library's tools
 and formats:
@@ -114,8 +121,8 @@ cursor for the rest. The ones a workbook meets:
 
 And the tools' own: `describe` targets about 3,000 tokens and names what it left for
 `xlsx_profile`; `xlsx_read` gives 50 rows by default and at most 500; `xlsx_derive` keeps
-at most 1,000 result rows and shows 50, with at most eight source ranges per value (the
-rest through `xlsx_read`'s `sources`); `xlsx_validate_data` keeps 10,000 problems and
+at most 1,000 result rows and shows 50, with at most eight sources per value, counted in
+units -- a range, or one key of a key set (the rest through `xlsx_read`'s `sources`); `xlsx_validate_data` keeps 10,000 problems and
 counts the rest. The read tools do not check `Limits.soft_deadline` yet: a call on a very
 large sheet runs to the end (ROADMAP.md, design rule 6).
 

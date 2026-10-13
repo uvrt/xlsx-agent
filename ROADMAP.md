@@ -134,6 +134,8 @@ appear in results and diagnostics; cell content may not appear in diagnostics.
 | column | `t:Products[Price]` | one column of a table, header row excluded |
 | value by key | `t:Products/SKU-0042/Price` | the row whose key column holds `SKU-0042`, column `Price`; a key containing `/` or `'` is quoted: `t:Products/'A/7'/Price` |
 | row by position | `t:Products/#5` | the fifth data row (a position, not an id: it moves if rows are sorted or inserted) |
+| every row | `t:Products/*/Price` | a selector: every data row's `Price` (the cells of `t:Products[Price]`); `t:Products/*/*` every value, `t:Products/*` every row, `t:Products/SKU-0042/*` each value of one row. `Workbook.expand` gives each cell by key |
+| key set | `t:Products/{SKU-0042,SKU-0043}/Price` | the rows whose keys are listed, in that order: how a derived value's sources are written when the table has a key column. A key holding `, { } / '` is quoted inside |
 | dataset | `d:by_category` | a derived dataset in the session; `d:by_category[average]`, `d:by_category/Hardware/average` as for tables |
 | ref | `$step1` | the siblings' refs: a name a call gave to what it made |
 
@@ -144,6 +146,12 @@ the two never collide. A table's key column is the one the caller names, or else
 without a key column is refused with the candidate columns as `valid_options`. Names are
 matched as Excel matches them (case aside); an unknown name is `not_found` with the
 nearest names.
+
+A key is a cell's text, exactly, or a whole number's digits; a blank, a fraction, a date, a
+time, a boolean and an error are no key. An address by key keeps naming the same cell when
+rows are inserted, deleted or sorted; a position and a range do not. A key two rows share
+is refused (`duplicate_key`) and a row without one cannot be named by key (`no_key`), each
+with the rows by position as `valid_options`.
 
 ---
 
@@ -512,6 +520,38 @@ cheapest form (about 7 estimated tokens, against about 25 for a `max_words` para
 `xlsx_profile` or `xlsx_read`). Budget: the loaded core 3,452 estimated, about 5,109 by the
 offline proxy (was 3,425, 5,069); every definition 3,674 (guard 3,700). `describe` is
 unchanged.
+
+*X2 as built* (production feedback, 2026-10-13): **Addresses by key, stable across edits.**
+The grammar gains `*` -- every row in a row's place (`t:Products/*/Price`, `t:Products/*`),
+every column in a column's (`t:Products/SKU-0042/*`) -- and key sets,
+`t:Products/{SKU-0042,SKU-0043}/Price`. A selector reads as what it covers and keeps its
+text; a key set resolves to its rows in its order (`Selection.positions`) and `xlsx_read`
+pages them; `xlsx_derive`'s `from` takes `t:Products/*` as the table and refuses a part of
+one; datasets take `*` and refuse key sets (`no_key_set`). `Workbook.expand(selector)` is
+the coverage helper: one address by key per cell (per row without a column), in the
+table's order, refusing a row with no key (`no_key`) or a shared one (`duplicate_key`).
+`Workbook.declare_key(table, column)` is the caller's key column for a table with several
+candidates (or none), shown by `describe`; X3's declared schemas will build on it. A
+region's key column is read once into a `KeyIndex`, so a key set or an expansion is one
+pass, not one per key. **Sources by key**: when the table's key column (declared, or the
+one detected) names every row alone, each derived value's sources are one key set,
+`t:Products/{SKU-0003,SKU-0007}/Price`, in row order (`Derived.source_key` names the
+column); otherwise ranges, as before -- the default only where a key exists, because a
+range stops being true when a row is inserted and a key set does not, and no parameter is
+needed. A derive from a dataset gathers the keys of one column into one set again.
+Excluded and left-out cells keep their cell addresses (they are diagnostics of the read,
+not a plan's inputs); `xlsx_read`/`xlsx_query` cells keep their `a` (the cell read now).
+**Result size** (offline estimator, a 200-row table keyed by code, interleaved groups):
+`xlsx_derive` results show at most eight sources a value, now counted in units (a range,
+or one key), so they stay bounded: ungrouped mean 207 → 231 tokens; mean by 5 groups 817 →
+735; by each of 200 codes 3,252 → 3,766. The whole provenance (library, nothing cut):
+ungrouped 19 → 444 (one range against 200 keys), by 5 interleaved groups 1,882 → 1,037
+(single-cell ranges are longer than keys). Reading one value's 200 sources pages 50 keys
+at a time (283 tokens a page, against one 149-token page for the one range). With two key
+candidates and none declared, nothing changes. **Budget**: only `xlsx_read`'s target
+mentions `*`: the loaded core 3,462 estimated, about 5,124 by the offline proxy (was
+3,452, 5,109); every definition 3,684 (guard 3,700). The goldens are unchanged (their
+tables have no key column). The strict check (`strict_problems`) is clean.
 
 ### 0.2 — edit
 
