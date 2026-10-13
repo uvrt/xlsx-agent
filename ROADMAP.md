@@ -45,7 +45,7 @@ These are settled and are not reopened anywhere below.
    Excel (installed on the development Mac); no Office data is transcribed from
    third-party sources.
 6. **Dependencies.** lxml only at runtime, like ooxml-edit, plus ooxml-edit and
-   ooxml-common. Python 3.10–3.15.
+   ooxml-common. Python 3.11–3.15.
 
 ---
 
@@ -383,7 +383,7 @@ Each item is one PR, small enough to review in a sitting, and leaves the suite g
 
 | # | Item | Effort | Done when |
 | --- | --- | --- | --- |
-| R0 | **Skeleton.** `pyproject.toml` (lxml, ooxml-edit ≥ 0.17, ooxml-common ≥ 0.14; Python 3.10–3.15), `src/xlsx_agent`, CI on 3.10 and 3.15, and `tests/build.py`: a small SpreadsheetML writer for tests only, building made-up workbooks from Python (sheets, cells of every type, styles, tables, names, merges, comments) | S | a built workbook opens in the test as a zip with the right content types |
+| R0 | **Skeleton.** `pyproject.toml` (lxml, ooxml-edit ≥ 0.17, ooxml-common ≥ 0.14; Python 3.11–3.15), `src/xlsx_agent`, CI on 3.11 and 3.15, and `tests/build.py`: a small SpreadsheetML writer for tests only, building made-up workbooks from Python (sheets, cells of every type, styles, tables, names, merges, comments) | S | a built workbook opens in the test as a zip with the right content types |
 | R1 | **Open.** `Workbook.open` from bytes, path or `OpcPackage`; `kinds` check; `check_package`; refusing `.xls`, `.xlsb` and encrypted files; `sheets` with id, state and protection; `to_bytes` byte-identical | S | every fixture round-trips byte for byte; the refusals carry their reason |
 | R2 | **Addresses.** Parse and format every form in *Addresses*, on `Cell` and `Area` from `charts.workbook`; errors with `valid_options` | M | a table of forms parses and formats back to itself; quoting round-trips |
 | R3 | **Cell reader.** A streaming pass over a sheet (`iterparse`, O6's options); shared strings indexed once; inline and rich strings; booleans, errors; `styles.xml` number formats; types as in *Values and types*, both date systems; cached formula values and `no_cached_value`; merges; `r`-less rows; the locale | M | every row of the messy table that concerns cells has a passing fixture; a 200,000-row sheet reads in bounded memory |

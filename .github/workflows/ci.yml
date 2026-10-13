@@ -13,8 +13,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # Every Python the package claims, as the siblings test (ROADMAP.md's R0 asks only
-        # for 3.10 and 3.15; the full range costs little and keeps the four repositories alike).
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        # for 3.11 and 3.15; the full range costs little and keeps the four repositories alike).
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
 
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +24,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           # 3.15.0 is out (2026-10-09) but setup-python's version list may still offer only
           # its release candidates; this takes a final release whenever there is one, so
-          # it changes nothing for 3.10 to 3.14.
+          # it changes nothing for 3.11 to 3.14.
           allow-prereleases: true
 
       - name: Install
