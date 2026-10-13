@@ -776,6 +776,7 @@ def zip_parts(parts: dict[str, bytes]) -> bytes:
         for name, data in parts.items():
             info = zipfile.ZipInfo(name, _ZIP_TIME)
             info.compress_type = zipfile.ZIP_DEFLATED
+            info.create_system = 3  # ZipInfo stamps the platform (0 on Windows): Unix everywhere
             archive.writestr(info, data)
     return buffer.getvalue()
 
