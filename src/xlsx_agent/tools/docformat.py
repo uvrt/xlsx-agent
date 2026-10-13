@@ -33,7 +33,6 @@ from ..package import (BIFF_BOF, CFB_SIGNATURE, KindMismatchWarning, OpenError,
                        compound_file_refusal)
 from ..query import QueryError
 from ..read.regions import RegionError
-from ..read.types import Locale
 from ..workbook import Workbook
 
 KIND = "xlsx"
@@ -200,15 +199,24 @@ def summary(workbook: Workbook) -> dict[str, Any]:
     return out
 
 
-def workbook_format(*, locale: Locale | None = None) -> DocumentFormat:
-    """The xlsx format, its workbooks opened with ``locale`` (how text is read as numbers
-    and dates: the application's setting, never a model's)."""
+def configure(workbook: Workbook, session: Any) -> None:
+    """A workbook joining a session is read in the session's locale (``Toolbox(locale=...)``
+    or ``toolbox.session(locale=...)``: an :class:`ooxml_common.locales.Locale` or any
+    object with its fields; en-US unless given) -- the application's setting, never a
+    model's."""
+    workbook.locale = session.locale
+
+
+def workbook_format(*, grouping: bool = True, local_dates: bool = False) -> DocumentFormat:
+    """The xlsx format, its workbooks opened with the reader settings ``grouping`` and
+    ``local_dates`` (:meth:`Workbook.open <xlsx_agent.Workbook.open>`) and read in the
+    session's locale (:func:`configure`): the application's settings, never a model's."""
 
     def open_workbook(data: bytes) -> Workbook:
-        return Workbook.open(data, locale=locale)
+        return Workbook.open(data, grouping=grouping, local_dates=local_dates)
 
     return DocumentFormat(
-        kind=KIND, open=open_workbook, detect=detect, problems=problems,
+        kind=KIND, open=open_workbook, configure=configure, detect=detect, problems=problems,
         problem_key=problem_key, warnings=(KindMismatchWarning,), prompt=PROMPT,
         errors=dict(ERRORS), summary=summary, strict_first=STRICT_FIRST)
 

@@ -96,16 +96,40 @@ def test_the_application_sets_the_locale_never_the_model(box):
     book = WorkbookBuilder()
     book.sheet("Stock").rows("A1", [["Price"], ["12,50"], ["3,25"]])
     data = book.to_bytes()
-    comma_format = xlsx_format(locale=Locale(decimal=",", thousands="."))
-    with Toolbox(TOOLS, formats=[comma_format], groups=GROUPS, workers=0) as comma:
+    comma_locale = Locale(decimal_separator=",", thousands_separator=".", date_order="dmy",
+                          language="nl-BE", list_separator=";")
+    with Toolbox(TOOLS, formats=[FORMAT], groups=GROUPS, workers=0, locale=comma_locale) as comma:
         session = comma.session(clock=CLOCK)
         _call(comma, session, "open_document", {"blob": session.add_blob(data, name="a.xlsx")})
+        assert session.entry("d1").document.locale is comma_locale
         column = _call(comma, session, "describe", {"doc": "d1"}).data["regions"][0]["columns"][0]
-    assert column["flags"] == {"number_as_text": 2}
+        assert column["flags"] == {"number_as_text": 2}
+        # one session in en-US: the session's locale wins over the toolbox's
+        other = comma.session(clock=CLOCK, locale=None)
+        _call(comma, other, "open_document", {"blob": other.add_blob(data, name="a.xlsx")})
+        column = _call(comma, other, "describe", {"doc": "d1"}).data["regions"][0]["columns"][0]
+        assert "flags" not in column
     session = box.session(clock=CLOCK)
     _call(box, session, "open_document", {"blob": session.add_blob(data, name="a.xlsx")})
     column = _call(box, session, "describe", {"doc": "d1"}).data["regions"][0]["columns"][0]
     assert "flags" not in column
+
+
+def test_the_formats_reader_settings_read_text_dates_in_the_session_locale():
+    book = WorkbookBuilder()
+    book.sheet("Stock").rows("A1", [["Day"], ["13/4/2026"], ["3/4/2026"]])
+    data = book.to_bytes()
+    dmy = Locale(decimal_separator=",", thousands_separator=".", date_order="dmy",
+                 language="nl-BE", list_separator=";")
+    flags = {}
+    for name, fmt in (("iso", FORMAT), ("local", xlsx_format(local_dates=True))):
+        with Toolbox(TOOLS, formats=[fmt], groups=GROUPS, workers=0, locale=dmy) as toolbox:
+            session = toolbox.session(clock=CLOCK)
+            blob = session.add_blob(data, name="a.xlsx")
+            _call(toolbox, session, "open_document", {"blob": blob})
+            region = _call(toolbox, session, "describe", {"doc": "d1"}).data["regions"][0]
+            flags[name] = region["columns"][0].get("flags")
+    assert flags == {"iso": None, "local": {"date_as_text": 2}}
 
 
 def test_read_blob_reads_a_text_input_and_refuses_a_workbook(box):

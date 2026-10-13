@@ -34,14 +34,14 @@ import math
 import re
 from bisect import bisect_right
 from dataclasses import dataclass, field
-from typing import Iterator
+from typing import Any, Iterator
 
 from ooxml_edit.charts.workbook import MAX_COLUMN, MAX_ROW, Area, Cell
 
 from ..xml import iterparse_xml
 from .strings import SharedStrings, item_text
 from .styles import DATE_KINDS, Styles
-from .types import (TEXT_LIMIT, Locale, Problem, Value, looks_like_date, looks_like_number,
+from .types import (TEXT_LIMIT, Problem, Value, looks_like_date, looks_like_number,
                     serial_text)
 
 NS_MAIN = ("http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -171,11 +171,14 @@ class SheetReader:
 
     ``sheet`` is the sheet as an address writes it; ``hidden`` whether the sheet is hidden
     (every value from it is then marked ``hidden``); ``strings``, ``styles``, ``date1904``
-    and ``locale`` are the workbook's.  ``formats`` puts each value's format code on it.
+    and ``locale`` (with its reader settings ``grouping`` and ``local_dates``,
+    :mod:`xlsx_agent.read.types`) are the workbook's.  ``formats`` puts each value's format
+    code on it.
     A reader makes one pass at a time; each pass starts from the top."""
 
     def __init__(self, data: bytes, *, sheet: str, hidden: bool, strings: SharedStrings,
-                 styles: Styles, date1904: bool, locale: Locale, formats: bool = False) -> None:
+                 styles: Styles, date1904: bool, locale: Any, formats: bool = False,
+                 grouping: bool = True, local_dates: bool = False) -> None:
         self.data = data
         self.sheet = sheet
         self.hidden = hidden
@@ -183,6 +186,8 @@ class SheetReader:
         self.styles = styles
         self.date1904 = date1904
         self.locale = locale
+        self.grouping = grouping
+        self.local_dates = local_dates
         self.formats = formats
         #: Hidden columns as sorted, non-overlapping ``(first, last)`` spans, known once
         #: the pass has passed ``cols``.
@@ -370,9 +375,9 @@ class SheetReader:
     def _looks(self, text: str) -> str | None:
         """``"number_as_text"`` or ``"date_as_text"`` when text looks like one, in the
         locale."""
-        if looks_like_number(text, self.locale):
+        if looks_like_number(text, self.locale, grouping=self.grouping):
             return "number_as_text"
-        if looks_like_date(text, self.locale):
+        if looks_like_date(text, self.locale, local_dates=self.local_dates):
             return "date_as_text"
         return None
 

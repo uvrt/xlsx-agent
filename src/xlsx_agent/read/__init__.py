@@ -3,14 +3,17 @@ shared strings indexed once (:mod:`.strings`), the number formats of ``styles.xm
 (:mod:`.styles`), what a cell's value is (:mod:`.types`) and the comments on the cells
 (:mod:`.comments`); and the regions over them:
 Excel tables (:mod:`.tables`), defined names (:mod:`.names`), declared and detected
-regions and how a ``t:`` address resolves (:mod:`.regions`)."""
+regions and how a ``t:`` address resolves (:mod:`.regions`).  ``Locale`` is the shared
+:class:`ooxml_common.locales.Locale`, re-exported."""
 
 from .comments import Comment
 from .names import DefinedName
 from .regions import Region, RegionError, Selection, UnclearRegion
 from .stream import Hyperlink, SheetScan, Validation
 from .styles import NumberFormat, classify_format
-from .types import FORMAT_LANGUAGES, Locale, Problem, Value
+from ooxml_common.locales import Locale
+
+from .types import FORMAT_LANGUAGES, Problem, Value
 
 __all__ = ["FORMAT_LANGUAGES", "Comment", "DefinedName", "Hyperlink", "Locale", "NumberFormat",
            "Problem", "Region", "RegionError", "Selection", "SheetScan", "UnclearRegion",

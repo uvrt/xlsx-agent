@@ -22,11 +22,27 @@ gives an ISO 8601 duration (``"PT36H0M0S"``).  Times are rounded to the millisec
 serial outside the system (negative, a day 0 in the 1900 system where the format shows a
 day, past 9999-12-31) stays a ``number`` with ``issue="date_out_of_range"``.
 
-**Locale** (ROADMAP.md, decision 4): a caller setting.  It decides how text that looks like
-a number is recognised (``issue="number_as_text"``) and the day order of text that looks
-like a date (``issue="date_as_text"``; ISO 8601 dates are recognised in any locale), and
-names the UI language the language-dependent built-in formats are read in
-(:mod:`xlsx_agent.read.styles`).
+**Locale** (ROADMAP.md, decision 4): a caller setting, the shared
+:class:`ooxml_common.locales.Locale` (or any object with its fields; en-US,
+:data:`~ooxml_common.locales.EN_US`, when none is given).  Its ``decimal_separator`` and
+``thousands_separator`` decide how text that looks like a number is recognised
+(``issue="number_as_text"``), its ``date_order`` the order of day and month in text that
+looks like a date (``issue="date_as_text"``) when the reader is asked to read such dates,
+and its ``language`` the UI language the language-dependent built-in formats are read in
+(:func:`format_language`, :mod:`xlsx_agent.read.styles`).
+
+Two reader settings are not locale facts and stay the reader's own
+(:meth:`xlsx_agent.Workbook.open`): ``grouping`` -- whether a number's whole part may be
+grouped with the thousands separator (on, as before) -- and ``local_dates`` -- whether
+text dates other than ISO 8601 are recognised (off: ISO 8601 dates only, in any locale).
+What Excel does, measured (Excel 16.106 Mac, Dutch UI, regions nl-BE and en-US,
+2026-10-13; ``VALUE`` and ``--A`` on text): the region's separators decide, grouping
+included -- ``1.234,5``, ``1234,5`` parsed and ``1,234.5`` an error under nl-BE, the other
+way round under en-US; ``3/4/2026`` and ``3-4-2026`` are 3 April under nl-BE (``dmy``) and
+4 March under en-US (``mdy``), ``13/4/2026`` an error under en-US and ``4/13/2026`` under
+nl-BE; ``2026-04-03`` is a date in both.  So ``local_dates=True`` with the caller's
+``date_order`` is Excel's reading; it stays off by default so that a text such as
+``05/01/2026`` is flagged only when the caller says which day it is.
 """
 
 from __future__ import annotations
@@ -35,9 +51,12 @@ import math
 import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from typing import Any
 
-#: The language tags :attr:`Locale.language` takes: those whose built-in number formats
-#: ECMA-376 Part 1, §18.8.30 lists.
+from ooxml_common.locales import DATE_ORDERS, EN_US
+
+#: The UI languages whose built-in number formats ECMA-376 Part 1, §18.8.30 lists: the
+#: tables a locale's ``language`` maps to (:func:`format_language`).
 FORMAT_LANGUAGES = ("zh-TW", "zh-CN", "ja-JP", "ko-KR", "th-TH")
 
 #: Every value type.
@@ -47,8 +66,6 @@ TYPES = ("number", "percent", "date", "time", "datetime", "text", "bool", "error
 #: program that wrote it (ROADMAP.md, "Messy workbooks": ``at_limit``).
 TEXT_LIMIT = 32767
 
-_DAY_ORDERS = ("dmy", "mdy", "ymd")
-
 _EPOCH_1900 = date(1899, 12, 31)
 _EPOCH_1904 = date(1904, 1, 1)
 # 9999-12-31, the last day either system holds.
@@ -57,52 +74,64 @@ _LAST_1904 = (date(9999, 12, 31) - _EPOCH_1904).days
 _MS_PER_DAY = 86_400_000
 
 
-@dataclass(frozen=True)
-class Locale:
-    """How text is read as numbers and dates, set by the caller, never by a model.
-
-    ``decimal`` and ``thousands`` are the separators of a number written as text (by
-    default ``.`` and ``,``); ``day_order`` (``"dmy"``, ``"mdy"`` or ``"ymd"``) is the order
-    of a date written as text with ``/``, ``-`` or ``.``, ``None`` to recognise ISO 8601
-    dates only; ``language`` (one of :data:`FORMAT_LANGUAGES`, or ``None``) the UI language
-    the language-dependent built-in number formats are read in."""
-
-    decimal: str = "."
-    thousands: str | None = ","
-    day_order: str | None = None
-    language: str | None = None
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.decimal, str) or len(self.decimal) != 1 or self.decimal.isalnum():
-            raise ValueError("decimal is one character, not a letter or digit")
-        if self.thousands is not None and (not isinstance(self.thousands, str)
-                                           or len(self.thousands) != 1
-                                           or self.thousands.isalnum()
-                                           or self.thousands == self.decimal):
-            raise ValueError("thousands is one character, not a letter or digit, and not the decimal")
-        if self.day_order is not None and self.day_order not in _DAY_ORDERS:
-            raise ValueError(f"day_order is one of {_DAY_ORDERS} or None")
-        if self.language is not None:
-            for tag in FORMAT_LANGUAGES:
-                if self.language.casefold() == tag.casefold():
-                    object.__setattr__(self, "language", tag)
-                    break
-            else:
-                raise ValueError(f"language is one of {FORMAT_LANGUAGES} or None")
-
-    def number_pattern(self) -> re.Pattern:
-        cached = _PATTERNS.get(self)
-        if cached is None:
-            d = re.escape(self.decimal)
-            whole = r"\d+"
-            if self.thousands is not None:
-                whole = rf"(?:\d{{1,3}}(?:{re.escape(self.thousands)}\d{{3}})+|\d+)"
-            cached = _PATTERNS[self] = re.compile(
-                rf"[+-]?(?:{whole}(?:{d}\d*)?|{d}\d+)(?:[eE][+-]?\d+)?%?")
-        return cached
+#: The attributes a locale has (:class:`ooxml_common.locales.Locale`'s fields), each a
+#: string: all :func:`reading_locale` checks of an object it is given.
+LOCALE_FIELDS = ("decimal_separator", "thousands_separator", "date_order", "language",
+                 "list_separator")
 
 
-_PATTERNS: dict[Locale, re.Pattern] = {}
+def reading_locale(locale: Any) -> Any:
+    """``locale`` as a workbook keeps it: ``None`` is :data:`ooxml_common.locales.EN_US`;
+    anything else is kept as given -- normally an :class:`ooxml_common.locales.Locale`, or
+    any object with its five string fields (an application's own type, as
+    ``ooxml_edit.tools`` takes one).  Raises :class:`TypeError` for anything else: a
+    language tag alone is not a locale."""
+    if locale is None:
+        return EN_US
+    missing = [name for name in LOCALE_FIELDS
+               if not isinstance(getattr(locale, name, None), str)]
+    if missing:
+        raise TypeError(f"locale takes an ooxml_common.locales.Locale (or an object with "
+                        f"string {', '.join(LOCALE_FIELDS)}), not {type(locale).__name__}: "
+                        f"no {', '.join(missing)}")
+    return locale
+
+
+def format_language(language: str | None) -> str | None:
+    """The :data:`FORMAT_LANGUAGES` table a locale's ``language`` reads the
+    language-dependent built-in number formats with: that tag when the language is one of
+    them (compared in any case, ``_`` read as ``-``), else ``None`` -- the ids whose kind
+    differs between languages are then ``"ambiguous"`` (:mod:`xlsx_agent.read.styles`).
+
+    Measured (Excel 16.106 Mac, Dutch UI, regions nl-BE and en-US, 2026-10-13): ids 27 to
+    36 and 50 to 58 show as id 14 (a date) or id 21 (a time) in both regions, so a
+    language outside the five tables gets no table of its own here.  An en-US Excel UI is
+    not measured."""
+    if not isinstance(language, str):
+        return None
+    wanted = language.replace("_", "-").casefold()
+    for tag in FORMAT_LANGUAGES:
+        if wanted == tag.casefold():
+            return tag
+    return None
+
+
+def number_pattern(decimal: str, thousands: str | None) -> re.Pattern:
+    """A number written out with ``decimal`` and, unless ``None``, ``thousands`` grouping
+    the whole part in threes (a sign, an exponent and a trailing ``%`` allowed)."""
+    key = (decimal, thousands)
+    cached = _PATTERNS.get(key)
+    if cached is None:
+        d = re.escape(decimal)
+        whole = r"\d+"
+        if thousands is not None:
+            whole = rf"(?:\d{{1,3}}(?:{re.escape(thousands)}\d{{3}})+|\d+)"
+        cached = _PATTERNS[key] = re.compile(
+            rf"[+-]?(?:{whole}(?:{d}\d*)?|{d}\d+)(?:[eE][+-]?\d+)?%?")
+    return cached
+
+
+_PATTERNS: dict[tuple, re.Pattern] = {}
 
 
 @dataclass(slots=True)
@@ -271,27 +300,33 @@ _ISO_DATE = re.compile(r"(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}
 _LOCAL_DATE = re.compile(r"(\d{1,4})([/.-])(\d{1,2})\2(\d{1,4})")
 
 
-def looks_like_number(text: str, locale: Locale) -> bool:
+def looks_like_number(text: str, locale: Any = EN_US, *, grouping: bool = True) -> bool:
     """Whether ``text`` is a number written out with the locale's separators (a sign, an
-    exponent and a trailing ``%`` allowed; space around it ignored)."""
+    exponent and a trailing ``%`` allowed; space around it ignored).  ``grouping``: the
+    whole part may be grouped in threes with the thousands separator."""
     stripped = text.strip()
-    return bool(stripped) and locale.number_pattern().fullmatch(stripped) is not None
+    if not stripped:
+        return False
+    pattern = number_pattern(locale.decimal_separator,
+                             locale.thousands_separator if grouping else None)
+    return pattern.fullmatch(stripped) is not None
 
 
-def looks_like_date(text: str, locale: Locale) -> bool:
+def looks_like_date(text: str, locale: Any = EN_US, *, local_dates: bool = False) -> bool:
     """Whether ``text`` is a real calendar date: ISO 8601 (``2026-01-05``, with an
-    optional time) in any locale, or with ``/``, ``-`` or ``.`` in the locale's
-    :attr:`~Locale.day_order` when it has one."""
+    optional time) in any locale, or, with ``local_dates``, with ``/``, ``-`` or ``.`` in
+    the locale's ``date_order``."""
     stripped = text.strip()
     match = _ISO_DATE.fullmatch(stripped)
     if match:
         return _real(int(match.group(1)), int(match.group(2)), int(match.group(3)))
-    if locale.day_order is None:
+    order = locale.date_order
+    if not local_dates or order not in DATE_ORDERS:
         return False
     match = _LOCAL_DATE.fullmatch(stripped)
     if not match:
         return False
-    parts = dict(zip(locale.day_order, (match.group(1), match.group(3), match.group(4))))
+    parts = dict(zip(order, (match.group(1), match.group(3), match.group(4))))
     if len(parts["y"]) not in (2, 4) or len(parts["d"]) > 2 or len(parts["m"]) > 2:
         return False
     year = int(parts["y"])
