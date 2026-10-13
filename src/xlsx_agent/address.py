@@ -60,8 +60,11 @@ that rule, and a name this library makes (:meth:`Workbook.declare_region
 wider, because a ``name`` attribute is an ST_Xstring and a file may hold a name the grammar
 does not allow (``Products?``, say): a ``t:`` name is any non-empty text without white
 space, without the characters the address itself uses (``[ ] / ! '``) and not starting
-with ``#``.  A name outside that is in the workbook but has no ``t:`` address.  Dataset
-ids (``d:``) take the same wider rule for now (O2 defines them).
+with ``#``.  A name outside that is in the workbook but has no ``t:`` address.
+
+**Dataset ids** (``d:``) are ooxml-edit's (O2, :data:`ooxml_edit.tools.DATASET_ID`): a
+letter or ``_``, then letters, digits, ``_``, ``.`` and ``-``; at most 64 characters; case
+counts.  The session keeps datasets by that id, so an address takes no other.
 
 **Sheet-scoped names.**  A defined name local to a sheet is written as Excel writes it,
 sheet first: ``t:Stock!Prices``, ``t:'Q3 sales'!Rate``, ``t:#3!Rate``.  What follows the
@@ -95,7 +98,7 @@ from typing import Iterable, Mapping, Union
 
 from ooxml_edit.charts.workbook import (MAX_COLUMN, MAX_ROW, Area, Cell, column_index,
                                         column_letters)
-from ooxml_edit.tools import REF
+from ooxml_edit.tools import DATASET_ID, REF
 
 #: One example of every form, by kind: what an :class:`AddressError` offers when the
 #: address is none of them.
@@ -154,6 +157,8 @@ _POSITION = re.compile(r"#([1-9][0-9]{0,6})")
 _RANGE_FORMS = ("cell", "range", "columns", "rows", "sheet", "quoted sheet", "sheet by id")
 _TABLE_FORMS = ("table", "sheet-scoped name", "detected region", "column", "value by key",
                 "row by position")
+_DATASET_ID_RULE = ("a dataset id is a letter or _, then letters, digits, _ . or -; at most "
+                    "64 characters")
 _DATASET_FORMS = ("d:by_category", "d:by_category[average]", "d:by_category/Hardware/average",
                   "d:by_category/#2")
 
@@ -520,7 +525,8 @@ class DatasetAddress(_Selection):
     position: int | None = None
 
     def __post_init__(self) -> None:
-        _check_name(self.id, "a dataset id")
+        if not isinstance(self.id, str) or not DATASET_ID.fullmatch(self.id):
+            raise ValueError(_DATASET_ID_RULE)
         self._check_selection()
 
     @property
@@ -778,6 +784,8 @@ class _Parser:
         start = len(DATASET_PREFIX)
         end = _name_end(self.body, start)
         name = self.name(start, end, "a dataset id", "d:by_category")
+        if not DATASET_ID.fullmatch(name):
+            self.fail(_DATASET_ID_RULE, start)
         column, key, position = self.selection(end)
         return DatasetAddress(name, column=column, key=key, position=position)
 

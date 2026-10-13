@@ -13,6 +13,10 @@ row by row; on request with its number format's code (``formats``), its formula'
 (``merges``).  The blocks array formulas and dynamic arrays fill that cross the rows are
 always listed (``arrays``): a cell inside one says nothing of it by itself.
 
+A dataset (``d:by_region``, ``d:by_region[total]``, ``d:by_region/#2/total``...) is read by
+:func:`.derive.read_dataset`: no ``doc`` is needed, since a dataset outlives its workbook,
+and ``sources`` adds each value's source cells (R11).  Every other target needs ``doc``.
+
 **Bounded.**  A page holds at most ``limit`` rows (by default ``Limits.max_list_items``, at
 most :data:`READ_ROWS`) and its whole result at most ``max_chars`` characters (by default,
 and at most, ``Limits.max_result_chars``); a row too wide for what is left is split, the
@@ -44,10 +48,10 @@ import zlib
 from typing import Any, Iterable
 
 from ooxml_edit.charts.workbook import Area, Cell
-from ooxml_edit.tools import CORE, Result, ToolError, array, boolean, integer, string, tool
+from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, boolean, integer,
+                              string, tool)
 
-from ..address import (DatasetAddress, RangeAddress, RefAddress, SheetRef, TableAddress,
-                       parse_address)
+from ..address import RangeAddress, RefAddress, SheetRef, TableAddress, parse_address
 from ..read.types import Value
 from .docformat import KIND, handler
 
@@ -83,15 +87,18 @@ CURSOR = string("next_cursor of the previous page, with the same target.", optio
       "Cells by address, typed, row by row, each with its address; paged. Options add "
       "number formats, formula text (f), comments, hyperlinks, merged areas. cut says what a "
       "page left out; pass next_cursor back for more.",
-      {"doc": DOC,
+      {"doc": string("Document id; not needed for a dataset (d:).", optional=True),
        "target": string("A cell or range (Stock!A1:H40, Stock!A:C), table or region "
                         "(t:Products: its data rows), column (t:Products[Price]), row "
-                        "(t:Products/#5, t:Products/SKU-0042) or value."),
+                        "(t:Products/#5, t:Products/SKU-0042) or value; or a dataset "
+                        "(d:by_region), as tables."),
        "formats": boolean("Add format, the number format code. Default false.", optional=True),
        "formulas": boolean("Add f, the formula text. Default false.", optional=True),
        "comments": boolean("Add comment (author, text). Default false.", optional=True),
        "hyperlinks": boolean("Add link (url or location). Default false.", optional=True),
        "merges": boolean("List the merged areas over the rows. Default false.", optional=True),
+       "sources": boolean("Dataset: add each value's source cells (8, more counted); "
+                          "for one value, all, paged.", optional=True),
        "key_column": string("The key column of a row or value by key, when describe gives "
                             "none or several.", optional=True),
        "limit": integer(f"Rows per page. Default 50, at most {READ_ROWS}.", minimum=1,
@@ -99,14 +106,24 @@ CURSOR = string("next_cursor of the previous page, with the same target.", optio
        "max_chars": integer("Characters per page. Default and at most 24000.",
                             minimum=MIN_CHARS, optional=True),
        "cursor": CURSOR},
-      group=CORE, kind=KIND)
+      group=CORE, datasets=("target",))
 @handler
-def xlsx_read(call: Any, doc: str, target: str, formats: bool = False,
+def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = False,
               formulas: bool = False, comments: bool = False, hyperlinks: bool = False,
-              merges: bool = False, key_column: str | None = None, limit: int | None = None,
-              max_chars: int | None = None, cursor: str | None = None) -> Result:
-    """``xlsx_read``'s workbook handler (see the module's notes)."""
-    workbook = call.document
+              merges: bool = False, sources: bool = False, key_column: str | None = None,
+              limit: int | None = None, max_chars: int | None = None,
+              cursor: str | None = None) -> Result:
+    """``xlsx_read``'s handler: a workbook's cells, or a dataset's values (see the
+    module's notes)."""
+    from .derive import read_dataset, workbook_of
+
+    if isinstance(target, str) and target.startswith(DATASET_PREFIX):
+        return read_dataset(call, target, sources=bool(sources), limit=limit,
+                            max_chars=max_chars, cursor=cursor)
+    if sources:
+        raise ToolError("invalid_arguments", "sources is for a dataset (d:); a cell is its "
+                        "own source", field="sources")
+    workbook = workbook_of(call, doc)
     found = _cells(workbook, target, key_column)
     rows_limit = min(limit or call.limits.max_list_items, READ_ROWS)
     chars = min(max_chars or call.limits.max_result_chars, call.limits.max_result_chars)
@@ -235,9 +252,6 @@ class _Found:
 
 def _cells(workbook: Any, target: str, key_column: str | None) -> _Found:
     address = parse_address(target)
-    if isinstance(address, DatasetAddress):
-        raise ToolError("invalid_arguments", "a dataset (d:) is read once xlsx_derive makes "
-                        "one; give a cell, range or t: address", field="target")
     if isinstance(address, RefAddress):
         raise ToolError("not_found", f"no call has defined {address.text}", field="target")
     if key_column is not None and not (isinstance(address, TableAddress)
