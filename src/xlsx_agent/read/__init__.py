@@ -6,9 +6,10 @@ regions and how a ``t:`` address resolves (:mod:`.regions`)."""
 
 from .names import DefinedName
 from .regions import Region, RegionError, Selection, UnclearRegion
-from .stream import SheetScan
+from .stream import SheetScan, Validation
 from .styles import NumberFormat, classify_format
 from .types import FORMAT_LANGUAGES, Locale, Problem, Value
 
 __all__ = ["FORMAT_LANGUAGES", "DefinedName", "Locale", "NumberFormat", "Problem", "Region",
-           "RegionError", "Selection", "SheetScan", "UnclearRegion", "Value", "classify_format"]
+           "RegionError", "Selection", "SheetScan", "UnclearRegion", "Validation", "Value",
+           "classify_format"]

@@ -2,9 +2,16 @@
 
 A worksheet may hold a million rows (ROADMAP.md, "Design rules", 6), so it is read with
 :func:`xlsx_agent.xml.iterparse_xml` (``parse_xml``'s safe options): each cell is typed as
-its row ends, and the row is then dropped, so what is held at any moment is one row.  What the pass meets on the way -- hidden columns (``cols`` comes before the
-cells), hidden rows, merges (``mergeCells`` comes after them), how the rows are ordered --
-is collected as it goes.
+its row ends, and the row is then dropped, so what is held at any moment is one row.  What
+the pass meets on the way -- hidden columns (``cols`` comes before the cells), hidden rows,
+merges and data-validation rules (both come after them), how the rows are ordered -- is
+collected as it goes.
+
+**Data validation** (ECMA-376 Part 1, §18.3.1.32 ``dataValidation``): each rule's type
+(ST_DataValidationType), the cells it covers (``sqref``) and its first formula, as text,
+for a program only (formulas hold literals: never in a message).  A rule Excel keeps in
+the worksheet's ``extLst`` (the ``x14:dataValidation`` of Microsoft's [MS-XLSX]
+extensions, whose ``xm:sqref`` and ``x14:formula1/xm:f`` carry the same) is read alike.
 
 Positions are computed as Excel computes them (ROADMAP.md, "Messy workbooks"): a row
 without ``r`` is the row after the one before it, a cell without ``r`` the column after
@@ -42,8 +49,14 @@ def _tags(local: str) -> frozenset[str]:
 
 _ROW, _C, _COL, _MERGE = _tags("row"), _tags("c"), _tags("col"), _tags("mergeCell")
 _DIMENSION = _tags("dimension")
+_VALIDATION, _FORMULA1 = _tags("dataValidation"), _tags("formula1")
+#: [MS-XLSX]'s namespaces of the x14 data-validation extension and of its ``xm:`` children.
+NS_X14 = "http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
+NS_XM = "http://schemas.microsoft.com/office/excel/2006/main"
+_X14_VALIDATION = frozenset({f"{{{NS_X14}}}dataValidation"})
+_X14_FORMULA1, _XM_F, _XM_SQREF = f"{{{NS_X14}}}formula1", f"{{{NS_XM}}}f", f"{{{NS_XM}}}sqref"
 _V, _F, _IS = _tags("v"), _tags("f"), _tags("is")
-_STREAMED = tuple(_ROW | _COL | _MERGE | _DIMENSION)
+_STREAMED = tuple(_ROW | _COL | _MERGE | _DIMENSION | _VALIDATION | _X14_VALIDATION)
 
 _REF = re.compile(r"\$?([A-Za-z]{1,3})\$?([0-9]{1,7})")
 _INTEGER = re.compile(r"[+-]?[0-9]+")
@@ -79,6 +92,19 @@ def is_volatile(formula: str) -> bool:
     return bool(_VOLATILE.search(_QUOTED.sub("", formula)))
 
 
+@dataclass(frozen=True)
+class Validation:
+    """One data-validation rule: ``type`` its ST_DataValidationType as written (``"list"``,
+    ``"whole"``, ``"decimal"``...; ``"none"`` when the file gives none), ``areas`` the
+    cells it covers (``sqref``; a reference that is not one is left out), ``formula1`` its
+    first formula as text (a list's ``"Red,Green"`` literal, a range or a name), for a
+    program only."""
+
+    type: str
+    areas: tuple[Area, ...]
+    formula1: str | None = field(default=None, repr=False)
+
+
 @dataclass
 class SheetScan:
     """What one full pass over a sheet found.
@@ -89,7 +115,8 @@ class SheetScan:
     hold a value or a formula; ``merges`` the merged areas; ``hidden_rows`` how many rows
     are hidden; ``ordered`` whether rows and cells come in the order of the sheet;
     ``issues`` each value issue (``no_cached_value``, ``number_as_text``...), ``at_limit``
-    and ``volatile`` by code, as ``(count, first address)``."""
+    and ``volatile`` by code, as ``(count, first address)``; ``validations`` the sheet's
+    data-validation rules, in the file's order."""
 
     sheet: str
     used: Area | None = None
@@ -99,6 +126,7 @@ class SheetScan:
     hidden_rows: int = 0
     ordered: bool = True
     issues: dict[str, tuple[int, str]] = field(default_factory=dict)
+    validations: list[Validation] = field(default_factory=list)
 
     @property
     def problems(self) -> list[Problem]:
@@ -134,6 +162,7 @@ class SheetReader:
         #: Hidden rows met so far.
         self.hidden_rows: set[int] = set()
         self.merges: list[Area] = []
+        self.validations: list[Validation] = []
         self.dimension: str | None = None
         self.ordered = True
         self._shared: dict[str, tuple[str, bool]] = {}
@@ -209,6 +238,17 @@ class SheetReader:
                     self.merges.append(area)
             elif tag in _DIMENSION:
                 self.dimension = node.get("ref")
+            elif tag in _VALIDATION:
+                formula = next((child.text for child in node if child.tag in _FORMULA1), None)
+                self.validations.append(_validation(node.get("type"), node.get("sqref"), formula))
+            elif tag in _X14_VALIDATION:
+                formula = sqref = None
+                for child in node:
+                    if child.tag == _X14_FORMULA1:
+                        formula = next((f.text for f in child if f.tag == _XM_F), None)
+                    elif child.tag == _XM_SQREF:
+                        sqref = child.text
+                self.validations.append(_validation(node.get("type"), sqref, formula))
 
     def column_hidden(self, column: int) -> bool:
         spans = self.hidden_columns
@@ -402,6 +442,7 @@ def scan(reader: SheetReader) -> SheetScan:
         result.used = Area(Cell(top, left), Cell(bottom, right))
     result.dimension = reader.dimension
     result.merges = list(reader.merges)
+    result.validations = list(reader.validations)
     result.hidden_rows = len(reader.hidden_rows)
     result.ordered = reader.ordered
     return result
@@ -461,6 +502,11 @@ def _row(reader: SheetReader, row: int, left: int, width: int,
                           hidden=row_hidden or reader.column_hidden(column))
         out.append(value)
     return out
+
+
+def _validation(kind: str | None, sqref: str | None, formula: str | None) -> Validation:
+    areas = tuple(area for area in map(_area, (sqref or "").split()) if area is not None)
+    return Validation((kind or "none").strip(), areas, formula)
 
 
 def _merge_spans(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:

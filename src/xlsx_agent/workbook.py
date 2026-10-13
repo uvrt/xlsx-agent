@@ -27,6 +27,11 @@ address resolves against::
     wb.read("t:Products[Price]")         # the column's data cells, as any range is read
     wb.declare_region("Returns", "Returns!A3:F200", header_rows=2, headers=[...])
 
+and what each column holds (:mod:`xlsx_agent.profile`)::
+
+    wb.table("t:Products").column("Price").stats()     # ColumnStats(type='number', ...)
+    wb.profile("t:Products")                           # every column's, in one pass
+
 Transitional and strict packages (``purl.oclc.org`` namespaces) are read alike.
 """
 
@@ -45,6 +50,7 @@ from ooxml_edit.xml import Element
 from .address import (NameNotFound, RangeAddress, SheetRef, TableAddress, nearest,
                       parse_address, quote_sheet)
 from .package import OpenError, open_package, read_source, workbook_part
+from .profile import Column, ColumnStats, profile
 from .read.names import DefinedName, read_names
 from .read.regions import Region, Regions, Selection, UnclearRegion
 from .read.stream import SheetReader, SheetScan, read_area, scan
@@ -333,6 +339,26 @@ class Workbook:
         """The blocks of a sheet outside its tables, each detected or flagged
         ``header_unclear``; see :meth:`~xlsx_agent.read.regions.Regions.find`."""
         return self.regions.find(sheet)
+
+    def column(self, address: "str | TableAddress", *, key: str | None = None) -> Column:
+        """The column a ``t:`` column address names (``t:Products[Price]``), whose
+        :meth:`~xlsx_agent.profile.Column.stats` is its profile; ``ValueError`` for an
+        address that names no column, or a row or value of one."""
+        if isinstance(address, str):
+            address = TableAddress.parse(address)
+        if not isinstance(address, TableAddress) or address.column is None \
+                or address.key is not None or address.position is not None:
+            raise ValueError("a column address names one column of a table, as t:Products[Price]")
+        region = self.table(address.whole, key=key)
+        return Column(self, region, address.column)
+
+    def profile(self, address: "str | TableAddress | Region",
+                columns: "list[str] | None" = None) -> list[ColumnStats]:
+        """The profile of every column of a table, name or region (or of ``columns``, by
+        name), in one streamed pass: what ``xlsx_profile`` returns
+        (:mod:`xlsx_agent.profile`)."""
+        region = address if isinstance(address, Region) else self.regions.region(address)
+        return profile(self, region, columns)
 
     def key_columns(self, address: "str | TableAddress | Region") -> list[str]:
         """The columns that can be a region's key: unique, never blank, text or whole

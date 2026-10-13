@@ -54,6 +54,7 @@ from .tables import TablePart, name_columns
 from .types import Problem, Value
 
 if TYPE_CHECKING:  # pragma: no cover
+    from ..profile import Column, ColumnStats
     from ..workbook import Sheet, Workbook
 
 #: What a :class:`Region` is.
@@ -97,7 +98,10 @@ class Region:
     :meth:`Workbook.table <xlsx_agent.workbook.Workbook.table>`); ``hidden`` a hidden
     defined name; ``flags`` what is odd, by code and address.  A table also has ``id``,
     ``object_name`` (its ``name``), ``auto_filter``, ``totals`` (each column's totals-row
-    function) and ``table_type``."""
+    function) and ``table_type``.
+
+    A region the workbook gave knows its workbook, so that its columns can be read:
+    :meth:`column` and :meth:`profile`."""
 
     kind: str
     name: str | None
@@ -116,6 +120,7 @@ class Region:
     auto_filter: Area | None = None
     totals: tuple[str | None, ...] = ()
     table_type: str | None = None
+    workbook: "Workbook | None" = field(default=None, repr=False, compare=False)
 
     @property
     def sheet_ref(self) -> SheetRef:
@@ -187,6 +192,24 @@ class Region:
         if data is None:
             return None
         return Area(Cell(data.first.row, column), Cell(data.last.row, column))
+
+    def column(self, name: str) -> "Column":
+        """The column called ``name`` (matched case aside), whose
+        :meth:`~xlsx_agent.profile.Column.stats` is its profile."""
+        from ..profile import Column
+        return Column(self._workbook(), self, name)
+
+    def profile(self, columns: "Sequence[str] | None" = None) -> "list[ColumnStats]":
+        """The profiles of ``columns`` (every column when ``None``), in one streamed pass
+        (:mod:`xlsx_agent.profile`)."""
+        from ..profile import profile
+        return profile(self._workbook(), self, columns)
+
+    def _workbook(self) -> "Workbook":
+        if self.workbook is None:
+            raise ValueError(f"{self.address.text} was made without its workbook; get it "
+                             "from Workbook.table or Workbook.region")
+        return self.workbook
 
 
 @dataclass(frozen=True)
@@ -280,7 +303,7 @@ class Regions:
                       columns=part.columns, header_rows=part.header_rows,
                       totals_rows=part.totals_rows, sheet_id=sheet.id, flags=part.flags,
                       id=part.id, object_name=part.object_name, auto_filter=part.auto_filter,
-                      totals=part.totals, table_type=part.kind)
+                      totals=part.totals, table_type=part.kind, workbook=self.workbook)
 
     # -- finding a region by address -------------------------------------------------------
 
@@ -367,7 +390,8 @@ class Regions:
         columns = tuple(f"Column {column_letters(c)}"
                         for c in range(area.first.column, area.last.column + 1))
         return Region(kind="name", name=name.name, sheet=sheet.name, area=area, columns=columns,
-                      header_rows=0, scope=name.scope, hidden=name.hidden, sheet_id=sheet.id)
+                      header_rows=0, scope=name.scope, hidden=name.hidden, sheet_id=sheet.id,
+                      workbook=self.workbook)
 
     # -- declared regions ------------------------------------------------------------------
 
@@ -425,7 +449,7 @@ class Regions:
                        for c in range(area.first.column, area.last.column + 1)]
         region = Region(kind="declared", name=name, sheet=sheet.name, area=area,
                         columns=tuple(columns), header_rows=header_rows, sheet_id=sheet.id,
-                        flags=tuple(flags))
+                        flags=tuple(flags), workbook=self.workbook)
         if key is not None:
             region = replace(region, key=region.columns[region.column_index(key)])
         self._declared[folded] = region
@@ -515,7 +539,8 @@ class Regions:
         bottom = cell.row + len(data)
         return Region(kind="detected", name=None, sheet=sheet.name,
                       area=Area(cell, Cell(bottom, right)), columns=tuple(columns),
-                      header_rows=1, sheet_id=sheet.id, flags=tuple(flags))
+                      header_rows=1, sheet_id=sheet.id, flags=tuple(flags),
+                      workbook=self.workbook)
 
     def find(self, sheet: "Sheet | str | SheetRef") -> list["Region | UnclearRegion"]:
         """The blocks of a sheet outside its tables, each detected (a :class:`Region`) or
