@@ -39,6 +39,11 @@ These are settled and are not reopened anywhere below.
    be revisited on demand.
 4. **Locale is a caller setting** (default: `.` as the decimal separator). A number format
    with an explicit locale tag, such as `[$-409]`, is honoured for that format.
+   *Shared locale (between R9 and R10, branch `locale-shared`):* the locale is the shared
+   `ooxml_common.locales.Locale` (ooxml-common 0.15.0; default en-US), as in pptx-agent and
+   docx-agent; in the tool layer it is the session's (`Toolbox(locale=...)`, ooxml-edit
+   0.19.0). Whether grouped text numbers and non-ISO text dates are recognised are reader
+   settings, not locale facts: `grouping` (on) and `local_dates` (off).
 5. **Commit scope.** 0.1 is read and derive; 0.2 is edit. 0.3 (an `xlsx2svg` renderer,
    with `render` and `check`) stays on this roadmap as a later, separate project about the
    size of docx2svg. When that time comes, what Excel shows is measured from Microsoft
@@ -165,12 +170,19 @@ request (`formats: true`). **No display string is produced in 0.1 or 0.2**: how 
 `General`, a locale's date order or a currency is measured from Excel in 0.3, not
 reproduced from guesses. A model that needs to say a figure asks `xlsx_derive` to round it.
 
-**Locale** (decision 4). `Workbook.open(..., locale=Locale(decimal=",", thousands="."))`;
-in the tool layer the application builds the format with it,
-`xlsx_agent.tools.format(locale=...)`, never the model. It decides how text that looks
-like a number is recognised (numbers stored as text), and the date order of text that
-looks like a date. A format code's own locale tag (`[$-409]`, `[$-413]`) overrides it for
-that format's cells.
+**Locale** (decision 4). `Workbook.open(..., locale=...)` with the shared
+`ooxml_common.locales.Locale` (or any object with its five fields; en-US when none); in
+the tool layer it is the session's, `Toolbox(locale=...)` or `toolbox.session(locale=...)`,
+never the model's. Its separators decide how text that looks like a number is recognised
+(numbers stored as text), its date order the order of text that looks like a date, and
+its language, when it is one of ECMA-376's five (zh-TW, zh-CN, ja-JP, ko-KR, th-TH), the
+table the language-dependent built-in formats are read with. Two reader settings are
+not locale facts: `grouping` (on: `1,234.5` is a number in en-US) and `local_dates` (off:
+ISO 8601 dates only), given to `Workbook.open` or `xlsx_agent.tools.format(...)`. Excel,
+measured (16.106 Mac, 2026-10-13): text recognition follows the region's separators,
+grouping included, and reads `3/4/2026` day first under nl-BE and month first under
+en-US, so `local_dates=True` is Excel's reading. A format code's own locale tag
+(`[$-409]`, `[$-413]`) overrides it for that format's cells.
 
 **Formulas** (decision 3). `v` is the cached value. A formula with no cached value is
 `{"a": ..., "t": "blank", "formula": true, "issue": "no_cached_value"}` and is counted in
@@ -246,9 +258,10 @@ the measured oracle (decision 5); it gets its own roadmap when it starts.
 The tools are thin wrappers over this; everything a tool does, a script can do.
 
 ```python
-from xlsx_agent import Workbook, Locale
+from xlsx_agent import Workbook, Locale      # Locale: ooxml_common.locales.Locale
 
-wb = Workbook.open("inventory.xlsx", locale=Locale(decimal=",", thousands="."))
+wb = Workbook.open("inventory.xlsx", locale=Locale(decimal_separator=",",
+        thousands_separator=".", date_order="dmy", language="nl-BE", list_separator=";"))
 # bytes, a path, or an OpcPackage (a chart's embedded workbook); .xlsx .xlsm .xltx .xltm
 
 wb.sheets                        # [Sheet(name="Stock", id=3, state="visible", protected=False)]
