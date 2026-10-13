@@ -103,9 +103,37 @@ toolbox = Toolbox([*DECK_TOOLS, *BOOK_TOOLS], formats=[DECK, WORKBOOK],
                   groups=[*DECK_GROUPS, *BOOK_GROUPS])   # a shared tool merges its kinds
 ```
 
-The deck and Word table and chart tools do not take `d:` yet: that is ooxml-edit's O3,
-after 0.1 (ROADMAP.md, "ooxml-edit changes"). Until then a model reads the dataset with
-`xlsx_read` and passes its values on, each with its `d:` address.
+### Workbook tables into slides and documents
+
+A deck or document tool that takes its rows from a source takes a workbook's table, or a
+dataset, as they are: pptx-agent's `ppt_add_table` and `ppt_edit_table` (`from`,
+`from_columns`) and the shared `edit_chart` (`from`, `columns`; ooxml-edit 0.22.0, O3).
+docx-agent's tables follow. No figure is retyped, and the result names the cells every
+placed value came from:
+
+```python
+session.entry("d2").document.declare_key("t:Stock", "SKU")   # the workbook, d2; or detected
+toolbox.dispatch(session, "edit_chart", {
+    "doc": "d1", "target": "s:256", "action": "add", "chart_type": "column",
+    "box": {"x": 40, "y": 60, "w": 600, "h": 300},
+    "from": "t:Stock/{SKU-0001,SKU-0004}", "columns": ["SKU", "Qty"]})
+# result.data["from"]: {"source": "d2/t:Stock/{SKU-0001,SKU-0004}", "doc": "d2", ...,
+#   "categories": {"column": "SKU", "rows": "1-2",
+#                  "sources": ["t:Stock/{SKU-0001,SKU-0004}/SKU"]},
+#   "series": [{"name": "Qty", "column": "Qty", "rows": "1-2",
+#               "sources": ["t:Stock/{SKU-0001,SKU-0004}/Qty"]}]}
+```
+
+`from` is a table, name or region (`t:Stock`), one column of it (`t:Stock[Qty]`,
+`t:Stock/*/Qty`), or a key set's rows in its order (`t:Stock/{SKU-0003,SKU-0001}`); one
+value is refused (`invalid_arguments`), as is a table over `Limits.max_dataset_cells`
+(`limit`, before a cell is read). Values come as `xlsx_read` types them: numbers as
+numbers, dates as ISO 8601 text, blanks as blanks; nothing is coerced -- a number stored as
+text stays text, and a chart refuses it, naming its cell. Each value's source is its cell
+by key when the table has a key column (as a derive's are), else its cell address, and a
+column's are merged (`t:Stock/{...}/Qty`, `Stock!C2:C9`). The workbook is only read: no
+undo step, its version unchanged. `Workbook.dataset("t:Stock")` gives the same rows to a
+script.
 
 **Limits.** Every limit is the session's (`ooxml_edit.tools.Limits`, given to
 `toolbox.session(limits=...)` or the toolbox), and every result says what it cut and gives a
