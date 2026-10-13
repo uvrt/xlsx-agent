@@ -23,6 +23,8 @@ from ooxml_edit.opc import OpcPackage
 from ooxml_edit.tools.limits import Limits
 from ooxml_edit.xml import Element
 
+from .address import (NameNotFound, RangeAddress, SheetRef, TableAddress, nearest,
+                      parse_address, quote_sheet)
 from .package import OpenError, open_package, read_source, workbook_part
 from .xml import iterparse_xml
 
@@ -142,12 +144,53 @@ class Workbook:
 
     def sheet(self, name: str) -> Sheet:
         """The sheet called ``name``, matched as Excel matches names (case aside);
-        ``KeyError`` naming the sheets there are."""
+        :class:`~xlsx_agent.address.NameNotFound` (a ``KeyError``) naming the sheets there
+        are, with the nearest as ``valid_options``, as an address writes them."""
         folded = name.casefold()
         for sheet in self.sheets:
             if sheet.name.casefold() == folded:
                 return sheet
-        raise KeyError(f"no sheet {name!r}; the sheets are {[sheet.name for sheet in self.sheets]}")
+        names = [sheet.name for sheet in self.sheets]
+        written = [quote_sheet(sheet.name) for sheet in self.sheets if sheet.name]
+        raise NameNotFound(f"no sheet {name!r}; the sheets are {names}", what="sheet",
+                           name=name, candidates=written,
+                           valid_options=nearest(quote_sheet(name) if name else "", written))
+
+    def sheet_by_id(self, sheet_id: int) -> Sheet:
+        """The sheet whose ``sheetId`` is ``sheet_id`` (what ``#3!F2`` names);
+        :class:`~xlsx_agent.address.NameNotFound` with the ids there are, as ``#3``."""
+        for sheet in self.sheets:
+            if sheet.id is not None and sheet.id == sheet_id:
+                return sheet
+        ids = [f"#{sheet.id}" for sheet in self.sheets if sheet.id is not None]
+        raise NameNotFound(f"no sheet with id {sheet_id}; the ids are {ids}", what="sheet id",
+                           name=sheet_id, candidates=ids, valid_options=ids[:50])
+
+    def sheet_of(self, address: "str | SheetRef | RangeAddress | TableAddress") -> Sheet:
+        """The sheet an address names: a :class:`~xlsx_agent.address.SheetRef`, a cell or
+        range (``Stock!F2``, ``#3!A:A``), a detected region (``t:Stock!A1``), or such an
+        address as text.  By name, matched case aside; by id, its ``sheetId``.  A table,
+        dataset or ref names no sheet by itself: ``ValueError``."""
+        if isinstance(address, str):
+            address = parse_address(address)
+        if isinstance(address, TableAddress) and address.region is not None:
+            address = address.region
+        if isinstance(address, RangeAddress):
+            address = address.sheet
+        if not isinstance(address, SheetRef):
+            raise ValueError(f"a {getattr(address, 'kind', type(address).__name__)} address "
+                             "names no sheet by itself")
+        if address.id is not None:
+            return self.sheet_by_id(address.id)
+        return self.sheet(address.name)
+
+    @staticmethod
+    def sheet_refs(sheet: Sheet) -> tuple[SheetRef | None, SheetRef | None]:
+        """Both ways to name ``sheet``: by name and by id, each ``None`` when the workbook
+        gives none (an empty name, a ``sheetId`` that is not a number).  A result gives
+        both the first time it names a sheet."""
+        return (SheetRef(name=sheet.name) if sheet.name else None,
+                SheetRef(id=sheet.id) if sheet.id is not None and sheet.id >= 0 else None)
 
     @property
     def protected(self) -> bool:
