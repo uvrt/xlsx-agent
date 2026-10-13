@@ -7,8 +7,10 @@ from.  Built on lxml, ooxml-edit and ooxml-common, beside pptx-agent and docx-ag
 So far a workbook opens, lists its sheets and writes itself back unchanged, addresses
 parse and format (:mod:`xlsx_agent.address`), cells are read, typed and streamed
 (:mod:`xlsx_agent.read`), tables, defined names and regions resolve ``t:`` addresses
-(:mod:`xlsx_agent.read.regions`), and their columns are profiled
-(:mod:`xlsx_agent.profile`)::
+(:mod:`xlsx_agent.read.regions`), their columns are profiled
+(:mod:`xlsx_agent.profile`), and the workbook is catalogued in one bounded result
+(:mod:`xlsx_agent.catalogue`), which the shared ``describe`` tool returns
+(:mod:`xlsx_agent.tools`)::
 
     from xlsx_agent import Workbook, parse_address
 
@@ -22,6 +24,7 @@ parse and format (:mod:`xlsx_agent.address`), cells are read, typed and streamed
     wb.resolve("t:Products/SKU-0042/Price")    # Selection(range=Stock!C43, ...)
     wb.declare_region("Returns", "Returns!A1:C40", header_rows=2, headers=[...])
     wb.table("t:Products").column("Price").stats()   # ColumnStats(type='number', ...)
+    wb.catalogue()                             # sheets, regions, columns, samples, flags
 
 A ``.xls``, ``.xlsb`` or encrypted file is refused with an :class:`OpenError` whose
 ``code`` says why.  See ROADMAP.md for the plan and what each milestone adds.
