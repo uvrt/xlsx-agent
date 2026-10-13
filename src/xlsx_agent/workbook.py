@@ -18,13 +18,22 @@ and its cells, typed, streamed from the sheet (:mod:`xlsx_agent.read`)::
     wb.used_range("Stock")               # Area A1:H40, computed from the cells
     wb.problems                          # [Problem(code='no_cached_value', address='Stock!F7', count=1)]
 
+and its tables, defined names and regions (:mod:`xlsx_agent.read.regions`), which a ``t:``
+address resolves against::
+
+    wb.tables                            # [Region(kind='table', name='Products', ...)]
+    wb.names                             # [DefinedName(name='Prices', scope=None, ...)]
+    wb.resolve("t:Products/SKU-0042/Price", key="SKU").range    # Stock!C7
+    wb.read("t:Products[Price]")         # the column's data cells, as any range is read
+    wb.declare_region("Returns", "Returns!A3:F200", header_rows=2, headers=[...])
+
 Transitional and strict packages (``purl.oclc.org`` namespaces) are read alike.
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import BinaryIO, Iterator
 
 from lxml import etree
@@ -36,9 +45,12 @@ from ooxml_edit.xml import Element
 from .address import (NameNotFound, RangeAddress, SheetRef, TableAddress, nearest,
                       parse_address, quote_sheet)
 from .package import OpenError, open_package, read_source, workbook_part
+from .read.names import DefinedName, read_names
+from .read.regions import Region, Regions, Selection, UnclearRegion
 from .read.stream import SheetReader, SheetScan, read_area, scan
 from .read.strings import SharedStrings
 from .read.styles import NumberFormat, Styles
+from .read.tables import TablePart, read_table
 from .read.types import Locale, Problem, Value
 from .xml import iterparse_xml
 
@@ -103,6 +115,8 @@ class Workbook:
         self._strings: SharedStrings | None = None
         self._styles: Styles | None = None
         self._scans: dict[str, SheetScan] = {}
+        self._table_parts_read: list[TablePart] | None = None
+        self.regions = Regions(self)
 
     # -- lifecycle -------------------------------------------------------------------------
 
@@ -254,10 +268,100 @@ class Workbook:
         its first address and count.  Every worksheet is scanned once (streamed) the first
         time this is asked."""
         out = [Problem(code) for code in self.calculation]
+        out.extend(self.regions.problems())
         for sheet in self.sheets:
             if sheet.part is not None and sheet.type in _CELL_SHEETS:
                 out.extend(self.scan(sheet).problems)
         return out
+
+    # -- tables, names and regions ---------------------------------------------------------
+
+    @property
+    def tables(self) -> list[Region]:
+        """The Excel tables (ListObjects), sheet by sheet in the workbook's order, each in
+        the order its sheet relates to it; a table whose ``ref`` is not a range is left out
+        and reported in :attr:`problems` (``bad_ref``, ``bad_table``)."""
+        return self.regions.tables
+
+    @property
+    def names(self) -> list[DefinedName]:
+        """The defined names, in the file's order, hidden and built-in ones too; those that
+        are not a range say why (:mod:`xlsx_agent.read.names`)."""
+        return self.regions.names
+
+    def region(self, address: "str | TableAddress") -> Region:
+        """The table, name or region a ``t:`` address names (its column or row aside):
+        :class:`~xlsx_agent.address.NameNotFound` for an unknown name, with the nearest as
+        ``valid_options``; :class:`~xlsx_agent.read.regions.RegionError` for a name that is
+        not a range, an ambiguous one, or a header that is not detected."""
+        return self.regions.region(address)
+
+    def table(self, address: "str | TableAddress", *, key: str | None = None) -> Region:
+        """As :meth:`region`, with ``key`` (a column name) as its key column."""
+        region = self.regions.region(address)
+        if key is not None:
+            region = replace(region, key=region.columns[region.column_index(key)])
+        return region
+
+    def resolve(self, address: "str | TableAddress", *, key: str | None = None) -> Selection:
+        """What a ``t:`` address names, as cells: ``t:Products`` (its data rows),
+        ``t:Products[Price]``, ``t:Products/#5``, ``t:Products/SKU-0042``,
+        ``t:Products/SKU-0042/Price``, ``t:Stock!Prices`` and ``t:Stock!A1`` (a detected
+        region).  ``key`` names the key column for a row by key; see
+        :mod:`xlsx_agent.read.regions` for how keys, columns and names are matched."""
+        return self.regions.resolve(address, key=key)
+
+    def declare_region(self, name: str, where: "str | RangeAddress", *, header_rows: int = 1,
+                       headers: "list[str] | None" = None, key: str | None = None) -> Region:
+        """Declare a region over a range (``Returns!A3:F200``), usable as ``t:<name>`` from
+        then on: ``header_rows`` header rows (0 for none), named by ``headers`` (one per
+        column, unique case aside; required with two or more header rows, since a
+        multi-row or merged header is never read as names), else by the header row's text
+        (one header row) or the columns' letters (none).  ``key`` names the key column.
+        ``name`` follows ECMA-376's rule for names (:func:`~xlsx_agent.address.is_name`)
+        and is no table's or workbook-wide name's; declaring a region's name again replaces
+        it."""
+        return self.regions.declare(name, where, header_rows=header_rows, headers=headers,
+                                    key=key)
+
+    def detect_region(self, where: "str | RangeAddress | TableAddress") -> Region:
+        """The region whose single-row header starts at a cell (``t:Stock!A1``); see
+        :meth:`~xlsx_agent.read.regions.Regions.detect`."""
+        return self.regions.detect(where)
+
+    def find_regions(self, sheet: "Sheet | str | SheetRef") -> "list[Region | UnclearRegion]":
+        """The blocks of a sheet outside its tables, each detected or flagged
+        ``header_unclear``; see :meth:`~xlsx_agent.read.regions.Regions.find`."""
+        return self.regions.find(sheet)
+
+    def key_columns(self, address: "str | TableAddress | Region") -> list[str]:
+        """The columns that can be a region's key: unique, never blank, text or whole
+        numbers."""
+        region = address if isinstance(address, Region) else self.regions.region(address)
+        return self.regions.key_columns(region)
+
+    def _table_parts(self) -> list[TablePart]:
+        if self._table_parts_read is None:
+            out = []
+            for sheet in self.sheets:
+                if sheet.part is None or sheet.type != "worksheet":
+                    continue
+                written = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
+                for rel in self.package.relationships(sheet.part).values():
+                    if rel.is_external or rel.type.rpartition("/")[2] != "table" \
+                            or rel.target_part is None \
+                            or not self.package.has_part(rel.target_part):
+                        continue
+                    part = rel.target_part
+                    root = _parsed(part, lambda: self.package.tree(part))
+                    table = read_table(root, sheet=sheet.name, written_sheet=written, part=part)
+                    if table is not None:
+                        out.append(table)
+            self._table_parts_read = out
+        return list(self._table_parts_read)
+
+    def _defined_names(self) -> list[DefinedName]:
+        return read_names(self._child("definedNames"), self.sheets)
 
     # -- cells -----------------------------------------------------------------------------
 
@@ -342,18 +446,26 @@ class Workbook:
         sheet = self._cell_sheet(sheet)
         return self._stream(sheet, lambda: self._reader(sheet, formats=formats).values())
 
-    def read(self, address: "str | RangeAddress", *, formats: bool = False) -> Iterator[list[Value]]:
+    def read(self, address: "str | RangeAddress | TableAddress", *,
+             formats: bool = False) -> Iterator[list[Value]]:
         """The rows of a cell or range (``Stock!A1:H40``, ``#3!B2``), each a list of
         values from the range's first column to its last, blanks filled in; whole columns
-        and rows (``Stock!A:A``, ``Stock!2:5``) clipped to the used range.
+        and rows (``Stock!A:A``, ``Stock!2:5``) clipped to the used range.  A ``t:``
+        address is read as the cells :meth:`resolve` gives it (a table's data rows, a
+        column's, a row, a value; nothing when it has no data rows).
 
         Lazy: rows are read as they are asked for, and the pass stops after the range's
         last row.  The sheet is scanned once first (:meth:`scan`: the used range, and
         whether its rows are in order; a sheet whose rows are not has the range's cells
-        gathered before the first row is given).  A table, dataset or ref address is not
-        a range: ``ValueError``."""
+        gathered before the first row is given).  A dataset or ref address is not a range:
+        ``ValueError``."""
         if isinstance(address, str):
             address = parse_address(address)
+        if isinstance(address, TableAddress):
+            selected = self.resolve(address).range
+            if selected is None:
+                return iter(())
+            address = selected
         if not isinstance(address, RangeAddress):
             raise ValueError(f"a {address.kind} address is read from a later milestone; "
                              "give a cell or range, as Stock!A1:H40")
@@ -365,10 +477,14 @@ class Workbook:
         return self._stream(sheet, lambda: read_area(self._reader(sheet, formats=formats),
                                                      area, found.ordered))
 
-    def cell(self, address: "str | RangeAddress", *, formats: bool = False) -> Value:
-        """One cell's value (``Stock!F2``); ``blank`` when the sheet stores nothing there."""
+    def cell(self, address: "str | RangeAddress | TableAddress", *,
+             formats: bool = False) -> Value:
+        """One cell's value (``Stock!F2``, or a ``t:`` value such as
+        ``t:Products/SKU-0042/Price``); ``blank`` when the sheet stores nothing there."""
         if isinstance(address, str):
             address = parse_address(address)
+        if isinstance(address, TableAddress):
+            address = self.resolve(address).range
         if not isinstance(address, RangeAddress) or address.kind != "cell":
             raise ValueError("a cell address names one cell, as Stock!F2")
         return next(iter(self.read(address, formats=formats)))[0]

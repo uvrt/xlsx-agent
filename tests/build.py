@@ -227,6 +227,7 @@ class _Table:
     totals_labels: dict[str, str]
     totals_functions: dict[str, str]
     style_name: str | None
+    display_name: str | None = None
     id: int = 0
 
 
@@ -338,10 +339,11 @@ class SheetBuilder:
     def table(self, name: str, ref: str, columns: Sequence[str], *, header_row: bool = True,
               totals_row: bool = False, totals_labels: dict[str, str] | None = None,
               totals_functions: dict[str, str] | None = None, write_header: bool = True,
-              style_name: str | None = None) -> "SheetBuilder":
+              style_name: str | None = None, display_name: str | None = None) -> "SheetBuilder":
         """An Excel table (a ListObject, §18.5) over ``ref``, which includes its header and
         totals rows.  ``write_header`` writes the column names into the header row's cells
-        (shared strings); the data and totals cells are the caller's."""
+        (shared strings); the data and totals cells are the caller's.  ``display_name`` is
+        the ``displayName`` when it differs from ``name``."""
         (top, left), (bottom, right) = parse_area(ref)
         if len(columns) != right - left + 1:
             raise ValueError(f"{len(columns)} columns for a table {right - left + 1} wide")
@@ -360,7 +362,7 @@ class SheetBuilder:
             for offset, column in enumerate(columns):
                 self.cell(cell_name(top, left + offset), column)
         self.tables.append(_Table(name, ref, list(columns), header_row, totals_row,
-                                  totals_labels, totals_functions, style_name))
+                                  totals_labels, totals_functions, style_name, display_name))
         return self
 
     # -- writing --------------------------------------------------------------------------------
@@ -752,7 +754,7 @@ def zip_parts(parts: dict[str, bytes]) -> bytes:
 def _table_xml(table: _Table) -> etree._Element:
     (top, left), (bottom, right) = parse_area(table.ref)
     root = etree.Element(_x("table"), nsmap={None: NS_MAIN}, id=str(table.id), name=table.name,
-                         displayName=table.name, ref=table.ref)
+                         displayName=table.display_name or table.name, ref=table.ref)
     if not table.header_row:
         root.set("headerRowCount", "0")
     if table.totals_row:
