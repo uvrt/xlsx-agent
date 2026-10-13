@@ -13,9 +13,11 @@ parse and format (:mod:`xlsx_agent.address`), cells are read, typed and streamed
 are queried (:mod:`xlsx_agent.query`); text is found (:mod:`xlsx_agent.find`); figures
 are derived, each with its cells (:mod:`xlsx_agent.derive`), and kept as datasets that
 are read by address and derived from again (:mod:`xlsx_agent.dataset`); two workbooks
-are compared by key (:mod:`xlsx_agent.compare`); ``xlsx_read``,
-``xlsx_profile``, ``xlsx_query``, ``xlsx_derive`` and ``xlsx_compare`` read cells, columns
-and rows, paged, keep figures as ``d:<id>`` and compare workbooks (:mod:`xlsx_agent.tools`)::
+are compared by key (:mod:`xlsx_agent.compare`); a workbook is checked against a declared
+schema (:mod:`xlsx_agent.schema`); ``xlsx_read``, ``xlsx_profile``, ``xlsx_query``,
+``xlsx_derive``, ``xlsx_compare`` and ``xlsx_validate_data`` read cells, columns and rows,
+paged, keep figures as ``d:<id>``, compare workbooks and check them
+(:mod:`xlsx_agent.tools`)::
 
     from xlsx_agent import Workbook, parse_address
 
@@ -40,6 +42,8 @@ and rows, paged, keep figures as ``d:<id>`` and compare workbooks (:mod:`xlsx_ag
     DatasetTable(ds).read("d:by_category/Hardware/average")   # [[DatasetValue(...)]]
     wb.derive(ds, measures=[{"fn": "max", "column": "average"}])   # cells carried through
     Workbook.compare(old, new, tables=["t:Products"], key="SKU")   # Diff, by key
+    wb.validate_data({"tables": [{"table": "t:Products", "key": ["SKU"], "columns": [
+        {"name": "Price", "type": "number", "min": 0}]}]})   # problems by code and address
 
 A ``.xls``, ``.xlsb`` or encrypted file is refused with an :class:`OpenError` whose
 ``code`` says why.  See ROADMAP.md for the plan and what each milestone adds.
@@ -56,13 +60,15 @@ from .find import Found
 from .package import REFUSALS, KindMismatchWarning, OpenError
 from .profile import AllowedList, Column, ColumnStats, Count, Distinct
 from .query import QueryError, QueryResult
+from .schema import CheckedTable, DataProblem, SchemaError, ValidationReport
 from .read import (Comment, DefinedName, Hyperlink, Locale, NumberFormat, Problem, Region,
                    RegionError, Selection, SheetScan, UnclearRegion, Value)
 from .workbook import Sheet, Workbook
 
 __version__ = "0.0.1"
 
-__all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellChange", "Column",
+__all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellChange",
+           "CheckedTable", "Column", "DataProblem", "SchemaError", "ValidationReport",
            "ColumnChange", "Diff", "DuplicateKey", "RowChange", "SheetChange", "TableDiff",
            "ColumnStats", "Comment", "Count", "DatasetAddress", "DatasetSelection",
            "DatasetTable", "DatasetValue", "DefinedName", "DeriveError",

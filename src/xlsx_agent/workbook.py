@@ -44,6 +44,11 @@ and what changed between two versions of it (:mod:`xlsx_agent.compare`)::
 
     Workbook.compare(old, new, tables=["t:Products"], key="SKU")   # Diff
 
+and whether it holds what a declared schema says (:mod:`xlsx_agent.schema`)::
+
+    wb.validate_data({"tables": [{"table": "t:Products", "key": ["SKU"], "columns": [
+        {"name": "Price", "type": "number", "min": 0}]}]})     # ValidationReport
+
 Transitional and strict packages (``purl.oclc.org`` namespaces) are read alike.
 """
 
@@ -72,6 +77,7 @@ from .find import Found, find_text
 from .package import OpenError, open_package, read_source, workbook_part
 from .profile import Column, ColumnStats, profile
 from .read.names import DefinedName, read_names
+from .schema import ValidationReport, validate
 from .read.regions import Region, Regions, Selection, UnclearRegion
 from .read.comments import Comment, read_comments
 from .read.stream import Hyperlink, SheetReader, SheetScan, read_area, scan
@@ -460,6 +466,18 @@ class Workbook:
         change with both cells typed.  A key two rows share is reported, never paired; see
         :mod:`xlsx_agent.compare`."""
         return compare(a, b, tables=tables, key=key, columns=columns)
+
+    # -- checking against a schema ---------------------------------------------------------
+
+    def validate_data(self, schema: Mapping[str, Any]) -> ValidationReport:
+        """The workbook checked against a declared ``schema`` (plain data: required
+        ``sheets``; ``tables``, each a ``t:`` address or a declared region spec, with its
+        ``key`` and its ``columns``' ``type``, ``required``, ``unique``, ``min``, ``max``,
+        ``step``, ``enum``, ``case``, ``validation_list`` and ``pattern``).  The report
+        lists problems by code and address, never a cell's content, and counts them by
+        code; a schema that is not one is refused (:class:`~xlsx_agent.schema.SchemaError`)
+        before anything is read.  See :mod:`xlsx_agent.schema`."""
+        return validate(self, schema)
 
     # -- finding text ----------------------------------------------------------------------
 

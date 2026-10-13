@@ -412,7 +412,12 @@ class Regions:
     # -- declared regions ------------------------------------------------------------------
 
     def declare(self, name: str, where: "str | RangeAddress", *, header_rows: int = 1,
-                headers: Sequence[str] | None = None, key: str | None = None) -> Region:
+                headers: Sequence[str] | None = None, key: str | None = None,
+                keep: bool = True) -> Region:
+        """A region declared over ``where`` (see :meth:`Workbook.declare_region
+        <xlsx_agent.workbook.Workbook.declare_region>`), usable as ``t:<name>`` from then on;
+        with ``keep`` false it is only made, not kept (a schema's region spec,
+        :mod:`xlsx_agent.schema`)."""
         if not is_name(name):
             raise RegionError("bad_name", "a region's name is a name as ECMA-376 defines one: "
                               "a letter, _ or \\ first, then letters, digits, _ and .; not "
@@ -468,7 +473,8 @@ class Regions:
                         flags=tuple(flags), workbook=self.workbook)
         if key is not None:
             region = replace(region, key=region.columns[region.column_index(key)])
-        self._declared[folded] = region
+        if keep:
+            self._declared[folded] = region
         return region
 
     # -- detected regions ------------------------------------------------------------------
