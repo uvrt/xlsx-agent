@@ -3,6 +3,16 @@
 xlsx-agent has not been released to PyPI; it is installed from source. [`ROADMAP.md`](ROADMAP.md)
 has the detail of every milestone.
 
+## Unreleased
+
+- **Dates** (X4): `xlsx_derive`'s `first` and `last` (row order, any column);
+  `coerce=["date_as_text"]`; a refusal of a column of dates or numbers stored as text names
+  the issue, its count and first cells, and the coercion that reads them; `date_as_text`
+  is its own reason for a cell left out; `xlsx_profile` gives the range of dates stored as
+  text (`date_text`).
+- **Text lengths** (X5): `xlsx_profile` gives median and max words beside characters and
+  the address of the longest text; the `words_gt` filter finds text over a word limit.
+
 ## 0.1.0 (2026-10-13) -- read and derive
 
 The first version: workbooks as a source an agent can describe, query and derive from,

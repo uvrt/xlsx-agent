@@ -88,6 +88,11 @@ def _skus(result) -> list[str]:
     ({"Category": {"in": ["Tools", "Garden", "Paint"]}}, ["SKU-3", "SKU-4", "SKU-6"]),
     ({"Category": {"contains": "HARD"}}, ["SKU-1", "SKU-2"]),
     ({"Category": {"contains": "tool"}}, ["SKU-3", "SKU-5", "SKU-6"]),
+    # words_gt: text of more words than the value (runs between white space)
+    ({"Category": {"words_gt": 2}}, ["SKU-5"]),
+    ({"Category": {"words_gt": "1"}}, ["SKU-5"]),
+    ({"Category": {"words_gt": "3"}}, []),
+    ({"Category": {"words_gt": 0}}, ["SKU-1", "SKU-2", "SKU-3", "SKU-4", "SKU-5", "SKU-6"]),
     # numbers: as stored, 3 and 3.0 alike; text in its JSON form; a number as text never
     ({"Price": {"eq": 3}}, ["SKU-3", "SKU-6"]),
     ({"Price": {"eq": "3.0"}}, ["SKU-3", "SKU-6"]),
@@ -176,6 +181,10 @@ def test_cells_of_another_type_never_match_and_are_counted(table):
     ({"Opens": {"eq": "2026-01-05"}}, "Opens", "time"),
     ({"Active": {"gte": True}}, "Active", "bool"),
     ({"Active": {"eq": "yes"}}, "Active", "bool"),
+    ({"Price": {"words_gt": 3}}, "Price", "number"),
+    ({"Category": {"words_gt": "two"}}, "Category", "text"),
+    ({"Category": {"words_gt": -1}}, "Category", "text"),
+    ({"Category": {"words_gt": 2.5}}, "Category", "text"),
     ({"Note": {"eq": "x"}}, "Note", "blank"),                 # a column with no values
 ], ids=lambda value: json.dumps(value) if isinstance(value, dict) else None)
 def test_a_wrong_type_filter_is_refused_naming_the_type(table, where, column, column_type):
@@ -397,6 +406,7 @@ def test_a_query_end_to_end(box):
     ({"column": "Added", "op": "lte", "value": "2026-01-05"},
      ["Stock!A2", "Stock!A6", "Stock!A7"]),
     ({"column": "Category", "op": "contains", "value": "hand"}, ["Stock!A6"]),
+    ({"column": "Category", "op": "words_gt", "value": "2"}, ["Stock!A6"]),
     ({"column": "Price", "op": "blank"}, ["Stock!A5", "Stock!A6"]),
     ({"column": "Price", "op": "not_blank"}, ["Stock!A2", "Stock!A3", "Stock!A4", "Stock!A7"]),
     ({"column": "Active", "op": "eq", "value": "true"}, ["Stock!A2", "Stock!A4", "Stock!A6"]),

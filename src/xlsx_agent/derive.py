@@ -50,7 +50,10 @@ mean        number, percent, date, time,         the exact sum over the count, r
             datetime                             once
 median      as mean                              the middle value; of an even count the
                                                  exact mean of the two middle ones
-min, max    as mean                              the least, the greatest value
+min, max    as mean                              the least, the greatest value (of
+                                                 dates, a date)
+first, last any                                  the value in the first, the last of the
+                                                 rows used, in the table's row order
 share       number, percent; no column: the rows this group's sum (row count) as a
                                                  fraction of the total over every row
                                                  used (:attr:`Derived.totals`)
@@ -58,15 +61,33 @@ share       number, percent; no column: the rows this group's sum (row count) as
 
 A measure on a column whose type is not listed is refused before anything is computed
 (:class:`DeriveError`, ``wrong_type``, naming the column, its type and the functions that
-take it): text has no ``min``/``max`` (Excel's collation is not measured), dates no
-``sum``.  A measure takes the cells of its column's type only; nothing is coerced
-silently (ROADMAP.md, "Design rules", 4).  Every other cell of the group's rows is left
-out of that measure and counted by reason: ``blank``, ``no_cached_value``, ``error``,
-``number_as_text`` (text that reads as a number in the workbook's locale), ``wrong_type``
-(any other).  ``coerce=["number_as_text"]`` opts in to reading such text in a ``number``
-column as its number (:func:`~xlsx_agent.read.types.text_number`); the result says so,
-with the cells (:attr:`Derived.coerced`).  A percent column's text stays out: its stored
-values are fractions, and text such as ``25`` is not one.
+take it): text has no ``min``/``max`` (Excel's collation is not measured: ``first`` and
+``last`` take it), dates no ``sum``.  A measure takes the cells of its column's type only;
+nothing is coerced silently (ROADMAP.md, "Design rules", 4).  Every other cell of the
+group's rows is left out of that measure and counted by reason: ``blank``,
+``no_cached_value``, ``error``, ``number_as_text`` (text that reads as a number in the
+workbook's locale), ``date_as_text`` (text that reads as a date, in a date, time or
+datetime column), ``wrong_type`` (any other).  ``coerce=["number_as_text"]`` opts in to
+reading such text in a ``number`` column as its number
+(:func:`~xlsx_agent.read.types.text_number`), ``coerce=["date_as_text"]`` such text in a
+``date`` or ``datetime`` column as its date (:func:`~xlsx_agent.read.types.text_date`; a
+two-digit year is not read: its century is Excel's rule, not measured here); the result
+says so, with the cells (:attr:`Derived.coerced`), and a ``min``, ``max``, ``first`` or
+``last`` that is such a cell is given as read (a number; a date as ISO 8601).  With a
+coercion, the column's type is decided with those cells counted as what they read as, so
+that a column of dates all stored as text is a date column (a filter on it compares dates,
+its text cells counted in ``not_compared``).  A percent column's text stays out: its
+stored values are fractions, and text such as ``25`` is not one.
+
+**Why a date column is refused.**  A column whose dates are stored as text is a ``text``
+column: ``min`` and ``max`` refuse it.  The refusal says so: how many of its values are
+dates stored as text (``date_as_text``), the first of them, and that
+``coerce=["date_as_text"]`` reads them as dates (in a tool session, the error's
+``details`` give the ``issue`` and its ``cells``); the same for numbers stored as text.
+Text that is a date only in the locale's day order (``05/01/2026``) is read as one only
+when the workbook is opened with ``local_dates``: the refusal names it
+``local_date_text``, and no coercion reads it.  ``first`` and ``last`` take a text column
+as it is.
 
 Dates, times and datetimes are measured as :mod:`xlsx_agent.query` compares them: a date
 by its day, a time by its millisecond of the day (an elapsed time, ``PT36H0M0S``, by its
@@ -99,7 +120,8 @@ left out, by reason.  A group's key value has the key column's cells of its rows
 ``count`` or ``share`` of rows has the rows' cells in the first group column (else the
 bins' column, the pivot's, or the table's first).  So a check can read each value's
 sources and recompute it, and ``count + left out`` is the group's rows: nothing is dropped
-silently.  ``min`` and ``max`` list every cell compared, not only the extreme one.
+silently.  ``min``, ``max``, ``first`` and ``last`` list every cell compared, not only the
+one picked (``first``'s is the first cell of its sources, ``last``'s the last).
 
 **Bins** (distributions): ``bins={"column": "Price", "edges": [0, 10, 50], "as": ...}``
 on a number, percent, date, time or datetime column; edges as filter values are written
@@ -156,21 +178,23 @@ from decimal import ROUND_HALF_UP, Decimal, localcontext
 from fractions import Fraction
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
+from ooxml_common.locales import DATE_ORDERS
 from ooxml_edit.charts.workbook import Area, Cell, number_text
 from ooxml_edit.tools import Dataset
 
 from .address import DatasetAddress, RangeAddress, SheetRef, TableAddress, parse_address
 from .dataset import DatasetTable, as_dataset
 from .profile import FIRST_ADDRESSES, Count, _add_partial, majority_type
-from .query import QueryError, _Bad, _key, _operand, _tests
+from .query import QueryError, _Bad, _iso_key, _key, _operand, _tests
 from .read.regions import Region
-from .read.types import TYPES, Value, serial_text, text_number
+from .read.types import TYPES, Value, looks_like_date, serial_text, text_date, text_number
 
 if TYPE_CHECKING:  # pragma: no cover
     from .workbook import Workbook
 
 #: Every measure function.
-FUNCTIONS = ("count", "sum", "mean", "median", "min", "max", "share", "distinct")
+FUNCTIONS = ("count", "sum", "mean", "median", "min", "max", "first", "last", "share",
+             "distinct")
 
 _NUMBERS = ("number", "percent")
 _MOMENTS = ("date", "time", "datetime")
@@ -179,17 +203,18 @@ _ORDERED = _NUMBERS + _MOMENTS
 #: The column types each function takes.
 TYPES_BY_FUNCTION: dict[str, tuple[str, ...]] = {
     "count": TYPES, "distinct": TYPES, "sum": _NUMBERS, "share": _NUMBERS,
-    "mean": _ORDERED, "median": _ORDERED, "min": _ORDERED, "max": _ORDERED}
+    "mean": _ORDERED, "median": _ORDERED, "min": _ORDERED, "max": _ORDERED,
+    "first": TYPES, "last": TYPES}
 
 #: The functions that take no column (they count rows).
 ROW_FUNCTIONS = ("count", "share")
 
 #: What a caller may opt in to coerce.
-COERCIONS = ("number_as_text",)
+COERCIONS = ("number_as_text", "date_as_text")
 
 #: Why a cell is left out of a measure, or a row out of the groups.
-REASONS = ("blank", "no_cached_value", "error", "number_as_text", "wrong_type",
-           "outside_bins")
+REASONS = ("blank", "no_cached_value", "error", "number_as_text", "date_as_text",
+           "wrong_type", "outside_bins")
 
 #: The rounding rule (ROADMAP.md, "Design rules", 3).
 ROUNDING = "half_away_from_zero"
@@ -224,7 +249,18 @@ class DeriveError(QueryError):
     ``bad_round``, ``bad_coerce``, ``duplicate_name``, and the limits: ``too_many_groups``,
     ``too_many_columns``, ``too_many_rows``, ``too_many_cells``, ``too_many_sources``,
     ``too_many_values``); ``field`` the argument at fault.  A :class:`QueryError`, as a
-    ``where`` refusal is: the message names columns, functions and types, never a value."""
+    ``where`` refusal is: the message names columns, functions and types, never a value.
+
+    A ``wrong_type`` refusal of a text column that holds dates or numbers stored as text
+    names that ``issue`` (``date_as_text``, ``number_as_text``, ``local_date_text``: text
+    that is a date in the locale's day order, read as one only with ``local_dates``) and
+    its ``cells``, the count with the first addresses, and says how to read them."""
+
+    def __init__(self, code: str, message: str, *, issue: str | None = None,
+                 cells: Count | None = None, **options: Any) -> None:
+        super().__init__(code, message, **options)
+        self.issue = issue
+        self.cells = cells
 
 
 class _Sourced:
@@ -414,7 +450,7 @@ def derive(workbook: "Workbook | None",
     region = _region(workbook, from_)
     plan = _Plan(workbook, region, where=where, group_by=group_by, measures=measures,
                  bins=bins, pivot=pivot, coerce=coerce, id=id)
-    plan.check_types(_type_pass(workbook, region, plan.typed_offsets))
+    plan.check_types(*_type_pass(workbook, region, plan.typed_offsets, plan.coerce))
     state = plan.run()
     return plan.finish(state, sort=sort, top=top, round=round)
 
@@ -512,7 +548,7 @@ class _Plan:
             if item not in COERCIONS:
                 raise DeriveError("bad_coerce", f"coerce takes {', '.join(COERCIONS)}",
                                   field="coerce", valid_options=COERCIONS)
-        self.coerce = "number_as_text" in coerce
+        self.coerce = frozenset(coerce)
         self.measures = self._measures(measures)
         self.bins = self._bins(bins)
         self.pivot: str | None = None
@@ -621,8 +657,11 @@ class _Plan:
 
     # -- the types ------------------------------------------------------------------------
 
-    def check_types(self, types: dict[int, str]) -> None:
-        """Refuse what the columns' types do not take, before anything is computed."""
+    def check_types(self, types: dict[int, str],
+                    issues: "dict[int, dict[str, Count]] | None" = None) -> None:
+        """Refuse what the columns' types do not take, before anything is computed.
+        ``issues``: per column, its cells stored as text that read as another type, by
+        issue, for a refusal to name (:func:`_type_pass`)."""
         region = self.region
         self.types = {region.columns[o]: t for o, t in types.items()}
         self.offset_types = types
@@ -641,9 +680,11 @@ class _Plan:
                     reason = "has no measured order (text collation is not measured)"
                 else:
                     reason = f"is not what {m.fn} takes ({', '.join(allowed)})"
+                hint, issue, cells = self._stored_as_text(m.fn, t, (issues or {}).get(m.offset))
                 raise DeriveError("wrong_type", f"{m.column} is a {t} column and {reason}; "
-                                  f"it takes {', '.join(takes)}", field="measures",
-                                  column=m.column, column_type=t, valid_options=takes)
+                                  f"it takes {', '.join(takes)}{hint}", field="measures",
+                                  column=m.column, column_type=t, valid_options=takes,
+                                  issue=issue, cells=cells)
         if self.bins:
             b = self.bins
             t = types[b.offset]
@@ -667,6 +708,32 @@ class _Plan:
             texts = [_edge_text(k, t, self.date1904) for k in keys]
             b.labels = [f"[{lo}, {hi})" for lo, hi in zip(texts, texts[1:])]
             b.labels[-1] = b.labels[-1][:-1] + "]"
+
+    def _stored_as_text(self, fn: str, t: str, found: "dict[str, Count] | None"
+                        ) -> tuple[str, str | None, Count | None]:
+        """What a refusal of ``fn`` on a ``t`` column adds when the column's text holds
+        dates or numbers: the words, the issue and its cells; nothing otherwise."""
+        if t != "text" or not found:
+            return "", None, None
+        wants = {"date_as_text": _MOMENTS, "local_date_text": _MOMENTS,
+                 "number_as_text": ("number",)}
+        for issue in ("date_as_text", "local_date_text", "number_as_text"):
+            cells = found.get(issue)
+            if cells is None or not set(TYPES_BY_FUNCTION[fn]) & set(wants[issue]):
+                continue
+            first = cells.first[0]
+            what = "numbers" if issue == "number_as_text" else "dates"
+            words = f". {cells.count} of its values are {what} stored as text ({issue}, " \
+                    f"first {first})"
+            if issue == "local_date_text":
+                words += "; they are read as dates only when the workbook is opened with " \
+                         "local_dates"
+            elif issue in self.coerce:
+                words += f", too few to make it a {what[:-1]} column"
+            else:
+                words += f": coerce [\"{issue}\"] reads them as {what}"
+            return words, issue, cells
+        return "", None, None
 
     def run(self) -> "_State":
         return _second_pass(self)
@@ -719,19 +786,51 @@ def _rows(workbook: "Workbook | None", region: "Region | DatasetTable", offsets:
 
 
 def _type_pass(workbook: "Workbook | None", region: "Region | DatasetTable",
-               offsets: list[int]) -> dict[int, str]:
-    """Each column's type, from one streamed pass counting its values' types."""
+               offsets: list[int], coerce: "frozenset[str]" = frozenset()
+               ) -> tuple[dict[int, str], dict[int, dict[str, Count]]]:
+    """Each column's type, from one streamed pass counting its values' types; and per
+    column, its text cells that read as another type, by issue (``number_as_text``,
+    ``date_as_text``; ``local_date_text`` for a date in the locale's day order that the
+    workbook was opened not to read, without ``local_dates``).  A cell a ``coerce`` opts
+    in to counts as the type it reads as (a date as ``date``, or ``datetime`` with a time
+    of day)."""
     found = _rows(workbook, region, offsets)
     counts: dict[int, dict[str, int]] = {o: {} for o in offsets}
+    issues: dict[int, dict[str, _Counter]] = {o: {} for o in offsets}
+    locale = workbook.locale if workbook is not None else None
+    local = workbook is not None and not workbook.local_dates \
+        and getattr(locale, "date_order", None) in DATE_ORDERS
     if found is not None and offsets:
         rows, left = found
         for row in rows:
             for o in offsets:
-                t = row[o - left].t
-                if t != "blank":
-                    tally = counts[o]
-                    tally[t] = tally.get(t, 0) + 1
-    return {o: majority_type(c) for o, c in counts.items()}
+                value = row[o - left]
+                t = value.t
+                if t == "blank":
+                    continue
+                issue = value.issue
+                if t == "text":
+                    if issue is None and local and looks_like_date(value.v, locale,
+                                                                   local_dates=True):
+                        issue = "local_date_text"
+                    if issue in ("number_as_text", "date_as_text", "local_date_text"):
+                        issues[o].setdefault(issue, _Counter()).add(value)
+                    if issue in coerce:
+                        t = _coerced_type(value, issue, locale)
+                tally = counts[o]
+                tally[t] = tally.get(t, 0) + 1
+    return ({o: majority_type(c) for o, c in counts.items()},
+            {o: {k: c.done() for k, c in found.items()} for o, found in issues.items()})
+
+
+def _coerced_type(value: Value, issue: str, locale: Any) -> str:
+    """The type a text cell with ``issue`` reads as, coerced; ``text`` when it does not."""
+    if issue == "number_as_text":
+        return "number"
+    shown = text_date(value.v, locale, local_dates=True)
+    if shown is None:
+        return "text"
+    return "datetime" if "T" in shown else "date"
 
 
 class _Counter:
@@ -772,8 +871,8 @@ class _Runs:
 class _Acc:
     """One measured column's state in one group (and pivot value)."""
 
-    __slots__ = ("runs", "count", "partials", "extremes", "low", "high", "kept", "seen",
-                 "excluded", "elapsed")
+    __slots__ = ("runs", "count", "partials", "extremes", "low", "high", "ends", "first",
+                 "last", "kept", "seen", "excluded", "elapsed")
 
     def __init__(self, fns: set[str]) -> None:
         self.runs = _Runs()
@@ -782,6 +881,9 @@ class _Acc:
         self.extremes = bool(fns & {"min", "max"})
         self.low: tuple | None = None
         self.high: tuple | None = None
+        self.ends = bool(fns & {"first", "last"})
+        self.first: tuple | None = None
+        self.last: tuple | None = None
         self.kept = array("d") if "median" in fns else None
         self.seen: set | None = set() if "distinct" in fns else None
         self.excluded: dict[str, int] = {}
@@ -846,6 +948,8 @@ def _reason(value: Value, column_type: str) -> str:
         return "error"
     if value.issue == "number_as_text" and column_type in _NUMBERS:
         return "number_as_text"
+    if value.issue == "date_as_text" and column_type in _MOMENTS:
+        return "date_as_text"
     return "wrong_type"
 
 
@@ -976,11 +1080,17 @@ def _second_pass(plan: _Plan) -> _State:
             acc.count += 1
             if acc.partials is not None:
                 _add_partial(acc.partials, float(used))
-            if acc.extremes:
-                if acc.low is None or used < acc.low[0]:
-                    acc.low = (used, value.v)
-                if acc.high is None or used > acc.high[0]:
-                    acc.high = (used, value.v)
+            if acc.extremes or acc.ends:
+                shown = _shown(value, used, t, date1904)
+                if acc.extremes:
+                    if acc.low is None or used < acc.low[0]:
+                        acc.low = (used, shown)
+                    if acc.high is None or used > acc.high[0]:
+                        acc.high = (used, shown)
+                if acc.ends:
+                    if acc.first is None:
+                        acc.first = (_text_key(used, t), shown)
+                    acc.last = (_text_key(used, t), shown)
             if t == "time" and not (isinstance(value.v, str) and value.v.startswith("PT")):
                 acc.elapsed = False
             if acc.kept is not None:
@@ -1008,7 +1118,7 @@ def _second_pass(plan: _Plan) -> _State:
     return state
 
 
-def _use(value: Value, t: str, coerce: bool, locale: Any, grouping: bool,
+def _use(value: Value, t: str, coerce: "frozenset[str]", locale: Any, grouping: bool,
          date1904: bool) -> Any:
     """What a cell counts as in a column of type ``t``: a number (a number or percent
     column), a key (a date, time or datetime column: :func:`xlsx_agent.query._key`'s), the
@@ -1019,9 +1129,24 @@ def _use(value: Value, t: str, coerce: bool, locale: Any, grouping: bool,
         if t in _MOMENTS:
             return _key(value, t, date1904)
         return value.v
-    if coerce and t == "number" and value.issue == "number_as_text":
+    if value.issue not in coerce:
+        return None
+    if t == "number" and value.issue == "number_as_text":
         return text_number(value.v, locale, grouping=grouping)
+    if t in ("date", "datetime") and value.issue == "date_as_text":
+        shown = text_date(value.v, locale, local_dates=True)
+        return _iso_key(shown, t, date1904) if shown is not None else None
     return None
+
+
+def _shown(value: Value, used: Any, t: str, date1904: bool) -> Any:
+    """A cell's value as a measure gives it: its own, or a coerced one's as read (a number;
+    a date as ISO 8601)."""
+    if value.t == t:
+        return value.v
+    if t in _MOMENTS:
+        return serial_text(_serial(Fraction(used), t), t, date1904)
+    return used
 
 
 # ------------------------------------------------------------------------------------------
@@ -1063,8 +1188,8 @@ def _value(m: _Measure, cell: _Cell | None, t: str, plan: _Plan, state: _State
             return None, None
         value = float(_exact(acc.partials) / total)
         return value, value
-    if fn in ("min", "max"):
-        key, v = acc.low if fn == "min" else acc.high
+    if fn in ("min", "max", "first", "last"):
+        key, v = {"min": acc.low, "max": acc.high, "first": acc.first, "last": acc.last}[fn]
         return v, key
     if fn == "mean":
         exact = _exact(acc.partials) / acc.count
@@ -1303,8 +1428,8 @@ def _digits(round_: Any, numeric: list[str]) -> dict[str, int]:
         for name, n in round_.items():
             if not isinstance(name, str) or name.casefold() not in folded:
                 raise DeriveError("bad_round", "round names measures (by as) whose values "
-                                  "are numbers: a sum, mean, median, min, max or share of "
-                                  "numbers", field="round", valid_options=numeric)
+                                  "are numbers: a sum, mean, median, min, max, first, last "
+                                  "or share of numbers", field="round", valid_options=numeric)
             out[folded[name.casefold()]] = check(n)
         return out
     n = check(round_)

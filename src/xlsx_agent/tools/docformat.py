@@ -16,7 +16,9 @@ is ``invalid_arguments`` on ``schema``, its path in ``details``.  Each
 carries the library's ``valid_options``.  The xlsx handlers go further (:func:`tool_error`, through
 :func:`handler`): a :class:`~xlsx_agent.RegionError` gets the tool error its own ``code``
 calls for (:data:`REGION_CODES`), and the library's code goes in the error's ``details``
-(a query error's with its column and the column's type).
+(a query error's with its column and the column's type; a derive's refusal of a column of
+dates or numbers stored as text with the ``issue`` and its ``cells``, counted with the first
+addresses).
 No message carries a cell's content: the library's messages name sheets, tables, names,
 columns and addresses only (ROADMAP.md, "Design rules", 7).
 """
@@ -136,6 +138,9 @@ def tool_error(error: BaseException) -> ToolError | None:
             details["column"] = error.column
         if error.column_type is not None:
             details["column_type"] = error.column_type
+        if getattr(error, "issue", None) is not None:       # a derive's stored-as-text cells
+            details["issue"] = error.issue
+            details["cells"] = error.cells.as_dict()
         return ToolError(QUERY_CODES.get(error.code, "invalid_arguments"), error.message,
                          valid_options=_options(error), field=error.field, details=details)
     if isinstance(error, SchemaError):

@@ -83,7 +83,8 @@ INVENTORY = {
         "type": "text", "types": {"text": _count(5, "Stock!A2", "Stock!A3", "Stock!A4")},
         "distinct": 5,
         "values": _values(*[(f"SKU-000{i}", "text", 1) for i in range(1, 6)]),
-        "text_length": {"median": 8, "max": 8}},
+        "text_length": {"median": 8, "max": 8, "median_words": 1, "max_words": 1,
+                        "longest": "Stock!A2"}},
     "Item": {
         "address": "t:Products[Item]", "column": "Item", "range": "Stock!B2:B6",
         "rows": 5, "cells": 5, "filled": 5, "fill": 1.0, "formulas": 0, "formula_share": 0.0,
@@ -92,7 +93,8 @@ INVENTORY = {
         "values": _values(("Bolt", "text", 2), ("Nut", "text", 1), (MARKER, "text", 1),
                           ("Washer", "text", 1)),
         # lengths 4, 3, 4, 9, 6
-        "text_length": {"median": 4, "max": 9},
+        "text_length": {"median": 4, "max": 9, "median_words": 1, "max_words": 1,
+                        "longest": "Stock!B5"},
         "validation": [{"values": ["Bolt", "Nut", "Washer"], "cells": 5,
                         "source": "Lists!A1:A3"}]},
     "Price": {
@@ -105,7 +107,8 @@ INVENTORY = {
         "distinct": 5,
         "values": _values((0.25, "number", 1), ("12.50", "text", 1), ("#N/A", "error", 1),
                           (3.75, "number", 1), (4, "number", 1)),
-        "text_length": {"median": 5, "max": 5},
+        "text_length": {"median": 5, "max": 5, "median_words": 1, "max_words": 1,
+                        "longest": "Stock!C3"},
         "flags": {"mixed_types": _count(2, "Stock!C3", "Stock!C4"),
                   "number_as_text": _count(1, "Stock!C3")}},
     "Added": {
@@ -120,7 +123,9 @@ INVENTORY = {
         "values": _values(("2026-01-05", "date", 1), ("2026-01-06", "date", 1),
                           ("2026-02-01", "text", 1), ("2026-02-02", "date", 1),
                           ("2026-02-04", "date", 1)),
-        "text_length": {"median": 10, "max": 10},
+        "text_length": {"median": 10, "max": 10, "median_words": 1, "max_words": 1,
+                        "longest": "Stock!D4"},
+        "date_text": {"min": "2026-02-01", "max": "2026-02-01", "measured": 1},
         "flags": {"date_as_text": _count(1, "Stock!D4"),
                   "mixed_types": _count(1, "Stock!D4")}},
     "Qty": {
@@ -139,7 +144,8 @@ INVENTORY = {
         "type": "text", "types": {"text": _count(5, "Stock!F2", "Stock!F3", "Stock!F4")},
         "distinct": 3,
         "values": _values(("Active", "text", 3), ("Retired", "text", 1), ("Paused", "text", 1)),
-        "text_length": {"median": 6, "max": 7},
+        "text_length": {"median": 6, "max": 7, "median_words": 1, "max_words": 1,
+                        "longest": "Stock!F4"},
         "validation": [{"values": ["Active", "Retired"], "cells": 5}]},
     "Note": {
         "address": "t:Products[Note]", "column": "Note", "range": "Stock!G2:G6",
@@ -147,7 +153,8 @@ INVENTORY = {
         "type": "text", "types": {"text": _count(3, "Stock!G2", "Stock!G3", "Stock!G5")},
         "distinct": 3,
         "values": _values(("first", "text", 1), (MARKER, "text", 1), (LONG, "text", 1)),
-        "text_length": {"median": 9, "max": TEXT_LIMIT},
+        "text_length": {"median": 9, "max": TEXT_LIMIT, "median_words": 1, "max_words": 1,
+                        "longest": "Stock!G5"},
         "flags": {"at_limit": _count(1, "Stock!G5"),
                   "hidden": _count(5, "Stock!G2", "Stock!G3", "Stock!G4")}},
     "Share": {
@@ -254,7 +261,8 @@ LOG = {
                   types={"number": _count(1, "Log!G2"), "text": _count(1, "Log!G3")},
                   min=1, max=1, mean=1.0, measured=1, distinct=2,
                   values=_values((1, "number", 1), ("a", "text", 1)),
-                  text_length={"median": 1, "max": 1},
+                  text_length={"median": 1, "max": 1, "median_words": 1, "max_words": 1,
+                               "longest": "Log!G3"},
                   flags={"mixed_types": _count(1, "Log!G3")}),
 }
 
@@ -314,7 +322,8 @@ SOURCES = {
         "rows": 3, "cells": 3, "filled": 3, "fill": 1.0, "formulas": 0, "formula_share": 0.0,
         "type": "text", "types": {"text": _count(3, "Stock!A2", "Stock!A3", "Stock!A4")},
         "distinct": 2, "values": _values(("Red", "text", 2), ("Blue", "text", 1)),
-        "text_length": {"median": 3, "max": 4},
+        "text_length": {"median": 3, "max": 4, "median_words": 1, "max_words": 1,
+                        "longest": "Stock!A3"},
         "validation": [{"values": ["Red", "Blue"], "cells": 2, "source": "Lists!A1:A2"},
                        {"values": ["Red", 1, "Blue", 2, "Red", 3], "cells": 1,
                         "source": "Stock!A2:B4"},
@@ -402,6 +411,36 @@ def test_long_text_is_counted_by_digest():
     assert stats.distinct == 2
     assert [d.as_dict() for d in stats.values] == _values((head + "1", "text", 2),
                                                           (head + "2", "text", 1))
+
+
+def test_text_lengths_are_in_characters_and_words_with_the_longest_cell():
+    notes = ["one", "two words", "  three  short\twords ", "a b c d e f", "longest of them all",
+             "longest of them all", 7]
+    stats = _column_of(notes).column("t:S!A1[V]").stats()
+    # words 1, 2, 3, 6, 4, 4; characters 3, 9, 21, 11, 19, 19
+    assert (stats.text_words_median, stats.text_words_max) == (3.5, 6)
+    assert (stats.text_length_median, stats.text_length_max) == (15, 21)
+    assert stats.text_longest == "S!A4"                   # the first of the longest
+    assert stats.as_dict()["text_length"] == {"median": 15, "max": 21, "median_words": 3.5,
+                                              "max_words": 6, "longest": "S!A4"}
+    assert _column_of([1, 2]).column("t:S!A1[V]").stats().text_longest is None
+
+
+def test_a_column_of_dates_stored_as_text_gives_their_range():
+    book = WorkbookBuilder()
+    book.sheet("S").rows("A1", [["Seen"], ["2026-03-04"], ["03/05/2026"], ["2026-02-11 08:00"],
+                                ["03/01/26"], ["soon"], [date(2026, 1, 2)]])
+    plain = Workbook.open(book.to_bytes()).column("t:S!A1[Seen]").stats()
+    assert plain.type == "text" and plain.measured == 0
+    assert plain.flags["date_as_text"].as_dict() == {"count": 2, "first": ["S!A2", "S!A4"]}
+    assert plain.as_dict()["date_text"] == {"min": "2026-02-11T08:00", "max": "2026-03-04",
+                                            "measured": 2}
+    # with local_dates, en-US text dates too; a two-digit year is flagged, not read
+    local = Workbook.open(book.to_bytes(), local_dates=True).column("t:S!A1[Seen]").stats()
+    assert local.flags["date_as_text"].count == 4
+    assert (local.date_text_min, local.date_text_max, local.date_text_measured) == (
+        "2026-02-11T08:00", "2026-03-05", 3)
+    assert "date_text" not in _column_of(["x"]).column("t:S!A1[V]").stats().as_dict()
 
 
 def test_the_text_length_median_of_an_even_count_is_the_mean_of_the_middle_two():

@@ -2,8 +2,8 @@
 with the columns asked for (ROADMAP.md, "Tools").  In the loaded core, beside ``xlsx_read``.
 
 What it does is :mod:`xlsx_agent.query`'s: the filters (``eq``, ``in``, ``gte``, ``lte``,
-``contains``, ``blank``, ``not_blank``, combined with *and*), each checked against its
-column's type before any row is given -- a test the type does not take, or a value not of
+``contains``, ``words_gt``, ``blank``, ``not_blank``, combined with *and*), each checked
+against its column's type before any row is given -- a test the type does not take, or a value not of
 that type, is refused naming the type, with the tests it takes as ``valid_options`` -- and
 the sort.  A filter's ``value`` is text as JSON writes the value (``5``, ``2.5``, ``true``,
 ``2026-01-05``): the common strict subset has no unions, and the column's type decides how

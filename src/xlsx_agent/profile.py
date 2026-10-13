@@ -35,7 +35,17 @@ does) and it has no mean.  Other types have no min, max or mean.
 and ``"1"`` are two), up to :data:`DISTINCT_CAP`; past it, ``None`` (so many that the count
 was not kept).  With :data:`FEW_VALUES` or fewer, ``values`` lists each with its count,
 most common first.  **Text lengths**: the median and the longest, in characters (code
-points), over the text values; kept as a histogram of lengths, which a cell's limit bounds.
+points) and in words (the runs of characters between white space, as :meth:`str.split`
+splits them), over the text values, and the address of the longest text in characters
+(the first, of several as long); kept as histograms of lengths, which a cell's limit
+bounds.  ``xlsx_query``'s ``words_gt`` test finds the cells of more words than a limit.
+
+**Dates stored as text.**  A date column's range is its ``min`` and ``max``; its cells
+that hold a date as text are flagged ``date_as_text``, counted, and not in the range.
+``date_text`` gives their own range: the least and the greatest of them read as dates
+(:func:`~xlsx_agent.read.types.text_date`, ISO 8601, ordered as ISO text sorts; a
+two-digit year is not read), with how many were read -- in a date column and in a text
+column of dates alike.
 
 **Allowed values.**  ``validation``: each data-validation list (``type="list"``) that
 covers some of the column's cells: an inline list's values, or the values of the range
@@ -55,12 +65,13 @@ column) and ``mixed_types``.
 **Bounded.**  One streamed pass (a row at a time, :meth:`Workbook.read
 <xlsx_agent.workbook.Workbook.read>`); what is kept per column is counts, the sum's
 partials, the extremes, a set of at most :data:`DISTINCT_CAP` value keys (long text is kept
-as a 16-byte digest), the length histogram, and at most :data:`FIRST_ADDRESSES` addresses
-per count.
+as a 16-byte digest), the length histograms, the longest text's address, the range of
+dates stored as text, and at most :data:`FIRST_ADDRESSES` addresses per count.
 
 **Content and diagnostics** (ROADMAP.md, "Design rules", 7).  A profile is a result: its
-``min``, ``max``, ``mean``, ``values`` and allowed values are cell content, returned to the
-caller as :meth:`Workbook.read <xlsx_agent.workbook.Workbook.read>` returns cells.  Nothing
+``min``, ``max``, ``mean``, ``values``, ``date_text`` and allowed values are cell content,
+returned to the caller as :meth:`Workbook.read <xlsx_agent.workbook.Workbook.read>`
+returns cells.  Nothing
 here puts content in a diagnostic: the flags are codes, counts and addresses; an error
 raised here names the address, columns and sheets only; a validation's formula text is
 kept off the repr.
@@ -79,7 +90,7 @@ from .address import RangeAddress, quote_sheet
 from .read.names import range_of
 from .read.regions import Region
 from .read.stream import Validation
-from .read.types import TYPES, Value, serial_text
+from .read.types import TYPES, Value, serial_text, text_date
 
 if TYPE_CHECKING:  # pragma: no cover
     from .workbook import Workbook
@@ -168,7 +179,10 @@ class ColumnStats:
     data cells (``Stock!C2:C40``; ``None`` with no data rows); ``rows``, ``cells``,
     ``filled``, ``formulas``, ``fill`` and ``formula_share``; ``type`` and ``types``;
     ``min``, ``max``, ``mean`` and ``measured``; ``distinct`` and ``values``;
-    ``text_length_median`` and ``text_length_max``; ``validation``; ``flags`` by code."""
+    ``text_length_median`` and ``text_length_max`` (characters), ``text_words_median`` and
+    ``text_words_max`` (words), ``text_longest`` (the address of the longest text);
+    ``date_text_min``, ``date_text_max`` and ``date_text_measured`` (the dates stored as
+    text, as ISO 8601); ``validation``; ``flags`` by code."""
 
     address: str
     column: str
@@ -189,6 +203,12 @@ class ColumnStats:
     values: tuple[Distinct, ...] | None = None
     text_length_median: float | None = None
     text_length_max: int | None = None
+    text_words_median: float | None = None
+    text_words_max: int | None = None
+    text_longest: str | None = None
+    date_text_min: str | None = None
+    date_text_max: str | None = None
+    date_text_measured: int = 0
     validation: tuple[AllowedList, ...] = ()
     flags: dict[str, Count] = field(default_factory=dict)
 
@@ -206,7 +226,13 @@ class ColumnStats:
         if self.values is not None:
             out["values"] = [d.as_dict() for d in self.values]
         if self.text_length_max is not None:
-            out["text_length"] = {"median": self.text_length_median, "max": self.text_length_max}
+            out["text_length"] = {"median": self.text_length_median, "max": self.text_length_max,
+                                  "median_words": self.text_words_median,
+                                  "max_words": self.text_words_max,
+                                  "longest": self.text_longest}
+        if self.date_text_measured:
+            out["date_text"] = {"min": self.date_text_min, "max": self.date_text_max,
+                                "measured": self.date_text_measured}
         if self.validation:
             out["validation"] = [v.as_dict() for v in self.validation]
         if self.flags:
@@ -254,7 +280,7 @@ def profile(workbook: "Workbook", region: Region, columns: Sequence[str] | None 
         [region.columns[region.column_index(name)] for name in columns]
     first = region.area.first.column
     offsets = [region.column_index(name) for name in names]
-    tallies = [_Tally() for _ in names]
+    tallies = [_Tally(workbook.locale) for _ in names]
     data = region.data
     if data is not None and names:
         left, right = first + min(offsets), first + max(offsets)
@@ -313,7 +339,8 @@ class _Counter:
 class _Tally:
     """What one column's pass keeps."""
 
-    def __init__(self) -> None:
+    def __init__(self, locale: object = None) -> None:
+        self.locale = locale
         self.cells = self.filled = self.formulas = 0
         self.types: dict[str, _Counter] = {}
         self.flags: dict[str, _Counter] = {}
@@ -321,6 +348,9 @@ class _Tally:
         self.seen: set | None = set()
         self.few: dict | None = {}
         self.lengths: dict[int, int] = {}
+        self.words: dict[int, int] = {}
+        self.longest: tuple[int, str] | None = None
+        self.dates: list | None = None     # [low, high, count] of dates stored as text
 
     def add(self, value: Value) -> None:
         if value.hidden:
@@ -350,9 +380,27 @@ class _Tally:
                 measure = self.measures[t] = _Measure()
             measure.add(value)
         elif t == "text":
-            length = len(value.v)
+            text = value.v
+            length = len(text)
             self.lengths[length] = self.lengths.get(length, 0) + 1
+            words = len(text.split())
+            self.words[words] = self.words.get(words, 0) + 1
+            if self.longest is None or length > self.longest[0]:
+                self.longest = (length, value.a)
+            if value.issue == "date_as_text" and self.locale is not None:
+                self._date_text(text)
         self._distinct(value)
+
+    def _date_text(self, text: str) -> None:
+        shown = text_date(text, self.locale, local_dates=True)
+        if shown is None:
+            return
+        dates = self.dates
+        if dates is None:
+            self.dates = [shown, shown, 1]
+            return
+        dates[0], dates[1] = min(dates[0], shown), max(dates[1], shown)
+        dates[2] += 1
 
     def _flag(self, code: str, value: Value) -> None:
         counter = self.flags.get(code)
@@ -417,6 +465,8 @@ class _Tally:
                 ordered = sorted(self.few.values(), key=lambda entry: -entry[2])
                 values = tuple(Distinct(v, t, n) for v, t, n in ordered)
         median, longest = _median(self.lengths)
+        words_median, words_max = _median(self.words)
+        dates = self.dates or [None, None, 0]
         return ColumnStats(address=address, column=name, range=range_text, rows=rows,
                            cells=self.cells, filled=self.filled, formulas=self.formulas,
                            type=majority, types=types,
@@ -424,6 +474,10 @@ class _Tally:
                            formula_share=self.formulas / self.cells if self.cells else 0.0,
                            min=low, max=high, mean=mean, measured=measured, distinct=distinct,
                            values=values, text_length_median=median, text_length_max=longest,
+                           text_words_median=words_median, text_words_max=words_max,
+                           text_longest=self.longest[1] if self.longest else None,
+                           date_text_min=dates[0], date_text_max=dates[1],
+                           date_text_measured=dates[2],
                            validation=allowed, flags=flags)
 
 

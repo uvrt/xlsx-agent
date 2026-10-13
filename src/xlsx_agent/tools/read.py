@@ -421,8 +421,8 @@ def _summary(target: str, first: int, last: int, total: int, more: bool) -> str:
 
 @tool("xlsx_profile",
       "Full profile of a table's or region's columns, describe's drill-down: types and mix, "
-      "fill, min/max/mean, distinct values, text lengths, formula share, allowed values, "
-      "flags with first addresses. Paged by column.",
+      "fill, min/max/mean, distinct values, text lengths (chars, words, longest cell), "
+      "formula share, allowed values, flags with first addresses. Paged by column.",
       {"doc": DOC,
        "target": string("A table or region (t:Products), or one column (t:Products[Price])."),
        "columns": array(string(), "Only these columns, by name. Default all.", optional=True),
