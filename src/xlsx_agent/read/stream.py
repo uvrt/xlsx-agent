@@ -4,8 +4,13 @@ A worksheet may hold a million rows (ROADMAP.md, "Design rules", 6), so it is re
 :func:`xlsx_agent.xml.iterparse_xml` (``parse_xml``'s safe options): each cell is typed as
 its row ends, and the row is then dropped, so what is held at any moment is one row.  What
 the pass meets on the way -- hidden columns (``cols`` comes before the cells), hidden rows,
-merges and data-validation rules (both come after them), how the rows are ordered -- is
-collected as it goes.
+array formulas' blocks, merges, data-validation rules and hyperlinks (the last three come
+after the cells), how the rows are ordered -- is collected as it goes.
+
+**Hyperlinks** (ECMA-376 Part 1, §18.3.1.47 ``hyperlink``): the cells each covers
+(``ref``), its relationship id (``r:id``, an external target in the sheet's relationships)
+and its ``location`` (a place in the workbook), as written.  Content: returned by a read
+when asked for, never in a message.
 
 **Data validation** (ECMA-376 Part 1, §18.3.1.32 ``dataValidation``): each rule's type
 (ST_DataValidationType), the cells it covers (``sqref``) and its first formula, as text,
@@ -48,7 +53,11 @@ def _tags(local: str) -> frozenset[str]:
 
 
 _ROW, _C, _COL, _MERGE = _tags("row"), _tags("c"), _tags("col"), _tags("mergeCell")
-_DIMENSION = _tags("dimension")
+_DIMENSION, _HYPERLINK = _tags("dimension"), _tags("hyperlink")
+#: ``r:id``, transitional and strict.
+_R_ID = tuple(f"{{{ns}}}id" for ns in (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+    "http://purl.oclc.org/ooxml/officeDocument/relationships"))
 _VALIDATION, _FORMULA1 = _tags("dataValidation"), _tags("formula1")
 #: [MS-XLSX]'s namespaces of the x14 data-validation extension and of its ``xm:`` children.
 NS_X14 = "http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
@@ -56,7 +65,8 @@ NS_XM = "http://schemas.microsoft.com/office/excel/2006/main"
 _X14_VALIDATION = frozenset({f"{{{NS_X14}}}dataValidation"})
 _X14_FORMULA1, _XM_F, _XM_SQREF = f"{{{NS_X14}}}formula1", f"{{{NS_XM}}}f", f"{{{NS_XM}}}sqref"
 _V, _F, _IS = _tags("v"), _tags("f"), _tags("is")
-_STREAMED = tuple(_ROW | _COL | _MERGE | _DIMENSION | _VALIDATION | _X14_VALIDATION)
+_STREAMED = tuple(_ROW | _COL | _MERGE | _DIMENSION | _VALIDATION | _X14_VALIDATION
+                  | _HYPERLINK)
 
 _REF = re.compile(r"\$?([A-Za-z]{1,3})\$?([0-9]{1,7})")
 _INTEGER = re.compile(r"[+-]?[0-9]+")
@@ -105,6 +115,20 @@ class Validation:
     formula1: str | None = field(default=None, repr=False)
 
 
+@dataclass(frozen=True)
+class Hyperlink:
+    """One hyperlink as the sheet writes it: ``area`` the cells it covers, ``rel_id`` its
+    relationship (an external target), ``location`` a place in the workbook (``Sheet2!A1``,
+    a defined name), and ``url`` the relationship's target, which
+    :meth:`Workbook.hyperlinks <xlsx_agent.workbook.Workbook.hyperlinks>` fills in; each
+    ``None`` when not given.  Content, for a result only: kept off the repr."""
+
+    area: Area
+    rel_id: str | None = field(default=None, repr=False)
+    location: str | None = field(default=None, repr=False)
+    url: str | None = field(default=None, repr=False)
+
+
 @dataclass
 class SheetScan:
     """What one full pass over a sheet found.
@@ -116,7 +140,9 @@ class SheetScan:
     are hidden; ``ordered`` whether rows and cells come in the order of the sheet;
     ``issues`` each value issue (``no_cached_value``, ``number_as_text``...), ``at_limit``
     and ``volatile`` by code, as ``(count, first address)``; ``validations`` the sheet's
-    data-validation rules, in the file's order."""
+    data-validation rules, in the file's order; ``arrays`` the blocks the array formulas
+    (and dynamic arrays' spills) fill, each its formula's ``ref``, in reading order;
+    ``hyperlinks`` the sheet's hyperlinks, in the file's order."""
 
     sheet: str
     used: Area | None = None
@@ -127,6 +153,8 @@ class SheetScan:
     ordered: bool = True
     issues: dict[str, tuple[int, str]] = field(default_factory=dict)
     validations: list[Validation] = field(default_factory=list)
+    arrays: list[Area] = field(default_factory=list)
+    hyperlinks: list[Hyperlink] = field(default_factory=list)
 
     @property
     def problems(self) -> list[Problem]:
@@ -163,6 +191,9 @@ class SheetReader:
         self.hidden_rows: set[int] = set()
         self.merges: list[Area] = []
         self.validations: list[Validation] = []
+        #: The blocks of the array formulas met so far, and the sheet's hyperlinks.
+        self.arrays: list[Area] = []
+        self.hyperlinks: list[Hyperlink] = []
         self.dimension: str | None = None
         self.ordered = True
         self._shared: dict[str, tuple[str, bool]] = {}
@@ -238,6 +269,11 @@ class SheetReader:
                     self.merges.append(area)
             elif tag in _DIMENSION:
                 self.dimension = node.get("ref")
+            elif tag in _HYPERLINK:
+                area = _area(node.get("ref"))
+                if area is not None:
+                    rel_id = next((node.get(a) for a in _R_ID if node.get(a)), None)
+                    self.hyperlinks.append(Hyperlink(area, rel_id, node.get("location") or None))
             elif tag in _VALIDATION:
                 formula = next((child.text for child in node if child.tag in _FORMULA1), None)
                 self.validations.append(_validation(node.get("type"), node.get("sqref"), formula))
@@ -413,6 +449,9 @@ class SheetReader:
             return
         if kind == "array":
             value.array = f_node.get("ref") or value.ref
+            block = _area(value.array)
+            if block is not None:
+                self.arrays.append(block)
         if text:
             value.formula_text = text
             value.volatile = is_volatile(text)
@@ -443,6 +482,8 @@ def scan(reader: SheetReader) -> SheetScan:
     result.dimension = reader.dimension
     result.merges = list(reader.merges)
     result.validations = list(reader.validations)
+    result.arrays = list(reader.arrays)
+    result.hyperlinks = list(reader.hyperlinks)
     result.hidden_rows = len(reader.hidden_rows)
     result.ordered = reader.ordered
     return result

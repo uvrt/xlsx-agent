@@ -57,7 +57,8 @@ from .package import OpenError, open_package, read_source, workbook_part
 from .profile import Column, ColumnStats, profile
 from .read.names import DefinedName, read_names
 from .read.regions import Region, Regions, Selection, UnclearRegion
-from .read.stream import SheetReader, SheetScan, read_area, scan
+from .read.comments import Comment, read_comments
+from .read.stream import Hyperlink, SheetReader, SheetScan, read_area, scan
 from .read.strings import SharedStrings
 from .read.styles import NumberFormat, Styles
 from .read.tables import TablePart, read_table
@@ -125,6 +126,7 @@ class Workbook:
         self._strings: SharedStrings | None = None
         self._styles: Styles | None = None
         self._scans: dict[str, SheetScan] = {}
+        self._comments: dict[str, list[Comment]] = {}
         self._table_parts_read: list[TablePart] | None = None
         self._catalogue: tuple | None = None   # what the catalogue is made from, gathered
         self.regions = Regions(self)
@@ -484,6 +486,45 @@ class Workbook:
     def merges(self, sheet: "Sheet | str | SheetRef") -> list[Area]:
         """The sheet's merged areas, in the order the file gives them."""
         return list(self.scan(sheet).merges)
+
+    def arrays(self, sheet: "Sheet | str | SheetRef") -> list[Area]:
+        """The blocks the sheet's array formulas fill (a dynamic array's spill among them),
+        each as its formula gives it, in reading order."""
+        return list(self.scan(sheet).arrays)
+
+    def hyperlinks(self, sheet: "Sheet | str | SheetRef") -> list[Hyperlink]:
+        """The sheet's hyperlinks, in the file's order, each with the cells it covers and
+        its ``url`` (an external target, from the sheet's relationships) or ``location`` (a
+        place in the workbook).  Content: never followed, never in a message."""
+        sheet = self._cell_sheet(sheet)
+        links = self.scan(sheet).hyperlinks
+        if not links:
+            return []
+        rels = self.package.relationships(sheet.part)
+        out = []
+        for link in links:
+            rel = rels.get(link.rel_id) if link.rel_id is not None else None
+            out.append(replace(link, url=rel.target) if rel is not None else link)
+        return out
+
+    def comments(self, sheet: "Sheet | str | SheetRef") -> list[Comment]:
+        """The sheet's comments (its comments part, :mod:`xlsx_agent.read.comments`), in
+        the file's order; read once."""
+        sheet = self._cell_sheet(sheet)
+        key = sheet.part or f"#{sheet.id}"
+        if key not in self._comments:
+            found: list[Comment] = []
+            if sheet.part is not None:
+                for rel in self.package.relationships(sheet.part).values():
+                    if rel.is_external or rel.type.rpartition("/")[2] != "comments" \
+                            or rel.target_part is None \
+                            or not self.package.has_part(rel.target_part):
+                        continue
+                    part = rel.target_part
+                    found = read_comments(_parsed(part, lambda: self.package.tree(part)))
+                    break
+            self._comments[key] = found
+        return list(self._comments[key])
 
     def cells(self, sheet: "Sheet | str | SheetRef", *, formats: bool = False) -> Iterator[Value]:
         """Every cell the sheet stores, typed, in the order of the file, streamed (a cell
