@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import OrderedDict
 from dataclasses import dataclass, field, replace
 from typing import BinaryIO, Iterator
 
@@ -129,6 +130,8 @@ class Workbook:
         self._comments: dict[str, list[Comment]] = {}
         self._table_parts_read: list[TablePart] | None = None
         self._catalogue: tuple | None = None   # what the catalogue is made from, gathered
+        #: ``xlsx_query``'s last few matches, by query: its next page needs them again.
+        self._queries: OrderedDict = OrderedDict()
         self.regions = Regions(self)
 
     # -- lifecycle -------------------------------------------------------------------------
