@@ -1,0 +1,617 @@
+{
+ "task": "g1-sales-by-region",
+ "recorded": {
+  "how": "recorded",
+  "model": "claude-haiku-5-5",
+  "date": "2026-10-13"
+ },
+ "prompt": "The workbook sales-july.xlsx is open as d1. Summarise its sales by region: the total revenue and the number of orders for each region, the largest revenue first, revenue rounded to 2 decimals, kept as the dataset by_region. Once it is kept, read d:by_region back with its sources, and report each region's figures with their addresses.",
+ "inputs": [
+  {
+   "file": "sales-july.xlsx",
+   "as": "document",
+   "sha256": "a9b5e9ca30a2602fd71eb69ff51b36c57c88be24b9889282f0273738cacf040d",
+   "content_sha256": "6312b0e322cc22008cc107b49fdb35694c179f2a0c324d544904781a5dda14d5"
+  }
+ ],
+ "calls": [
+  {
+   "tool": "describe",
+   "arguments": {
+    "doc": "d1"
+   },
+   "result": {
+    "ok": true,
+    "doc": "d1",
+    "version": 0,
+    "summary": "Described sales-july.xlsx",
+    "changed": [],
+    "created": [],
+    "removed": [],
+    "renamed": {},
+    "warnings": [],
+    "checks": {},
+    "data": {
+     "name": "sales-july.xlsx",
+     "kind": "xlsx",
+     "date_system": 1900,
+     "sheets": [
+      {
+       "name": "Sales",
+       "id": 1,
+       "used": "A1:E17"
+      }
+     ],
+     "regions": [
+      {
+       "address": "t:Sales",
+       "kind": "table",
+       "range": "Sales!A1:E17",
+       "rows": 16,
+       "columns": [
+        {
+         "name": "Date",
+         "type": "date",
+         "fill": 1.0,
+         "min": "2026-07-01",
+         "max": "2026-07-22",
+         "mean": "2026-07-11",
+         "distinct": 16
+        },
+        {
+         "name": "Region",
+         "type": "text",
+         "fill": 1.0,
+         "values": [
+          [
+           "North",
+           5
+          ],
+          [
+           "South",
+           4
+          ],
+          [
+           "East",
+           4
+          ],
+          [
+           "West",
+           3
+          ]
+         ],
+         "text_length": [
+          5,
+          5
+         ]
+        },
+        {
+         "name": "Product",
+         "type": "text",
+         "fill": 1.0,
+         "values": [
+          [
+           "Kettle",
+           6
+          ],
+          [
+           "Toaster",
+           5
+          ],
+          [
+           "Blender",
+           5
+          ]
+         ],
+         "text_length": [
+          7,
+          7
+         ]
+        },
+        {
+         "name": "Units",
+         "type": "number",
+         "fill": 1.0,
+         "min": 1,
+         "max": 6,
+         "mean": 2.5,
+         "values": [
+          [
+           2,
+           5
+          ],
+          [
+           1,
+           5
+          ],
+          [
+           4,
+           2
+          ],
+          [
+           3,
+           2
+          ],
+          [
+           5,
+           1
+          ],
+          [
+           6,
+           1
+          ]
+         ]
+        },
+        {
+         "name": "Revenue",
+         "type": "number",
+         "fill": 1.0,
+         "min": 34.5,
+         "max": 239.4,
+         "mean": 108.83125,
+         "values": [
+          [
+           79.8,
+           3
+          ],
+          [
+           34.5,
+           2
+          ],
+          [
+           59,
+           2
+          ],
+          [
+           159.6,
+           1
+          ],
+          [
+           69,
+           1
+          ],
+          [
+           39.9,
+           1
+          ],
+          [
+           177,
+           1
+          ],
+          [
+           172.5,
+           1
+          ],
+          [
+           118,
+           1
+          ],
+          [
+           236,
+           1
+          ],
+          [
+           103.5,
+           1
+          ],
+          [
+           239.4,
+           1
+          ]
+         ]
+        }
+       ],
+       "sample": [
+        [
+         "2026-07-01",
+         "North",
+         "Kettle",
+         4,
+         159.6
+        ],
+        [
+         "2026-07-02",
+         "South",
+         "Toaster",
+         2,
+         69
+        ]
+       ]
+      }
+     ]
+    },
+    "next_cursor": null
+   }
+  },
+  {
+   "tool": "xlsx_derive",
+   "arguments": {
+    "doc": "d1",
+    "from": "t:Sales",
+    "id": "by_region",
+    "group_by": [
+     "Region"
+    ],
+    "measures": [
+     {
+      "fn": "sum",
+      "column": "Revenue",
+      "as": "Total Revenue"
+     },
+     {
+      "fn": "count",
+      "as": "Orders"
+     }
+    ],
+    "round": 2,
+    "sort": [
+     {
+      "column": "Total Revenue",
+      "desc": true
+     }
+    ]
+   },
+   "result": {
+    "ok": true,
+    "doc": "d1",
+    "version": 0,
+    "summary": "Derived d:by_region from t:Sales: 4 rows",
+    "changed": [],
+    "created": [],
+    "removed": [],
+    "renamed": {},
+    "warnings": [],
+    "checks": {},
+    "data": {
+     "dataset": "d:by_region",
+     "from": "t:Sales",
+     "columns": [
+      "Region",
+      "Total Revenue",
+      "Orders"
+     ],
+     "key_columns": 1,
+     "types": {
+      "Region": "text",
+      "Total Revenue": "number",
+      "Orders": "number"
+     },
+     "rounding": {
+      "rule": "half_away_from_zero",
+      "digits": {
+       "Total Revenue": 2
+      }
+     },
+     "matched": 16,
+     "used": 16,
+     "groups": 4,
+     "rows": [
+      [
+       {
+        "a": "d:by_region/#1/Region",
+        "v": "North",
+        "t": "text",
+        "sources": [
+         "Sales!B2",
+         "Sales!B5",
+         "Sales!B9",
+         "Sales!B13",
+         "Sales!B17"
+        ]
+       },
+       {
+        "a": "d:by_region/#1/Total Revenue",
+        "v": 509.9,
+        "t": "number",
+        "sources": [
+         "Sales!E2",
+         "Sales!E5",
+         "Sales!E9",
+         "Sales!E13",
+         "Sales!E17"
+        ]
+       },
+       {
+        "a": "d:by_region/#1/Orders",
+        "v": 5,
+        "t": "number",
+        "sources": [
+         "Sales!B2",
+         "Sales!B5",
+         "Sales!B9",
+         "Sales!B13",
+         "Sales!B17"
+        ]
+       }
+      ],
+      [
+       {
+        "a": "d:by_region/#2/Region",
+        "v": "West",
+        "t": "text",
+        "sources": [
+         "Sales!B6",
+         "Sales!B10",
+         "Sales!B14"
+        ]
+       },
+       {
+        "a": "d:by_region/#2/Total Revenue",
+        "v": 470.9,
+        "t": "number",
+        "sources": [
+         "Sales!E6",
+         "Sales!E10",
+         "Sales!E14"
+        ]
+       },
+       {
+        "a": "d:by_region/#2/Orders",
+        "v": 3,
+        "t": "number",
+        "sources": [
+         "Sales!B6",
+         "Sales!B10",
+         "Sales!B14"
+        ]
+       }
+      ],
+      [
+       {
+        "a": "d:by_region/#3/Region",
+        "v": "South",
+        "t": "text",
+        "sources": [
+         "Sales!B3",
+         "Sales!B7",
+         "Sales!B11",
+         "Sales!B15"
+        ]
+       },
+       {
+        "a": "d:by_region/#3/Total Revenue",
+        "v": 419.3,
+        "t": "number",
+        "sources": [
+         "Sales!E3",
+         "Sales!E7",
+         "Sales!E11",
+         "Sales!E15"
+        ]
+       },
+       {
+        "a": "d:by_region/#3/Orders",
+        "v": 4,
+        "t": "number",
+        "sources": [
+         "Sales!B3",
+         "Sales!B7",
+         "Sales!B11",
+         "Sales!B15"
+        ]
+       }
+      ],
+      [
+       {
+        "a": "d:by_region/#4/Region",
+        "v": "East",
+        "t": "text",
+        "sources": [
+         "Sales!B4",
+         "Sales!B8",
+         "Sales!B12",
+         "Sales!B16"
+        ]
+       },
+       {
+        "a": "d:by_region/#4/Total Revenue",
+        "v": 341.2,
+        "t": "number",
+        "sources": [
+         "Sales!E4",
+         "Sales!E8",
+         "Sales!E12",
+         "Sales!E16"
+        ]
+       },
+       {
+        "a": "d:by_region/#4/Orders",
+        "v": 4,
+        "t": "number",
+        "sources": [
+         "Sales!B4",
+         "Sales!B8",
+         "Sales!B12",
+         "Sales!B16"
+        ]
+       }
+      ]
+     ]
+    },
+    "next_cursor": null,
+    "datasets": [
+     "d:by_region"
+    ],
+    "total": 4
+   }
+  },
+  {
+   "tool": "xlsx_read",
+   "arguments": {
+    "doc": "d1",
+    "target": "d:by_region",
+    "sources": true
+   },
+   "result": {
+    "ok": true,
+    "doc": "d1",
+    "version": 0,
+    "summary": "d:by_region: rows 1-4 of 4",
+    "changed": [],
+    "created": [],
+    "removed": [],
+    "renamed": {},
+    "warnings": [],
+    "checks": {},
+    "data": {
+     "target": "d:by_region",
+     "dataset": {
+      "id": "d:by_region",
+      "doc": "d1",
+      "stale": false
+     },
+     "columns": [
+      "Region",
+      "Total Revenue",
+      "Orders"
+     ],
+     "rows": [
+      [
+       {
+        "a": "d:by_region/#1/Region",
+        "v": "North",
+        "t": "text",
+        "sources": [
+         "Sales!B2",
+         "Sales!B5",
+         "Sales!B9",
+         "Sales!B13",
+         "Sales!B17"
+        ]
+       },
+       {
+        "a": "d:by_region/#1/Total Revenue",
+        "v": 509.9,
+        "t": "number",
+        "sources": [
+         "Sales!E2",
+         "Sales!E5",
+         "Sales!E9",
+         "Sales!E13",
+         "Sales!E17"
+        ]
+       },
+       {
+        "a": "d:by_region/#1/Orders",
+        "v": 5,
+        "t": "number",
+        "sources": [
+         "Sales!B2",
+         "Sales!B5",
+         "Sales!B9",
+         "Sales!B13",
+         "Sales!B17"
+        ]
+       }
+      ],
+      [
+       {
+        "a": "d:by_region/#2/Region",
+        "v": "West",
+        "t": "text",
+        "sources": [
+         "Sales!B6",
+         "Sales!B10",
+         "Sales!B14"
+        ]
+       },
+       {
+        "a": "d:by_region/#2/Total Revenue",
+        "v": 470.9,
+        "t": "number",
+        "sources": [
+         "Sales!E6",
+         "Sales!E10",
+         "Sales!E14"
+        ]
+       },
+       {
+        "a": "d:by_region/#2/Orders",
+        "v": 3,
+        "t": "number",
+        "sources": [
+         "Sales!B6",
+         "Sales!B10",
+         "Sales!B14"
+        ]
+       }
+      ],
+      [
+       {
+        "a": "d:by_region/#3/Region",
+        "v": "South",
+        "t": "text",
+        "sources": [
+         "Sales!B3",
+         "Sales!B7",
+         "Sales!B11",
+         "Sales!B15"
+        ]
+       },
+       {
+        "a": "d:by_region/#3/Total Revenue",
+        "v": 419.3,
+        "t": "number",
+        "sources": [
+         "Sales!E3",
+         "Sales!E7",
+         "Sales!E11",
+         "Sales!E15"
+        ]
+       },
+       {
+        "a": "d:by_region/#3/Orders",
+        "v": 4,
+        "t": "number",
+        "sources": [
+         "Sales!B3",
+         "Sales!B7",
+         "Sales!B11",
+         "Sales!B15"
+        ]
+       }
+      ],
+      [
+       {
+        "a": "d:by_region/#4/Region",
+        "v": "East",
+        "t": "text",
+        "sources": [
+         "Sales!B4",
+         "Sales!B8",
+         "Sales!B12",
+         "Sales!B16"
+        ]
+       },
+       {
+        "a": "d:by_region/#4/Total Revenue",
+        "v": 341.2,
+        "t": "number",
+        "sources": [
+         "Sales!E4",
+         "Sales!E8",
+         "Sales!E12",
+         "Sales!E16"
+        ]
+       },
+       {
+        "a": "d:by_region/#4/Orders",
+        "v": 4,
+        "t": "number",
+        "sources": [
+         "Sales!B4",
+         "Sales!B8",
+         "Sales!B12",
+         "Sales!B16"
+        ]
+       }
+      ]
+     ]
+    },
+    "next_cursor": null,
+    "total": 4
+   }
+  }
+ ],
+ "answer": "I kept the dataset `d:by_region` from the 16 sales rows on the Sales sheet, sorted by total revenue, largest first. The read-back matches the derived figures and is not stale.\n\n| Region | Total revenue | Orders | Revenue source cells | Orders source cells |\n|---|---|---|---|---|\n| North | 509.90 | 5 | Sales!E2, E5, E9, E13, E17 | Sales!B2, B5, B9, B13, B17 |\n| West | 470.90 | 3 | Sales!E6, E10, E14 | Sales!B6, B10, B14 |\n| South | 419.30 | 4 | Sales!E3, E7, E11, E15 | Sales!B3, B7, B11, B15 |\n| East | 341.20 | 4 | Sales!E4, E8, E12, E16 | Sales!B4, B8, B12, B16 |\n\nAcross all regions, the 16 orders total 1,741.30 in revenue (509.90 + 470.90 + 419.30 + 341.20). The sum was not computed as a separate figure, so that total is my addition of the four rows above."
+}

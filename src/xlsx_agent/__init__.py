@@ -65,7 +65,7 @@ from .read import (Comment, DefinedName, Hyperlink, Locale, NumberFormat, Proble
                    RegionError, Selection, SheetScan, UnclearRegion, Value)
 from .workbook import Sheet, Workbook
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 
 __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellChange",
            "CheckedTable", "Column", "DataProblem", "SchemaError", "ValidationReport",

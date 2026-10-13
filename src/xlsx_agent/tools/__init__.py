@@ -41,7 +41,7 @@ unless given.  The reader's own settings go on the format:
 ``format(local_dates=True)`` in place of :data:`FORMAT` reads text dates in the locale's
 date order, as Excel does (:mod:`xlsx_agent.read.types`).
 
-Everything is in memory: workbooks and inputs are bytes under handles.  So far (R13) the
+Everything is in memory: workbooks and inputs are bytes under handles.  In 0.1.0 the
 tools are the shared ``open_document``, ``close_document`` and ``read_blob``, the
 workbook's ``describe`` and ``find_text`` (:mod:`.shared`), ``xlsx_read`` and ``xlsx_profile``
 (:mod:`.read`), ``xlsx_query`` (:mod:`.query`), and ``xlsx_derive`` (:mod:`.derive`), which

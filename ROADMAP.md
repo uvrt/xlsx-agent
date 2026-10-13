@@ -229,6 +229,9 @@ numbers. At R12 `xlsx_compare` is 329 estimated (about 487 counted by the offlin
 proxy) and the core with it about 4,153 counted, so it is in the core. At R13
 `xlsx_validate_data` is 630 estimated (about 932 counted) and the core with it 3,425
 estimated, about 5,069 counted: both stay in the core, and no `xlsx_check` group is made.
+**Counted online at R14** (claude-sonnet-5-5's count-tokens, 2026-10-13, after P1, which
+changed no definition): the loaded core, 9 definitions with the tool-use prompt, is
+**4,958 tokens**, under 6,000 (the proxy's 5,069 over-counts by about 2%).
 
 ### 0.2 — edit (deferred groups)
 
@@ -471,6 +474,18 @@ without the value, `first` for a repeat, `reason`, `nearest` names) and a one-li
 at most 10,000 problems are kept, the rest counted (`cut`). `xlsx_validate_data` pages
 them as `xlsx_compare` pages differences; in the strict schema `min`, `max` and `enum` are
 strings and `key` a list.
+
+*R14 as built* (0.1.0): `tests/test_tools_online.py` (marked `provider`, skipped without
+`ANTHROPIC_API_KEY`) counts the core online -- 4,958 tokens, above -- and sends the
+definitions as the adapter does, which Claude accepts; its strict-fields check skips while
+no tool is sent strict (Claude's strict plan is for writing tools; 0.1's all read). Three
+golden transcripts (`tests/golden/`, `tests/test_golden.py`) were recorded on
+claude-haiku-5-5 by `tools/record_goldens.py` and replay offline to the same results, call
+for call: g1 derives sales by region and reads `d:by_region` back, g2 compares a generated
+inventory with a reviewed copy, g3 checks orders against a declared schema; their inputs
+(`tests/golden_inputs.py`) fix every value and date. The tools README is
+`src/xlsx_agent/tools/README.md`; the Python API, `docs/api-tour.md`; `CHANGELOG.md` has
+0.1.0.
 
 ### 0.2 — edit
 
