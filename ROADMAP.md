@@ -220,12 +220,13 @@ Every result is bounded by `Limits.max_result_chars` (24,000) and
 | `xlsx_query` | `doc`, `table`, `columns`, `where` (`eq`, `in`, `gte`, `lte`, `contains`, `blank`, `not_blank`, combined with and), `sort`, `limit`, `cursor` | matching rows with their addresses, and the count of all matches | as `xlsx_read`; a filter on a column of the wrong type is refused naming the column's type |
 | `find_text` (shared) | `doc`, `text`, `regex`, `range` (a sheet, range or table), `cursor` | matches by address and kind: cell (text cells; numbers and dates are not searched, having no display string yet), table or region name, column header, comment, defined name; hidden ones marked; formula text not searched (the shared tool has no option for it) | 50 per page |
 | `xlsx_derive` | `doc`, `from` (table, region or dataset), `where`, `group_by`, `measures` (`count`, `sum`, `mean`, `median`, `min`, `max`, `share`, `distinct`, each with `column` and `as`), `bins` (edges for a number or date column), `pivot` (a column whose values become columns), `sort`, `top`, `round`, `id` | `d:<id>`: columns, rows, the rounding applied, and for every value its sources (see *Provenance*); the rows left out and why, counted by reason | at most 1,000 result rows and 50 shown; a measure on a column whose type does not allow it is refused before anything is computed |
-| `xlsx_compare` | `a`, `b` (two open documents), `table` (or one per document), `key`, `columns`, `cursor` | rows added and removed (by key), cells changed (address in each, old and new value, type), columns added and removed; duplicate keys reported, not paired by guess | 50 differences per page, totals always |
+| `xlsx_compare` | `a`, `b` (two open documents), `tables` (default every table and declared region; `table_b` when the one table's name differs in `b`), `key`, `columns`, `cursor` | sheets added, removed and renamed (by id); rows added and removed (by key); cells changed (address in each, old and new value, type: a number and the same number as text is a `type` change); columns added, removed and renamed; duplicate keys reported, not paired by guess | 50 differences per page, totals always |
 | `xlsx_validate_data` | `doc`, `schema`: sheets and tables required; per column type, required, unique, enum, `min`/`max`, `step` (e.g. 1–5 in halves), pattern | problems by address and code (`missing_column`, `wrong_type`, `out_of_range`, `not_in_enum`, `duplicate_key`, `required_blank`...), counted by code | 50 problems per page, counts always |
 
 `xlsx_compare` and `xlsx_validate_data` are in the core if the budget holds; if the
 online count says otherwise they move to a deferred `xlsx_check` group, and R14 records the
-numbers.
+numbers. At R12 `xlsx_compare` is 329 estimated (about 487 counted by the offline
+proxy) and the core with it about 4,153 counted, so it is in the core.
 
 ### 0.2 — edit (deferred groups)
 
@@ -291,7 +292,7 @@ DatasetTable(ds).read("d:by_category/Hardware/average")   # [[DatasetValue(...)]
 wb.derive(from_=ds, measures=[{"fn": "max", "column": "average"}])   # from a dataset (R11):
                                      # its sources are the original cells, not the dataset's
 
-Workbook.compare(old, new, table="t:Products", key="SKU")   # Diff
+Workbook.compare(old, new, tables=["t:Products"], key="SKU")   # Diff
 wb.validate_data(schema)             # [Problem(address, code)], never cell text
 ```
 
@@ -431,6 +432,21 @@ all of them). Deriving from a dataset measures a `Derived`'s unrounded values, a
 value's sources are the original cells, merged again. Until 0.2 a workbook has no history,
 so the session counts its changes upwards: a stale dataset stays stale (no undo yet); the
 tests make the change with a test-only changing tool.
+
+*R12 as built*: `Workbook.compare(a, b, tables=..., key=..., columns=...)` gives a `Diff`
+(`xlsx_agent.compare`): sheets matched by `sheetId` (renamed, added, removed); tables and
+regions matched by name, case aside (every table and declared region by default, and those
+in one workbook only listed; named ones, or pairs, otherwise); columns by name, a header
+changed in place (old name not in `b`, new name not in `a`) a rename whose cells are
+compared; rows by key -- named, declared, or the one key column both workbooks find, else
+`no_key_column` with the candidates. A key two rows of one workbook share is reported as
+`duplicate_key` with each workbook's rows by position, and its rows are left out of every
+other count (never paired, never first-wins); rows without a key are counted (`unkeyed`).
+Cells are compared by type, then value: `changed`, `type`, `added` (blank before),
+`removed` (blank after); a formula by its cached value. `xlsx_compare` lists the
+differences (sheets, tables, columns, duplicate keys, unkeyed rows, rows added and removed
+with their cells, cells changed) 50 a page within 24,000 characters, `totals` always, the
+comparison kept for its next pages.
 
 ### 0.2 — edit
 
