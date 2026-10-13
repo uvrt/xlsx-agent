@@ -25,6 +25,8 @@ An application puts these in a :class:`ooxml_edit.tools.Toolbox` with the xlsx
         "measures": [{"fn": "mean", "column": "Price", "as": "average"}], "round": 2})
     result = toolbox.dispatch(session, "xlsx_read", {"target": "d:by_category[average]",
                                                      "sources": True})
+    result = toolbox.dispatch(session, "xlsx_compare", {"a": "d1", "b": "d2",
+                                                        "tables": ["t:Products"], "key": "SKU"})
 
 The locale (how text that looks like a number or a date is read, and the language of the
 language-dependent built-in number formats) is the application's setting, never the
@@ -36,13 +38,14 @@ unless given.  The reader's own settings go on the format:
 ``format(local_dates=True)`` in place of :data:`FORMAT` reads text dates in the locale's
 date order, as Excel does (:mod:`xlsx_agent.read.types`).
 
-Everything is in memory: workbooks and inputs are bytes under handles.  So far (R11) the
+Everything is in memory: workbooks and inputs are bytes under handles.  So far (R12) the
 tools are the shared ``open_document``, ``close_document`` and ``read_blob``, the
 workbook's ``describe`` and ``find_text`` (:mod:`.shared`), ``xlsx_read`` and ``xlsx_profile``
 (:mod:`.read`), ``xlsx_query`` (:mod:`.query`), and ``xlsx_derive`` (:mod:`.derive`), which
 keeps its figures in the session as a dataset, ``d:<id>``: ``xlsx_read`` reads it and
 ``xlsx_derive`` derives from it, after its workbook is closed too, and a dataset whose
-workbook has changed since is marked stale, never refreshed (ooxml-edit's datasets, O2).
+workbook has changed since is marked stale, never refreshed (ooxml-edit's datasets, O2);
+and ``xlsx_compare`` (:mod:`.compare`), two open workbooks compared by key.
 The library's address and query errors become tool errors with their valid options
 (:mod:`.docformat`).
 """
@@ -53,6 +56,7 @@ from ooxml_edit.tools import CORE, DocumentFormat, shared as _shared
 
 from .docformat import (ERRORS, KIND, PROMPT, QUERY_CODES, REGION_CODES, STRICT_FIRST, FORMAT,
                         detect, tool_error, workbook_format)
+from .compare import TOOLS as COMPARE_TOOLS
 from .derive import TOOLS as DERIVE_TOOLS
 from .query import TOOLS as QUERY_TOOLS
 from .read import TOOLS as READ_TOOLS
@@ -61,7 +65,7 @@ from .shared import TOOLS as SHARED_TOOLS
 GROUPS = [*_shared.GROUPS]
 
 #: Every tool a workbook has, the shared ones included, in the order they are offered.
-TOOLS = [*SHARED_TOOLS, *READ_TOOLS, *QUERY_TOOLS, *DERIVE_TOOLS]
+TOOLS = [*SHARED_TOOLS, *READ_TOOLS, *QUERY_TOOLS, *DERIVE_TOOLS, *COMPARE_TOOLS]
 
 CORE_TOOLS = [t.name for t in TOOLS if t.group == CORE]
 
