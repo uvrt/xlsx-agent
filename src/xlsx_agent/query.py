@@ -12,17 +12,19 @@ columns asked for, each cell with its address (ROADMAP.md, "Tools": ``xlsx_query
 a list of ``{"column": ..., "op": ..., "value": ...}`` (``values`` for ``in``), as the tool
 gives it; a row matches when it passes every test (they combine with *and*).  The tests:
 ``eq`` (equal to the value), ``in`` (equal to one of the values), ``gte`` and ``lte`` (at
-least, at most), ``contains`` (text holding the value), ``blank`` and ``not_blank`` (the
-reader's ``blank``: no value, a formula without a cached value among them; ``True`` in the
-mapping form, nothing in the list form).
+least, at most), ``contains`` (text holding the value), ``words_gt`` (text of more words
+than the value, a whole number: words are the runs of characters between white space, as
+:meth:`str.split` splits them; a test for text too long to place), ``blank`` and
+``not_blank`` (the reader's ``blank``: no value, a formula without a cached value among
+them; ``True`` in the mapping form, nothing in the list form).
 
 **Types.**  Each filtered column's type is its profile's (:mod:`xlsx_agent.profile`: the
 type most of its values have, :func:`~xlsx_agent.profile.majority_type`), and a test is
 checked against it before any row is given: ``gte``/``lte`` take a number, percent, date,
-time or datetime column; ``contains`` a text column; ``eq`` and ``in`` any column with
-values; ``blank`` and ``not_blank`` any column.  Any other pairing, and a value that is not
-of the column's type, is refused (:class:`QueryError`, ``wrong_type``) naming the column's
-type, with the tests it takes as ``valid_options``.  A cell of another type than its
+time or datetime column; ``contains`` and ``words_gt`` a text column; ``eq`` and ``in``
+any column with values; ``blank`` and ``not_blank`` any column.  Any other pairing, and a
+value that is not of the column's type, is refused (:class:`QueryError`, ``wrong_type``)
+naming the column's type, with the tests it takes as ``valid_options``.  A cell of another type than its
 column's never matches a test that compares values: nothing is coerced (ROADMAP.md, "Design
 rules", 4); such cells are counted per column, with their first addresses
 (:attr:`QueryResult.not_compared`).  A value may be given as Python's (``5``, ``True``) or
@@ -81,7 +83,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from .workbook import Workbook
 
 #: Every test a filter can make.
-OPS = ("eq", "in", "gte", "lte", "contains", "blank", "not_blank")
+OPS = ("eq", "in", "gte", "lte", "contains", "words_gt", "blank", "not_blank")
 
 _ORDERED = ("eq", "in", "gte", "lte", "blank", "not_blank")
 _ANY = ("eq", "in", "blank", "not_blank")
@@ -89,7 +91,7 @@ _ANY = ("eq", "in", "blank", "not_blank")
 #: The tests each column type takes.
 OPS_BY_TYPE: dict[str, tuple[str, ...]] = {
     "number": _ORDERED, "percent": _ORDERED, "date": _ORDERED, "time": _ORDERED,
-    "datetime": _ORDERED, "text": ("eq", "in", "contains", "blank", "not_blank"),
+    "datetime": _ORDERED, "text": ("eq", "in", "contains", "words_gt", "blank", "not_blank"),
     "bool": _ANY, "error": _ANY, "blank": ("blank", "not_blank")}
 
 #: The most values an ``in`` test takes.
@@ -352,7 +354,8 @@ class _Test:
                 if self.op == "in":
                     parsed: Any = frozenset(_operand(v, t, date1904) for v in self.operand)
                 else:
-                    parsed = _operand(self.operand, t, date1904)
+                    parsed = _words(self.operand) if self.op == "words_gt" else \
+                        _operand(self.operand, t, date1904)
                     if self.op == "contains":
                         parsed = parsed.casefold()
             except _Bad:
@@ -383,6 +386,8 @@ class _Test:
             return key >= wanted
         if self.op == "lte":
             return key <= wanted
+        if self.op == "words_gt":
+            return len(value.v.split()) > wanted
         return wanted in value.v.casefold()             # contains, on text
 
     def check(self, column_type: str, date1904: bool) -> None:
@@ -394,14 +399,16 @@ class _Test:
             elif self.op in ("gte", "lte"):
                 reason = "is not ordered here: gte and lte compare numbers, dates and times"
             else:
-                reason = "has no text to search: contains is for text columns"
+                reason = f"has no text to search: {self.op} is for text columns"
             raise QueryError("wrong_type", f"{self.column} is a {column_type} column and "
                              f"{reason}; it takes {', '.join(allowed)}", column=self.column,
                              column_type=column_type, valid_options=allowed)
         if self.compares and self._value(column_type, date1904) is _BAD:
             what = "each value of in" if self.op == "in" else f"the value of {self.op}"
+            form = "a whole number of words (150)" if self.op == "words_gt" \
+                else _FORMS[column_type]
             raise QueryError("wrong_type", f"{self.column} is a {column_type} column: {what} "
-                             f"is to be {_FORMS[column_type]}", column=self.column,
+                             f"is to be {form}", column=self.column,
                              column_type=column_type, valid_options=allowed)
 
 
@@ -473,6 +480,20 @@ def _test(region: Region, name: str, op: Any, operand: Any, *, mapping: bool) ->
     elif op == "contains" and operand == "":
         raise QueryError("bad_filter", f"contains on {name} needs some text", column=name)
     return _Test(name, region.column_index(name), op, operand)
+
+
+def _words(raw: Any) -> int:
+    """``words_gt``'s value: a whole number of words, 0 or more (``150`` or ``"150"``);
+    :class:`_Bad` when it is not one."""
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        number = raw
+    elif isinstance(raw, str) and re.fullmatch(r"[0-9]+", raw.strip()):
+        number = int(raw.strip())
+    else:
+        raise _Bad
+    if number < 0:
+        raise _Bad
+    return number
 
 
 def _operand(raw: Any, t: str, date1904: bool) -> Any:
