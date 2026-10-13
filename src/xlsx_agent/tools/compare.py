@@ -1,7 +1,8 @@
 """``xlsx_compare``: two open workbooks compared -- sheets by id, tables and regions by name,
 rows by key, cells by type and value (ROADMAP.md, "Tools").  In the loaded core: its
 definition is 329 estimated (about 487 counted by the offline proxy) and the core with it
-about 4,153 counted, under the 6,000 budget (ROADMAP.md: the check tools stay loaded while
+about 4,153 counted, under the 6,000 budget; X10's words on the summary make it 330, the
+core 3,474 estimated, about 5,142 counted (ROADMAP.md: the check tools stay loaded while
 the budget holds; ``tests/test_tools_schema.py`` keeps it).
 
 What it does is :mod:`xlsx_agent.compare`'s (:meth:`Workbook.compare
@@ -12,17 +13,30 @@ one name in both by default; ``key`` names the key column, else each region's de
 only key column in both (none or several: refused, ``no_key_column``, the candidates as
 ``valid_options``); ``columns`` limits the cells compared.
 
-**The result.**  ``tables``: each pair compared, its addresses and ranges in both, its key
-column, its rows in each, how many were paired by key and of those unchanged, and its
-``totals``.  ``totals``: every difference counted by kind, always, over all of them.
-``differences``: the differences themselves, in order -- sheets (``sheet``: added, removed,
-renamed, by id), tables in one workbook only (``table``), columns (``column``: added,
-removed, renamed), keys two rows of one workbook share (``duplicate_key``: never paired,
-each workbook's rows by position, :data:`POSITIONS_SHOWN` at most, the rest counted in
-``more``), rows without a key (``unkeyed``), rows added and removed (``row``, with its
-key, its address by position and its cells), and cells changed (``cell``: ``changed``,
-``type`` -- a number and the same number as text --, ``added``, ``removed``; with the
-key, the column, and the cell in ``a`` and in ``b``, typed with their addresses).
+**The result.**  ``tables``, first: each pair compared, its addresses and ranges in both,
+its key column, its rows in each, how many were paired by key and of those unchanged, and
+its ``totals``; on the first page, its **summary** (X10): ``columns``, each column with a
+cell changed and how many (``changed``), for numbers, percents, dates and times how many
+went ``up`` and ``down`` and the largest move each way by key (``max_up``:
+``"t:Stock/SKU-0002/Price +0.01"``, a date's in days, ``+3d``; :class:`~xlsx_agent.compare.
+ColumnSummary`), text, booleans and lists ``changed`` only; and ``added`` and ``removed``,
+the rows by key (``t:Stock/SKU-0009``, :data:`KEYS_SHOWN` each, the rest counted in
+``more_added``, ``more_removed``).  It is what a model reads to skip the pages: at most
+``Limits.max_list_items`` columns a table (``more_columns``), and the tables' summaries
+within half the page (the rest left out, counted in ``cut``'s ``summaries``).  A column
+hidden from the model is no column of its table: never compared, counted or named.
+``totals``: every difference counted by kind, always, over all of them.  ``differences``:
+the differences themselves, in order -- sheets (``sheet``: added, removed, renamed, by id),
+tables in one workbook only (``table``), columns (``column``: added, removed, renamed),
+keys two rows of one workbook share (``duplicate_key``: never paired, each workbook's rows
+by position, :data:`POSITIONS_SHOWN` at most, the rest counted in ``more``), rows without
+a key (``unkeyed``), rows added and removed (``row``, with ``at``, its address by key in
+its workbook, and its cells with their sheet addresses), and cells changed (``cell``:
+``changed``, ``type`` -- a number and the same number as text --, ``added``, ``removed``;
+with ``at``, its address by key in ``b``, ``t:Stock/SKU-0002/Price``, and the cell in
+``a`` and in ``b``, typed with their sheet addresses).  A key longer than
+:data:`~.read.TEXT_SHOWN` characters is no address: the difference gives its ``table``,
+its ``key`` cut with ``key_length``, and a cell's ``column``.
 
 **Bounded and paged** as the other read tools are (:mod:`.read`'s cursor and sizes): at
 most ``Limits.max_list_items`` differences a page within ``Limits.max_result_chars``; text
@@ -52,13 +66,16 @@ from .read import _MARGIN, CURSOR, TEXT_SHOWN, _cursor, _read_cursor, _size
 
 #: The most row positions a ``duplicate_key`` difference lists per workbook.
 POSITIONS_SHOWN = 8
+#: The most rows added, and removed, a table's summary names by key.
+KEYS_SHOWN = 10
 
 
 @tool("xlsx_compare",
       "Compare two open workbooks, a (older) and b (newer): sheets by id, tables by name, "
-      "rows by key (added, removed), cells by type and value (old and new, typed, with "
-      "addresses; number vs text is a type change), columns added, removed, renamed. A key "
-      "two rows share is reported, never paired. totals always; paged.",
+      "rows by key (added, removed), cells by type and value (old and new, by key; number "
+      "vs text is a type change), columns added, removed, renamed. A key two rows share is "
+      "reported, never paired. First: changes per column (numbers, dates: up, down, "
+      "largest); totals; paged.",
       {"a": string("Older document id."),
        "b": string("Newer document id."),
        "tables": array(string(), "Tables or regions, same name in both (t:Products). "
@@ -103,6 +120,7 @@ def xlsx_compare(call: Any, a: str, b: str, tables: list[str] | None = None,
     data: dict[str, Any] = {"a": a, "b": b}
     shown_tables = [_table(t) for t in diff.tables[:limit]]
     data["tables"] = shown_tables
+    unsummed = _summaries(shown_tables, diff.tables, chars // 2, limit) if start == 0 else 0
     data["totals"] = totals
     data["differences"] = []
     summary_room = len(_summary(a, b, diff, totals, 1, total, total, True))
@@ -136,6 +154,8 @@ def xlsx_compare(call: Any, a: str, b: str, tables: list[str] | None = None,
         out_cut["text"] = texts
     if len(diff.tables) > len(shown_tables):
         out_cut["tables"] = len(diff.tables) - len(shown_tables)
+    if unsummed:
+        out_cut["summaries"] = unsummed
     if out_cut:
         data["cut"] = out_cut
     summary = _summary(a, b, diff, totals, start + 1, index, total, next_cursor is not None)
@@ -175,6 +195,45 @@ def _table(table: Any) -> dict[str, Any]:
     if totals:
         out["totals"] = totals
     return out
+
+
+def _summary_of(table: Any, limit: int) -> dict[str, Any]:
+    """A table's summary for the first page: its columns' changes counted
+    (:meth:`~xlsx_agent.compare.TableDiff.by_column`, ``limit`` columns at most, the
+    rest counted in ``more_columns``) and its rows added and removed by key
+    (:data:`KEYS_SHOWN` each at most, the rest counted in ``more_added`` and
+    ``more_removed``); nothing for a table without such changes."""
+    out: dict[str, Any] = {}
+    columns = table.by_column()
+    if columns:
+        out["columns"] = {c.column: c.as_dict() for c in columns[:limit]}
+        if len(columns) > limit:
+            out["more_columns"] = len(columns) - limit
+    for name in ("added", "removed"):
+        rows = getattr(table, name)
+        if rows:
+            out[name] = [row.at for row in rows[:KEYS_SHOWN]]
+            if len(rows) > KEYS_SHOWN:
+                out[f"more_{name}"] = len(rows) - KEYS_SHOWN
+    return out
+
+
+def _summaries(shown: list[dict], tables: Any, room: int, limit: int) -> int:
+    """Each shown table's summary added to it while they fit ``room`` characters together;
+    how many tables with one were left without it."""
+    used = 0
+    left = 0
+    for out, table in zip(shown, tables):
+        summary = _summary_of(table, limit)
+        if not summary:
+            continue
+        size = _size(summary)
+        if left or used + size > room:
+            left += 1
+            continue
+        out.update(summary)
+        used += size
+    return left
 
 
 # -- the differences, each shaped when its page is made ------------------------------------------
@@ -239,12 +298,21 @@ def _duplicate(where: str, duplicate: Any, cap: int) -> tuple[dict, int]:
     return out, cut
 
 
+def _named(where: str, key: str, at: str, cap: int, column: str | None = None
+           ) -> tuple[dict, int]:
+    """A difference's place: its address by key (``at``), or, for a key longer than
+    ``cap``, its table, its key cut and its length (and its column)."""
+    if len(key) <= cap:
+        return {"at": at}, 0
+    out: dict[str, Any] = {"table": where, "key": key[:cap], "key_length": len(key)}
+    if column is not None:
+        out["column"] = column
+    return out, 1
+
+
 def _row(where: str, row: Any, cap: int, cells: int | None) -> tuple[dict, int]:
-    key, cut = _text(row.key, cap)
-    out: dict[str, Any] = {"table": where, "row": row.change, "key": key}
-    if cut:
-        out["key_length"] = len(row.key)
-    out["at"] = row.row
+    named, cut = _named(where, row.key, row.at, cap)
+    out: dict[str, Any] = {"row": row.change, **named}
     shown = row.cells if cells is None else row.cells[:cells]
     values = []
     for value in shown:
@@ -258,11 +326,8 @@ def _row(where: str, row: Any, cap: int, cells: int | None) -> tuple[dict, int]:
 
 
 def _cell_change(where: str, change: Any, cap: int) -> tuple[dict, int]:
-    key, cut = _text(change.key, cap)
-    out: dict[str, Any] = {"table": where, "cell": change.change, "key": key}
-    if cut:
-        out["key_length"] = len(change.key)
-    out["column"] = change.column
+    named, cut = _named(where, change.key, change.at, cap, change.column)
+    out: dict[str, Any] = {"cell": change.change, **named}
     for side in ("a", "b"):
         shaped, n = _value(getattr(change, side), cap)
         out[side] = shaped
@@ -287,7 +352,8 @@ def _fit(item: Item, room: int) -> tuple[dict, int]:
 
 
 #: A ``cut`` at its longest, to keep room for it in a page.
-_CUT_ROOM = {"differences": 10 ** 9, "chars": True, "text": 10 ** 6, "tables": 10 ** 5}
+_CUT_ROOM = {"differences": 10 ** 9, "chars": True, "text": 10 ** 6, "tables": 10 ** 5,
+             "summaries": 10 ** 5}
 
 
 def _summary(a: str, b: str, diff: Diff, totals: dict[str, int], first: int, last: int,
