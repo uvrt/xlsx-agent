@@ -14,7 +14,8 @@ are queried (:mod:`xlsx_agent.query`); text is found (:mod:`xlsx_agent.find`); f
 are derived, each with its cells (:mod:`xlsx_agent.derive`), and kept as datasets that
 are read by address and derived from again (:mod:`xlsx_agent.dataset`); two workbooks
 are compared by key (:mod:`xlsx_agent.compare`); a workbook is checked against a declared
-schema (:mod:`xlsx_agent.schema`); ``xlsx_read``, ``xlsx_profile``, ``xlsx_query``,
+schema (:mod:`xlsx_agent.schema`); the caller's own tables are declared from its
+configuration (:mod:`xlsx_agent.declare`); ``xlsx_read``, ``xlsx_profile``, ``xlsx_query``,
 ``xlsx_derive``, ``xlsx_compare`` and ``xlsx_validate_data`` read cells, columns and rows,
 paged, keep figures as ``d:<id>``, compare workbooks and check them
 (:mod:`xlsx_agent.tools`)::
@@ -30,6 +31,8 @@ paged, keep figures as ``d:<id>``, compare workbooks and check them
     for row in wb.read("Stock!A:C"): ...       # lazily, clipped to the used range
     wb.resolve("t:Products/SKU-0042/Price")    # Selection(range=Stock!C43, ...)
     wb.declare_region("Returns", "Returns!A1:C40", header_rows=2, headers=[...])
+    wb.declare_tables([{"name": "checks", "sheets": "Area *", "header_row": 3,
+                        "key": "Ref"}])    # the caller's tables, over several sheets
     wb.table("t:Products").column("Price").stats()   # ColumnStats(type='number', ...)
     wb.table("t:Products").query(["SKU"], where={"Price": {"gte": 5}}, sort=["SKU"])
     wb.catalogue()                             # sheets, regions, columns, samples, flags
@@ -54,6 +57,7 @@ from .address import (FORMS, Address, AddressError, DatasetAddress, NameNotFound
                       is_name, needs_quotes, parse_address, quote_sheet)
 from .compare import (CellChange, ColumnChange, Diff, DuplicateKey, RowChange,
                       SheetChange, TableDiff)
+from .declare import DeclarationError
 from .dataset import (DatasetSelection, DatasetTable, DatasetValue, as_dataset,
                       merge_sources, table_dataset)
 from .derive import Derived, DeriveError, Provenance, Total
@@ -72,7 +76,7 @@ __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellC
            "CheckedTable", "Column", "DataProblem", "SchemaError", "ValidationReport",
            "ColumnChange", "Diff", "DuplicateKey", "RowChange", "SheetChange", "TableDiff",
            "ColumnStats", "Comment", "Count", "DatasetAddress", "DatasetSelection",
-           "DatasetTable", "DatasetValue", "DefinedName", "DeriveError",
+           "DatasetTable", "DatasetValue", "DeclarationError", "DefinedName", "DeriveError",
            "Derived", "Distinct",
            "Found", "Hyperlink", "KindMismatchWarning", "Locale", "NameNotFound", "NumberFormat",
            "OpenError", "Problem", "QueryError", "QueryResult", "RangeAddress", "RefAddress",

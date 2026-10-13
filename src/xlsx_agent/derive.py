@@ -199,7 +199,7 @@ from .address import DatasetAddress, RangeAddress, SheetRef, TableAddress, parse
 from .dataset import DatasetTable, as_dataset
 from .profile import FIRST_ADDRESSES, Count, _add_partial, majority_type
 from .query import QueryError, _Bad, _iso_key, _key, _operand, _tests
-from .read.regions import Region, RegionError
+from .read.regions import Region, RegionError, Span
 from .read.types import TYPES, Value, looks_like_date, serial_text, text_date, text_number
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -337,13 +337,16 @@ class _Sourced:
             found = self.keyed.address(self.column, self.runs)
             return () if found is None else (found,)
         b, sheet, column = self.runs, self.sheet, self.column
+        if isinstance(sheet, Span):    # a declared table read as one: each sheet's cells
+            return tuple(r for i in range(0, len(b), 2)
+                         for r in sheet.locate(Area(Cell(b[i], column), Cell(b[i + 1], column))))
         return tuple(RangeAddress(sheet, Area(Cell(b[i], column), Cell(b[i + 1], column)))
                      for i in range(0, len(b), 2))
 
     @property
     def ranges(self) -> int:
         """How many addresses :attr:`sources` gives."""
-        if self.via is not None or self.keyed is not None:
+        if self.via is not None or self.keyed is not None or isinstance(self.sheet, Span):
             return len(self.sources)
         return len(self.runs) // 2
 
@@ -353,12 +356,14 @@ class Provenance(_Sourced):
     """Where one value came from: :attr:`sources` the cells it was computed from, by key
     or as compact ranges; ``count`` how many cells those are; ``excluded`` how many cells
     of the group's rows were left out of it, by reason.  ``sheet``, ``column`` and
-    ``runs`` (first and last rows, flat) are what :attr:`sources` is made from; ``keyed``
+    ``runs`` (first and last rows, flat) are what :attr:`sources` is made from (``sheet``
+    a :class:`~xlsx_agent.read.regions.Span` for a declared table read as one: its rows
+    are its own, and each run is given as each sheet's cells); ``keyed``
     the table's keys, when they name its rows; ``via`` the dataset it was derived from, if
     any (then ``column`` is the dataset's, from 0, ``runs`` its positions, and ``count``
     how many of its values were used)."""
 
-    sheet: SheetRef | None
+    sheet: "SheetRef | Span | None"
     column: int
     runs: array = field(repr=False)
     count: int
@@ -379,7 +384,7 @@ class Total(_Sourced):
     count of rows), with its cells as :class:`Provenance` gives them."""
 
     value: float | int
-    sheet: SheetRef | None
+    sheet: "SheetRef | Span | None"
     column: int
     runs: array = field(repr=False)
     count: int
@@ -1295,7 +1300,7 @@ def _label(v: Any, t: str) -> str:
 def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Derived:
     region = plan.region
     via = plan.via
-    sheet = region.sheet_ref if via is None else None
+    sheet = (region.span or region.sheet_ref) if via is None else None
     first_column = region.area.first.column if via is None else 0
     keyed = _keyed(plan.workbook, region) if via is None and state.used else None
     bins = plan.bins

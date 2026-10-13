@@ -108,7 +108,7 @@ from ooxml_edit.charts.workbook import Area, Cell, column_letters
 
 from .address import (AddressError, NameNotFound, RangeAddress, TableAddress, nearest,
                       parse_address, quote_sheet)
-from .profile import ALLOWED_CAP, _allowed, _covered, _list_rules
+from .profile import ALLOWED_CAP, column_lists
 from .query import MAX_IN, _Bad, _key, _operand
 from .read.regions import Region, RegionError, key_text
 from .read.types import TYPES, Value
@@ -701,6 +701,8 @@ def _check(workbook: "Workbook", region: Region, spec: _Table, index: int,
            out: "_Problems") -> CheckedTable:
     label = spec.label
     folded = {c.casefold(): i for i, c in enumerate(region.columns)}
+    for i, header in enumerate(region.headers):      # a declared column's header finds it too
+        folded.setdefault(header.casefold(), i)
     date1904 = workbook.date1904
     checks: list[_Check] = []
     key_offsets: list[int] = []
@@ -715,7 +717,6 @@ def _check(workbook: "Workbook", region: Region, spec: _Table, index: int,
         else:
             key_offsets.append(folded[name.casefold()])
     key_names = {region.columns[o].casefold() for o in key_offsets}
-    rules = None
     for column in spec.columns:
         offset = folded.get(column.name.casefold())
         if offset is None:
@@ -725,9 +726,7 @@ def _check(workbook: "Workbook", region: Region, spec: _Table, index: int,
         name = region.columns[offset]
         allowed = None
         if column.validation_list:
-            if rules is None:
-                rules = _list_rules(workbook, region)
-            allowed, reason = _allowed_values(workbook, region, rules, name)
+            allowed, reason = _allowed_values(workbook, region, name)
             if allowed is None:
                 out.add(index, 0, (0, offset), "no_validation_list", label, label, name,
                         {"reason": reason})
@@ -771,18 +770,16 @@ def _check(workbook: "Workbook", region: Region, spec: _Table, index: int,
                         detail["key"] = [region.columns[o] for o in key_offsets]
                     out.add(index, 1, (lead.row, key_offsets[0]), "duplicate_key", None,
                             label, region.columns[key_offsets[0]], detail, cell=lead)
-    return CheckedTable(label, region.range.text, rows, len(checks))
+    return CheckedTable(label, region.where, rows, len(checks))
 
 
-def _allowed_values(workbook: "Workbook", region: Region, rules: list,
+def _allowed_values(workbook: "Workbook", region: Region,
                     name: str) -> tuple[tuple | None, str | None]:
     """The values of the data-validation lists over a column (each list that covers any of
     its cells), or ``None`` and why there are none."""
-    area = region.column_area(name)
-    if area is None:
+    if region.column_area(name) is None:
         return None, "no_rows"
-    lists = [_allowed(workbook, region, rule, area) for rule in rules
-             if _covered(rule.areas, area)]
+    lists = column_lists(workbook, region, name)
     if not lists:
         return None, "no_list"
     values: list = []
@@ -816,10 +813,11 @@ class _Problems:
             self._keep((table, phase, place, CODES.index(code)),
                        DataProblem(code, address, 1, label, column, details))
             return
-        run_key = (table, cell.sheet, cell.column, code, details)
+        sheet, row, column_number = cell.place      # its own cell, a declared table's too
+        run_key = (table, sheet, column_number, code, details)
         run = self.open.get(run_key)
-        if run is not None and run[2] == cell.row - 1:
-            run[2] = cell.row
+        if run is not None and run[2] == row - 1:
+            run[2] = row
             run[3] += 1
             return
         if run is not None:
@@ -828,13 +826,14 @@ class _Problems:
             self.cut += 1
             return
         self.runs += 1
-        self.open[run_key] = [(table, phase, place, CODES.index(code)), cell, cell.row, 1,
+        self.open[run_key] = [(table, phase, place, CODES.index(code)), cell, row, 1,
                               label, column]
 
     def _close(self, run_key: tuple, run: list) -> None:
         order, cell, last, cells, label, column = run
-        address = cell.a if last == cell.row else \
-            f"{cell.a}:{column_letters(cell.column)}{last}"
+        _, first, column_number = cell.place
+        address = cell.a if last == first else \
+            f"{cell.a}:{column_letters(column_number)}{last}"
         self.kept.append((order, DataProblem(run_key[3], address, cells, label, column,
                                              run_key[4])))
         del self.open[run_key]

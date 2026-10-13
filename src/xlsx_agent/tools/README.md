@@ -72,6 +72,37 @@ go on the format: `xlsx_agent.tools.format(grouping=True, local_dates=False)` in
 8601 only) reads `3/4/2026` in the locale's date order, as Excel does. A format code's own
 locale tag (`[$-409]`) wins for its cells. No tool definition or prompt changes.
 
+**Declared tables.** The application often knows its workbooks better than any detection:
+which sheets hold one table (the same header on every area's sheet), on which row the
+header is, which column is the key, what a long header means, and which columns the model
+must not see. It says so as plain data -- its own configuration mapped to this -- on the
+format (every workbook it opens) or on one session (the workbooks it opens from then on,
+in place of the format's); no tool takes it, so no definition grows:
+
+```python
+from xlsx_agent.tools import declare, format
+
+tables = {"tables": [
+    {"name": "checks", "sheets": "Area *", "header_row": 3, "key": "Ref",
+     "description": "One row per check, every area",
+     "fields": [{"header": "Rating (1 to 5, in halves)", "id": "rating",
+                 "description": "The reviewer's rating"},
+                {"header": "Remark", "hidden": True}]},
+    {"name": "run", "type": "key_value", "sheets": "Run facts"}]}
+toolbox = Toolbox(TOOLS, formats=[format(tables=tables)], groups=GROUPS)
+declare(session, tables)              # or per session, in place of the format's
+```
+
+`t:checks` is then one table over every `Area ...` sheet, rows in the sheets' order, each
+value with its own cell (`'Area South'!C5`); `t:checks/S-2/rating` finds the row's sheet;
+`describe` shows `rating` with its description, and never `Remark` -- no tool shows it, an
+address naming it is `not_found` without it among the options, and a read of the sheet's
+cells gives its cells as `{"a": "'Area North'!E4", "withheld": true}`. `t:run/author/value`
+reads a key-value table. A workbook the declarations do not fit is refused at
+`open_document` (`refused`, with the declaration's `code` and `path` in `details`); one
+marked `optional` is skipped where its sheets are not there. Every rule is in
+`xlsx_agent.declare` and docs/api-tour.md, "Declaring tables".
+
 **Dates stored as text.** `xlsx_derive`'s `min` and `max` take dates and give a date. On a
 column whose dates are stored as text they are refused, and the error says so in one step:
 its `details` give the `issue` (`date_as_text`) and its `cells` (the count, the first

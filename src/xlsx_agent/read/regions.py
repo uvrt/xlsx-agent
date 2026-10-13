@@ -53,6 +53,21 @@ key by position, and which keys two rows share), kept until the locale changes: 
 key, a key set and :meth:`Regions.expand` look keys up there, never by reading the column
 again.
 
+**Declared tables** (:mod:`xlsx_agent.declare`): tables the caller declares from its own
+configuration are declared regions too, with column ids (``Region.headers`` keeps each
+header, which finds the column as well), descriptions and a ``shape``.  One over several
+sheets, or with columns hidden from the model, is read as one rectangle of its own
+(:class:`Span`): a range on its own sheet (``t:<name>``) is read sheet by sheet, each
+value given in the table's place with its own cell kept, so every address a result gives
+is a real cell's.  Its blocks are not detected again (:meth:`Regions.find`), and a region
+detected or declared over a hidden column's cells is refused (``declared``).
+
+**Key-value blocks.**  A block of two columns whose first row holds something other than
+text (so no header is detected) and whose first column is a different text on each of
+two or more rows is detected as a key-value region (``shape`` ``"key_value"``): no header
+row, its columns ``field`` and ``value``, its key ``field``
+(``t:Run!A1/report_date/value``).
+
 **Selectors and key sets** (:mod:`xlsx_agent.address`).  ``t:Products/*/Price`` resolves
 as ``t:Products[Price]``, ``t:Products/*`` and ``t:Products/*/*`` as the table, and
 ``t:Products/SKU-0042/*`` as the row, each keeping its own text.  A key set
@@ -64,6 +79,7 @@ one address by key per cell (or per row).
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Iterator, Sequence
 
@@ -83,6 +99,19 @@ if TYPE_CHECKING:  # pragma: no cover
 #: What a :class:`Region` is.
 REGION_KINDS = ("table", "name", "declared", "detected")
 
+#: The names of a key-value region's first two columns (the rest are named by letter):
+#: ``t:run/report_date/value``.
+KEY_VALUE_COLUMNS = ("field", "value")
+
+#: How wide a block detected as key-value is: a field and a value.  A wider block whose
+#: first row holds numbers is as likely a header of years over a table, so it is never
+#: detected as one; a key-value table with more columns (a confidence, a source...) is
+#: declared (:mod:`xlsx_agent.declare`).
+KEY_VALUE_WIDTH = 2
+
+#: The most rows a block detected as key-value has.
+KEY_VALUE_ROWS = 200
+
 #: Why a header is not detected (:attr:`RegionError.reason` of ``header_unclear``).
 UNCLEAR_REASONS = ("merged_header", "rows_above", "multi_row_header", "header_not_text")
 
@@ -96,7 +125,8 @@ class RegionError(ValueError):
     ``no_key_column``, ``duplicate_key``, ``no_key`` (a row whose key cell is no key,
     :meth:`Regions.expand`), ``no_key_set`` (a key set of a dataset's rows,
     :mod:`xlsx_agent.dataset`), ``position_out_of_range``, ``bad_table``,
-    ``name_taken``, ``bad_name``, ``headers_required``, ``bad_headers``, and as a source of
+    ``name_taken``, ``bad_name``, ``headers_required``, ``bad_headers``, ``declared`` (a
+    detected region or declared range in a table declared from configuration), and as a source of
     rows (:func:`~xlsx_agent.dataset.table_dataset`) ``not_rows`` (one value) and
     ``too_many_cells`` (more values than the caller's limit).  The message
     names sheets, tables, names and columns, never a key or a cell's value; ``address``
@@ -127,6 +157,17 @@ class Region:
     ``object_name`` (its ``name``), ``auto_filter``, ``totals`` (each column's totals-row
     function) and ``table_type``.
 
+    A table declared from the caller's configuration (:mod:`xlsx_agent.declare`) also has
+    ``headers`` (each column's header text, where its name is an id the caller gave: a
+    column is found by either), ``notes`` (each column's description, or ``None``),
+    ``about`` (the table's) and ``shape`` (``"rows"``, or ``"key_value"``: a field column
+    and a value column, addressed ``t:run/<field>/value``).  One that spans several sheets,
+    or has columns hidden from the model, is read as one rectangle of its own: ``span``
+    (a :class:`Span`) maps its rows and columns to the cells they are, its ``sheet`` is its
+    own (``t:<name>``, a name no sheet can have), and every value read from it carries its
+    cell's own address (:attr:`Value.origin <xlsx_agent.read.types.Value.origin>`);
+    :attr:`where` gives its cells as ranges of the sheets.
+
     A region the workbook gave knows its workbook, so that its columns can be read:
     :meth:`column` and :meth:`profile`."""
 
@@ -147,6 +188,11 @@ class Region:
     auto_filter: Area | None = None
     totals: tuple[str | None, ...] = ()
     table_type: str | None = None
+    span: "Span | None" = None
+    headers: tuple[str, ...] = ()
+    notes: tuple[str | None, ...] = ()
+    about: str | None = None
+    shape: str = "rows"
     workbook: "Workbook | None" = field(default=None, repr=False, compare=False)
 
     @property
@@ -165,8 +211,27 @@ class Region:
 
     @property
     def range(self) -> RangeAddress:
-        """All of it, as a range address."""
+        """All of it, as a range address (on its own sheet, for a :attr:`span`: see
+        :attr:`where`)."""
         return RangeAddress(self.sheet_ref, self.area)
+
+    @property
+    def where(self) -> str:
+        """All of it as the sheets' ranges, as text: :attr:`range`'s, or each sheet's of a
+        :attr:`span`, joined by ``,`` (Excel's union)."""
+        if self.span is None:
+            return self.range.text
+        return ",".join(RangeAddress(SheetRef(name=sheet), area).text
+                        for sheet, area in self.span.extent())
+
+    def located(self, area: Area | None) -> str | None:
+        """Cells of the region (in its own rows and columns) as the sheets' ranges, as
+        text: ``Stock!C2:C40``; for a :attr:`span`, each sheet's, joined by ``,``."""
+        if area is None:
+            return None
+        if self.span is None:
+            return RangeAddress(self.sheet_ref, area).text
+        return ",".join(r.text for r in self.span.locate(area))
 
     @property
     def header(self) -> Area | None:
@@ -205,6 +270,9 @@ class Region:
         folded = name.casefold()
         for index, column in enumerate(self.columns):
             if column.casefold() == folded:
+                return index
+        for index, header in enumerate(self.headers):
+            if header.casefold() == folded:
                 return index
         raise NameNotFound(f"{self.address.text} has no column {name!r}; its columns are "
                            f"{list(self.columns)}", what="column", name=name,
@@ -256,7 +324,9 @@ class Selection:
     data cells selected (header and totals rows excluded; ``None`` when the region has no
     data rows, and for a key set); ``row`` the data row's position (from 1) for a row or a
     value; ``column`` the column's name as the region spells it; ``positions`` a key set's
-    rows, in its order (:attr:`areas` gives their cells)."""
+    rows, in its order (:attr:`areas` gives their cells).  For a declared table read as
+    one (a :attr:`Region.span`), ``range`` is in the table's own rectangle: reading it
+    gives each cell's own address, and :meth:`Region.located` gives the sheets'."""
 
     address: str
     kind: str
@@ -281,6 +351,127 @@ class Selection:
                              Area(Cell(data.first.row + p - 1, left),
                                   Cell(data.first.row + p - 1, right)))
                 for p in self.positions]
+
+
+@dataclass(frozen=True)
+class Part:
+    """One sheet of a declared table read as one (:class:`Span`): ``sheet`` its name as
+    the workbook spells it, ``header`` its header row (``None`` without one), ``first``
+    and ``last`` its data rows (``last`` is ``first - 1`` when it has none)."""
+
+    sheet: str
+    sheet_id: int | None
+    header: int | None
+    first: int
+    last: int
+
+    @property
+    def rows(self) -> int:
+        return self.last - self.first + 1
+
+
+@dataclass(frozen=True)
+class Span:
+    """How a declared table read as one rectangle of its own maps to the cells it is: a
+    table over several sheets (rows in the sheets' order), or one with columns hidden
+    from the model.  In its own rectangle, row 1 is the header row (the first sheet's;
+    ``header_rows`` 0: none), the data rows follow sheet by sheet, and column ``n`` is the
+    sheet column ``columns[n - 1]``; ``left`` to ``right`` are the sheet columns declared,
+    ``hidden`` the ones hidden from the model among them.  ``name`` is the sheet name its
+    region reads through (``t:<name>``: no sheet can be called that, since a sheet's
+    name never holds ``:``)."""
+
+    name: str
+    parts: tuple[Part, ...]
+    columns: tuple[int, ...]
+    header_rows: int
+    left: int
+    right: int
+    hidden: tuple[int, ...] = ()
+
+    @property
+    def rows(self) -> int:
+        """How many data rows, every sheet's."""
+        return sum(part.rows for part in self.parts)
+
+    @property
+    def area(self) -> Area:
+        """Its own rectangle: the header row, then every data row; ``columns`` wide."""
+        return Area(Cell(1, 1), Cell(max(self.header_rows + self.rows, 1), len(self.columns)))
+
+    def runs(self, top: int, bottom: int) -> Iterator[tuple[Part, int, int, int]]:
+        """Its own rows ``top`` to ``bottom`` as each sheet's: the part, its first and last
+        sheet rows, and the first of its own rows they are."""
+        if self.header_rows and top <= 1 <= bottom:
+            first = self.parts[0]
+            yield first, first.header, first.header, 1
+        offset = self.header_rows
+        for part in self.parts:
+            low, high = max(top, offset + 1), min(bottom, offset + part.rows)
+            if low <= high:
+                yield part, part.first + low - offset - 1, part.first + high - offset - 1, low
+            offset += part.rows
+
+    def locate(self, area: Area) -> list[RangeAddress]:
+        """Cells of its own rectangle as the sheets' ranges, sheet by sheet; a run of
+        columns broken by a hidden one is two ranges."""
+        real = [self.columns[c - 1] for c in range(area.first.column, area.last.column + 1)]
+        spans: list[list[int]] = []
+        for column in real:
+            if spans and spans[-1][1] + 1 == column:
+                spans[-1][1] = column
+            else:
+                spans.append([column, column])
+        return [RangeAddress(SheetRef(name=part.sheet), Area(Cell(top, a), Cell(bottom, b)))
+                for part, top, bottom, _ in self.runs(area.first.row, area.last.row)
+                for a, b in spans]
+
+    def areas(self) -> list[tuple[str, Area]]:
+        """Each sheet's cells of the table, header row to last data row, every column
+        declared (hidden ones too)."""
+        out = []
+        for part in self.parts:
+            top = part.header if part.header is not None else part.first
+            bottom = max(part.last, top)
+            out.append((part.sheet, Area(Cell(top, self.left), Cell(bottom, self.right))))
+        return out
+
+    def extent(self) -> list[tuple[str, Area]]:
+        """Each sheet's cells of the table as the model sees them: header row to last data
+        row, from its first column to its last (a hidden column at either end left
+        out)."""
+        low, high = min(self.columns), max(self.columns)
+        return [(sheet, Area(Cell(area.first.row, low), Cell(area.last.row, high)))
+                for sheet, area in self.areas()]
+
+    def withheld(self) -> list[tuple[str, Area]]:
+        """The cells of the columns hidden from the model, sheet by sheet: never shown."""
+        return [(sheet, Area(Cell(area.first.row, column), Cell(area.last.row, column)))
+                for sheet, area in self.areas() for column in self.hidden]
+
+    def read(self, workbook: "Workbook", area: Area, *, formats: bool = False,
+             columns: "set[int] | None" = None) -> Iterator[list[Value]]:
+        """The rows of ``area`` (its own rows and columns), each read from its sheet and
+        given in its own place, its cell's address kept (:attr:`Value.origin
+        <xlsx_agent.read.types.Value.origin>`).  ``columns``: its own columns to type."""
+        own = range(area.first.column, area.last.column + 1)
+        real = [self.columns[c - 1] for c in own]
+        left, right = min(real), max(real)
+        typed = None if columns is None else \
+            {self.columns[c - 1] for c in columns if 1 <= c <= len(self.columns)}
+        name = quote_sheet(self.name)
+        for part, top, bottom, first in self.runs(area.first.row, area.last.row):
+            cells = RangeAddress(SheetRef(name=part.sheet), Area(Cell(top, left),
+                                                                 Cell(bottom, right)))
+            for row in workbook._read(cells, formats=formats, columns=typed):
+                at = first + row[0].row - top
+                out = []
+                for column, sheet_column in zip(own, real):
+                    value = row[sheet_column - left]
+                    value.origin = (value.sheet, value.row, value.column)
+                    value.sheet, value.row, value.column = name, at, column
+                    out.append(value)
+                yield out
 
 
 @dataclass(frozen=True)
@@ -310,6 +501,10 @@ class Regions:
         self._keys: dict[tuple, list[str]] = {}
         self._indexes: dict[tuple, KeyIndex] = {}
         self._declared_keys: dict[str, str] = {}      # region's address, folded -> column
+        #: The tables declared from the caller's configuration (:mod:`xlsx_agent.declare`),
+        #: by name folded; those read as one rectangle of their own by their sheet name.
+        self._configured: dict[str, Region] = {}
+        self._spans: dict[str, Span] = {}
 
     def forget_cells(self) -> None:
         """Forget what was found from the cells (detected regions, key columns, key
@@ -337,6 +532,62 @@ class Regions:
     @property
     def declared(self) -> list[Region]:
         return list(self._declared.values())
+
+    # -- tables declared from configuration -------------------------------------------------
+
+    def keep_table(self, region: Region) -> Region:
+        """Keep a table :mod:`xlsx_agent.declare` made, usable as ``t:<name>`` from then on
+        (declaring its name again replaces it, and whatever region had it)."""
+        folded = region.name.casefold()
+        old = self._declared.pop(folded, None)
+        if old is not None and old.span is not None:
+            self._spans.pop(old.span.name, None)
+        self._configured.pop(folded, None)
+        self._declared[folded] = region
+        self._configured[folded] = region
+        if region.span is not None:
+            self._spans[region.span.name] = region.span
+        return region
+
+    @property
+    def configured(self) -> list[Region]:
+        """The tables declared from configuration, in the order declared."""
+        return list(self._configured.values())
+
+    @contextmanager
+    def reading(self, span: "Span") -> Iterator[None]:
+        """Read through ``span`` while a table is checked, before it is kept."""
+        old = self._spans.get(span.name)
+        self._spans[span.name] = span
+        try:
+            yield
+        finally:
+            if old is None:
+                self._spans.pop(span.name, None)
+            else:
+                self._spans[span.name] = old
+
+    def span(self, sheet: SheetRef) -> "Span | None":
+        """The :class:`Span` whose own sheet ``sheet`` names, if any."""
+        return self._spans.get(sheet.name) if sheet.name is not None else None
+
+    def table_areas(self, sheet: str) -> list[tuple[Region, Area]]:
+        """The cells of ``sheet`` the declared tables cover, each with its table."""
+        folded = sheet.casefold()
+        out = []
+        for region in self._configured.values():
+            if region.span is not None:
+                out += [(region, a) for s, a in region.span.areas() if s.casefold() == folded]
+            elif region.sheet.casefold() == folded:
+                out.append((region, region.area))
+        return out
+
+    def withheld(self, sheet: str) -> list[Area]:
+        """The cells of ``sheet`` in columns hidden from the model: never shown, never
+        searched."""
+        folded = sheet.casefold()
+        return [a for region in self._configured.values() if region.span is not None
+                for s, a in region.span.withheld() if s.casefold() == folded]
 
     def problems(self) -> list[Problem]:
         """What is odd about the tables and names, by code: each table's flags, a table
@@ -517,6 +768,9 @@ class Regions:
         area = where.clipped(self.workbook.used_range(sheet))
         if area is None:
             raise RegionError("no_header", f"{where.text} holds no cells", address=where.text)
+        if any(_overlaps(area, hidden) for hidden in self.withheld(sheet.name)):
+            raise RegionError("declared", f"{where.text} holds cells of a column hidden "
+                              "from the model by a declared table", address=where.text)
         height = area.last.row - area.first.row + 1
         width = area.last.column - area.first.column + 1
         if header_rows > height:
@@ -550,6 +804,9 @@ class Regions:
         if key is not None:
             region = replace(region, key=region.columns[region.column_index(key)])
         if keep:
+            gone = self._configured.pop(folded, None)
+            if gone is not None and gone.span is not None:
+                self._spans.pop(gone.span.name, None)
             self._declared[folded] = region
         return region
 
@@ -569,7 +826,10 @@ class Regions:
         (``rows_above``: a header of two rows, or a title, may start there); when a header
         cell holds something other than text (``header_not_text``); or when the first
         data row is all text and some column's later rows are all something else
-        (``multi_row_header``: a second header row)."""
+        (``multi_row_header``: a second header row).  A block of two columns whose header
+        is not text is a key-value region instead, when it is one (see the module's
+        notes).  A cell in a table declared from configuration is refused
+        (``declared``, with the table as ``valid_options``)."""
         if isinstance(where, str):
             where = parse_address(where)
         if isinstance(where, TableAddress):
@@ -581,6 +841,12 @@ class Regions:
             raise RegionError("no_header", "a detected region is named by one cell, its "
                               "header's first", valid_options=["t:Stock!A1"])
         sheet = self.workbook._cell_sheet(self.workbook.sheet_of(where))
+        for region, area in self.table_areas(sheet.name):
+            if area.contains(where.cell):
+                text = region.address.text
+                raise RegionError("declared", f"{where.text} lies in {text}, a declared "
+                                  f"table: address it as {text}", address=where.text,
+                                  valid_options=[text])
         cache = (sheet.part or sheet.id, where.cell)
         if cache not in self._detected:
             self._detected[cache] = self._detect(sheet, where.cell)
@@ -622,7 +888,15 @@ class Regions:
         if above is not None and any(v.t != "blank" for v in above[:width]):
             raise unclear("rows_above")
         if any(v.t not in ("text", "blank") for v in header[:width]):
-            raise unclear("header_not_text")
+            pairs = _key_value(header[:width], below, rows, width)
+            if pairs is None:
+                raise unclear("header_not_text")
+            names = KEY_VALUE_COLUMNS + tuple(f"Column {column_letters(c)}" for c in
+                                              range(cell.column + 2, cell.column + width))
+            return Region(kind="detected", name=None, sheet=sheet.name,
+                          area=Area(cell, Cell(cell.row + pairs - 1, right)),
+                          columns=names[:width], header_rows=0, key=KEY_VALUE_COLUMNS[0],
+                          sheet_id=sheet.id, shape="key_value", workbook=self.workbook)
         data: list[list[Value]] = []
         if below is not None and any(v.t != "blank" for v in below[:width]):
             data.append(below[:width])
@@ -653,6 +927,7 @@ class Regions:
         if used is None:
             return []
         taken = [t.area for t in self.tables if t.sheet.casefold() == sheet.name.casefold()]
+        taken += [area for _, area in self.table_areas(sheet.name)]
         out: list[Region | UnclearRegion] = []
         written = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
         row_number = used.first.row
@@ -965,7 +1240,7 @@ class KeyFinder:
 
 
 def _key_cache(region: Region) -> tuple:
-    return (region.kind, region.sheet, region.area, region.columns)
+    return (region.kind, region.sheet, region.area, region.columns, region.span)
 
 
 def key_text(value: Value) -> str | None:
@@ -991,6 +1266,33 @@ def _header_names(row: Sequence[Value], first_column: int, flags: list[Problem],
     addresses = [f"{written}!{_ref(v)}" for v in row]
     return name_columns(names, first_column, flags, written, blank="blank_header",
                         duplicate="duplicate_header", addresses=addresses)
+
+
+def _key_value(first: list[Value], below: "list[Value] | None", rows: Iterator[list[Value]],
+               width: int) -> int | None:
+    """How many rows a key-value block has, from its first: :data:`KEY_VALUE_WIDTH`
+    columns, :data:`KEY_VALUE_ROWS` rows at most, down to the first row blank across them,
+    every row's first cell text and a key no other row's is (and at least two rows);
+    ``None`` when the block is not one."""
+    if width != KEY_VALUE_WIDTH or below is None:
+        return None
+    seen: set[str] = set()
+    count = 0
+    for row in _chain([first, below], rows):
+        values = row[:width]
+        if all(v.t == "blank" for v in values):
+            break
+        key = values[0].v if values[0].t == "text" else None
+        if not key or key in seen or count >= KEY_VALUE_ROWS:
+            return None
+        seen.add(key)
+        count += 1
+    return count if count >= 2 else None
+
+
+def _chain(first: list, rest: Iterator) -> Iterator:
+    yield from first
+    yield from rest
 
 
 def _second_header(data: list[list[Value]]) -> bool:

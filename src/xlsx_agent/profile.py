@@ -93,7 +93,7 @@ from .read.stream import Validation
 from .read.types import TYPES, Value, serial_text, text_date
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .workbook import Workbook
+    from .workbook import Sheet, Workbook
 
 #: Distinct values are listed when there are this many or fewer (ROADMAP.md, "Tools":
 #: ``describe``'s "distinct values when 12 or fewer").
@@ -182,7 +182,10 @@ class ColumnStats:
     ``text_length_median`` and ``text_length_max`` (characters), ``text_words_median`` and
     ``text_words_max`` (words), ``text_longest`` (the address of the longest text);
     ``date_text_min``, ``date_text_max`` and ``date_text_measured`` (the dates stored as
-    text, as ISO 8601); ``validation``; ``flags`` by code."""
+    text, as ISO 8601); ``validation``; ``flags`` by code.  For a column of a declared
+    table (:mod:`xlsx_agent.declare`), ``header`` its header's text when it is addressed
+    by an id, and ``description`` the caller's; ``range`` each sheet's, joined by ``,``,
+    for a table over several sheets."""
 
     address: str
     column: str
@@ -211,6 +214,8 @@ class ColumnStats:
     date_text_measured: int = 0
     validation: tuple[AllowedList, ...] = ()
     flags: dict[str, Count] = field(default_factory=dict)
+    header: str | None = None
+    description: str | None = None
 
     def as_dict(self) -> dict:
         """The profile as plain data; what is unset (no measures, no values, no lengths, no
@@ -221,6 +226,10 @@ class ColumnStats:
                      "formula_share": self.formula_share, "type": self.type,
                      "types": {t: c.as_dict() for t, c in self.types.items()},
                      "distinct": self.distinct}
+        if self.header is not None:
+            out["header"] = self.header
+        if self.description is not None:
+            out["description"] = self.description
         if self.measured:
             out.update(min=self.min, max=self.max, mean=self.mean, measured=self.measured)
         if self.values is not None:
@@ -292,16 +301,43 @@ def profile(workbook: "Workbook", region: Region, columns: Sequence[str] | None 
                 tally.add(row[position])
             if observe is not None:
                 observe(row)
-    rules = _list_rules(workbook, region)
     out = []
     for name, tally in zip(names, tallies):
         area = region.column_area(name)
-        allowed = tuple(_allowed(workbook, region, rule, area) for rule in rules
-                        if area is not None and _covered(rule.areas, area))
+        allowed = tuple(column_lists(workbook, region, name))
         address = replace(region.address, column=name).text
-        out.append(tally.stats(address, name, RangeAddress(region.sheet_ref, area).text
-                               if area is not None else None, region.rows,
-                               workbook.date1904, allowed))
+        stats = tally.stats(address, name, region.located(area), region.rows,
+                            workbook.date1904, allowed)
+        index = region.column_index(name)
+        header = region.headers[index] if region.headers else None
+        note = region.notes[index] if region.notes else None
+        if (header is not None and header != name) or note is not None:
+            stats = replace(stats, header=header if header != name else None,
+                            description=note)
+        out.append(stats)
+    return out
+
+
+def column_lists(workbook: "Workbook", region: Region, name: str) -> list[AllowedList]:
+    """The data-validation lists over a column's data cells, each list that covers any of
+    them (each sheet's, for a table over several sheets)."""
+    if region.span is None:
+        area = region.column_area(name)
+        if area is None:
+            return []
+        sheet = region.sheet if region.sheet else workbook.sheet_by_id(region.sheet_id).name
+        return [_allowed(workbook, sheet, rule, area)
+                for rule in _list_rules(workbook, workbook.sheet(sheet))
+                if _covered(rule.areas, area)]
+    column = region.span.columns[region.column_index(name)]
+    out = []
+    for part in region.span.parts:
+        if not part.rows:
+            continue
+        area = Area(Cell(part.first, column), Cell(part.last, column))
+        out += [_allowed(workbook, part.sheet, rule, area)
+                for rule in _list_rules(workbook, workbook.sheet(part.sheet))
+                if _covered(rule.areas, area)]
     return out
 
 
@@ -586,8 +622,7 @@ def _row_of(address: str) -> int:
 # ------------------------------------------------------------------------------------------
 
 
-def _list_rules(workbook: "Workbook", region: Region) -> list[Validation]:
-    sheet = workbook.sheet(region.sheet) if region.sheet else workbook.sheet_by_id(region.sheet_id)
+def _list_rules(workbook: "Workbook", sheet: "Sheet") -> list[Validation]:
     return [rule for rule in workbook.scan(sheet).validations if rule.type == "list"]
 
 
@@ -609,7 +644,7 @@ def _covered(areas: Iterable[Area], column: Area) -> int:
     return total
 
 
-def _allowed(workbook: "Workbook", region: Region, rule: Validation,
+def _allowed(workbook: "Workbook", sheet: str, rule: Validation,
              column: Area) -> AllowedList:
     cells = _covered(rule.areas, column)
     text = (rule.formula1 or "").strip()
@@ -621,10 +656,10 @@ def _allowed(workbook: "Workbook", region: Region, rule: Validation,
     if literal is not None:
         return AllowedList(tuple(literal.split(",")), cells, formula=rule.formula1)
     sheets = {sheet.name.casefold(): sheet.name for sheet in workbook.sheets}
-    here = quote_sheet(region.sheet)
+    here = quote_sheet(sheet)
     target, reason = range_of(text if "!" in text else f"{here}!{text}", sheets)
     if target is None and reason == "formula" and "!" not in text:
-        target, reason = _named_range(workbook, region.sheet, text)
+        target, reason = _named_range(workbook, sheet, text)
     if target is None:
         return AllowedList(None, cells, reason=reason, formula=rule.formula1)
     values: list = []

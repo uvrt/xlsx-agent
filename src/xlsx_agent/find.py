@@ -36,9 +36,13 @@ a constant, an unknown sheet) come last.  Each occurrence is a match; one of no 
 **Hidden**: matches on a hidden or very hidden sheet, in a hidden row or column, and hidden
 defined names are found like any other, and say ``hidden``.
 
+**Withheld**: the cells of a column a declared table hides from the model
+(:mod:`xlsx_agent.declare`), and their comments, are never searched.
+
 **within**: a sheet (``Stock!``), a cell or range (``Stock!A1:H40``, ``Stock!A:C``), a
 table, name or region (``t:Products``: all of it, header and totals rows too) or a part of
-one (``t:Products[Price]``, ``t:Products/#5``: its data cells).  A table or name is found
+one (``t:Products[Price]``, ``t:Products/#5``: its data cells); a declared table over
+several sheets is searched sheet by sheet.  A table or name is found
 when its range overlaps ``within``; a comment or header when its cell is inside it; a name
 that is not a range never is.
 
@@ -134,21 +138,26 @@ def find_text(workbook: "Workbook", needle: "str | re.Pattern",
               within: "str | RangeAddress | TableAddress | None" = None) -> Iterator[Found]:
     """See :meth:`Workbook.find_text <xlsx_agent.workbook.Workbook.find_text>`."""
     pattern = pattern_of(needle)
-    limit = _within(workbook, within) if within is not None else None
+    limits = _within(workbook, within) if within is not None else None
     for sheet in workbook.sheets:
         if sheet.part is None or sheet.type not in _CELL_SHEETS:
             continue
-        if limit is not None and limit[0] != sheet:
+        if limits is None:
+            yield from _sheet(workbook, sheet, pattern, None)
             continue
-        yield from _sheet(workbook, sheet, pattern, None if limit is None else limit[1])
-    if limit is None:
+        for found, area in limits:
+            if found == sheet:
+                yield from _sheet(workbook, sheet, pattern, area)
+    if limits is None:
         for name in workbook.names:
             if name.range is None or _cell_sheet_of(workbook, name.range) is None:
                 yield from _name(name, pattern, sheet_hidden=False)
 
 
-def _within(workbook: "Workbook", within) -> "tuple[Sheet, Area | None]":
-    """The sheet and the cells ``within`` names (``None``: none of them)."""
+def _within(workbook: "Workbook", within) -> "list[tuple[Sheet, Area | None]]":
+    """The sheets and the cells ``within`` names (an area ``None``: none of them): one
+    sheet, or each sheet of a declared table over several (the cells of each, from its
+    first to its last)."""
     address = parse_address(within) if isinstance(within, str) else within
     if isinstance(address, TableAddress):
         if address.keys is not None:
@@ -156,15 +165,30 @@ def _within(workbook: "Workbook", within) -> "tuple[Sheet, Area | None]":
                                "is rows apart", text=str(within), valid_options=WITHIN_FORMS)
         if address.is_whole:
             region = workbook.region(address)
-            return workbook._cell_sheet(workbook.sheet_of(region.range)), region.area
+            if region.span is not None:
+                return [(workbook.sheet(sheet), area) for sheet, area in region.span.extent()]
+            return [(workbook._cell_sheet(workbook.sheet_of(region.range)), region.area)]
         selection = workbook.resolve(address)
-        sheet = workbook._cell_sheet(workbook.sheet_of(selection.region.range))
-        return sheet, (selection.range.area if selection.range is not None else None)
+        region = selection.region
+        if region.span is not None:
+            if selection.range is None:
+                return []
+            spread: dict[str, list[Area]] = {}
+            for found in region.span.locate(selection.range.area):
+                spread.setdefault(found.sheet.name, []).append(found.area)
+            return [(workbook.sheet(name), _bounds(areas)) for name, areas in spread.items()]
+        sheet = workbook._cell_sheet(workbook.sheet_of(region.range))
+        return [(sheet, selection.range.area if selection.range is not None else None)]
     if isinstance(address, RangeAddress):
-        return workbook._cell_sheet(workbook.sheet_of(address)), address.area
+        return [(workbook._cell_sheet(workbook.sheet_of(address)), address.area)]
     raise AddressError(f"find_text looks within a sheet, range or table, not a "
                        f"{getattr(address, 'kind', 'value')}", text=str(within),
                        valid_options=WITHIN_FORMS)
+
+
+def _bounds(areas: "list[Area]") -> Area:
+    return Area(Cell(min(a.first.row for a in areas), min(a.first.column for a in areas)),
+                Cell(max(a.last.row for a in areas), max(a.last.column for a in areas)))
 
 
 def _cell_sheet_of(workbook: "Workbook", address: RangeAddress) -> "Sheet | None":
@@ -215,12 +239,19 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
         extras.append((cell.row, cell.column, _ORDER[kind], len(extras), make))
 
     for region in [*workbook.tables, *workbook.regions.declared]:
-        if region.sheet != sheet.name or (area is not None and not _overlaps(region.area, area)):
+        first = region.area   # a declared table over several sheets: its first sheet's
+        if region.span is not None:
+            name, first = region.span.extent()[0]
+            if name != sheet.name:
+                continue
+        elif region.sheet != sheet.name:
+            continue
+        if area is not None and not _overlaps(first, area):
             continue
         kind = "table" if region.kind == "table" else "region"
         text = region.address.text
-        span = region.range.text
-        add(region.area.first, kind, lambda hidden, r=region, k=kind, a=text, s=span: [
+        span = region.where
+        add(first.first, kind, lambda hidden, r=region, k=kind, a=text, s=span: [
             Found(k, a, r.name, start, end, hidden=hidden_sheet, range=s)
             for start, end in _occurrences(pattern, r.name)])
         if region.kind != "table":
@@ -246,8 +277,12 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
             continue
         add(name.range.area.first, "name",
             lambda hidden, n=name: list(_name(n, pattern, sheet_hidden=hidden_sheet)))
+    # The cells of columns a declared table hides from the model: never searched.
+    withheld = workbook.regions.withheld(sheet.name) if sheet.name else []
     for comment in workbook.comments(sheet):
         if area is not None and not _inside(comment.cell, area):
+            continue
+        if withheld and any(_inside(comment.cell, w) for w in withheld):
             continue
         add(comment.cell, "comment", lambda hidden, c=comment, w=f"{written}!{comment.cell.ref}": [
             Found("comment", w, c.text, start, end, hidden=hidden)
@@ -300,6 +335,8 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
         if value.t != "text" or not isinstance(value.v, str):
             continue
         if headers and any(_inside(Cell(row, column), h) for h in headers):
+            continue
+        if withheld and any(_inside(Cell(row, column), w) for w in withheld):
             continue
         for begin, end in _occurrences(pattern, value.v):
             yield Found("cell", value.a, value.v, begin, end, hidden=value.hidden)

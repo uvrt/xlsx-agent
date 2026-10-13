@@ -29,6 +29,8 @@ address resolves against::
     wb.read("t:Products[Price]")         # the column's data cells, as any range is read
     wb.expand("t:Products/*/Price")      # ['t:Products/SKU-0001/Price', ...]: by key
     wb.declare_region("Returns", "Returns!A3:F200", header_rows=2, headers=[...])
+    wb.declare_tables([{"name": "checks", "sheets": "Area *", "header_row": 3,
+                        "key": "Ref"}])   # the caller's tables (xlsx_agent.declare)
 
 and what each column holds (:mod:`xlsx_agent.profile`), and the whole workbook at a
 glance (:mod:`xlsx_agent.catalogue`)::
@@ -162,6 +164,8 @@ class Workbook:
         #: ``find_text``'s last few counts (total and kinds), by search: its next page
         #: stops once it is full.
         self._finds: OrderedDict = OrderedDict()
+        #: A sheet's problems without the cells declared tables hide, by sheet and areas.
+        self._withheld_problems: dict = {}
         self.regions = Regions(self)
 
     # -- lifecycle -------------------------------------------------------------------------
@@ -343,13 +347,46 @@ class Workbook:
         :attr:`calculation` flags once each, then, per worksheet, each issue its cells
         have (``no_cached_value``, ``number_as_text``, ``at_limit``, ``volatile``...) with
         its first address and count.  Every worksheet is scanned once (streamed) the first
-        time this is asked."""
+        time this is asked.  The cells of a column a declared table hides from the model
+        (:mod:`xlsx_agent.declare`) are left out: a problem met only there is not listed,
+        and one met there too is counted and placed at its other cells only (the sheet is
+        read once more for it, while the declarations stay as they are)."""
         out = [Problem(code) for code in self.calculation]
         out.extend(self.regions.problems())
         for sheet in self.sheets:
             if sheet.part is not None and sheet.type in _CELL_SHEETS:
-                out.extend(self.scan(sheet).problems)
+                out.extend(self._sheet_problems(sheet))
         return out
+
+    def _sheet_problems(self, sheet: Sheet) -> list[Problem]:
+        found = self.scan(sheet)
+        hidden = self.regions.withheld(sheet.name) if sheet.name else []
+        if not hidden or not found.issues:
+            return found.problems
+        key = (sheet.part, tuple(hidden), self.locale)
+        if key not in self._withheld_problems:
+            counted: dict[str, list] = {}
+
+            def count(code: str, value: Value) -> None:
+                entry = counted.get(code)
+                if entry is None:
+                    counted[code] = [1, value.a]
+                else:
+                    entry[0] += 1
+
+            for value in self.cells(sheet):
+                if any(a.first.row <= value.row <= a.last.row
+                       and a.first.column <= value.column <= a.last.column for a in hidden):
+                    continue
+                if value.issue is not None:
+                    count(value.issue, value)
+                if value.at_limit:
+                    count("at_limit", value)
+                if value.volatile:
+                    count("volatile", value)
+            self._withheld_problems[key] = [Problem(code, address, n) for code, (n, address)
+                                            in sorted(counted.items())]
+        return list(self._withheld_problems[key])
 
     # -- tables, names and regions ---------------------------------------------------------
 
@@ -428,6 +465,26 @@ class Workbook:
         could be its key, or none that is.  A region declared with ``key=`` keeps its own.
         See :meth:`~xlsx_agent.read.regions.Regions.declare_key`."""
         return self.regions.declare_key(address, column)
+
+    def declare_tables(self, declarations: Any) -> list[Region]:
+        """Declare tables from the caller's configuration (plain data: a mapping, a list of
+        them, or ``{"tables": [...]}``), usable as ``t:<name>`` from then on: sheets by
+        name or glob, a table over several sheets read as one, the header row, the data
+        rows' end, the key column, column ids and descriptions, columns hidden from the
+        model, key-value tables.  Every declaration is checked against the workbook before
+        any is kept (:class:`~xlsx_agent.declare.DeclarationError`, naming the entry and
+        what is wrong); see :mod:`xlsx_agent.declare`.  The tables declared, in order."""
+        from .declare import declare_tables
+        return declare_tables(self, declarations)
+
+    def declare_table(self, name: str, sheets: "str | Sequence[str]", **declaration: Any
+                      ) -> Region:
+        """One table, as :meth:`declare_tables` declares it: ``wb.declare_table("checks",
+        "Area *", header_row=3, key="Ref", fields=[...])``."""
+        found = self.declare_tables([{"name": name, "sheets": sheets, **declaration}])
+        if not found:   # optional, and its sheets are not there
+            raise KeyError(f"no sheet matches the sheets of t:{name}")
+        return found[0]
 
     def detect_region(self, where: "str | RangeAddress | TableAddress") -> Region:
         """The region whose single-row header starts at a cell (``t:Stock!A1``); see
@@ -726,6 +783,9 @@ class Workbook:
         if not isinstance(address, RangeAddress):
             raise ValueError(f"a {address.kind} address is read from a later milestone; "
                              "give a cell or range, as Stock!A1:H40")
+        span = self.regions.span(address.sheet)
+        if span is not None:   # a declared table read as one: its own rows and columns
+            return span.read(self, address.area, formats=formats, columns=columns)
         sheet = self._cell_sheet(self.sheet_of(address))
         found = self.scan(sheet)
         area = address.clipped(found.used)
@@ -754,6 +814,8 @@ class Workbook:
         as by one through them all: its reads start near their rows (it has a
         :class:`~xlsx_agent.read.stream.RowIndex`), and no cell read depends on one passed
         on the way (it has no shared formula, whose group's first cell the others name)."""
+        if self.regions.span(address.sheet) is not None:
+            return False
         index = self.scan(self._cell_sheet(self.sheet_of(address))).index
         return index is not None and not index.shared_formulas
 

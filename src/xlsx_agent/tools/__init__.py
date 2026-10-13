@@ -41,6 +41,16 @@ unless given.  The reader's own settings go on the format:
 ``format(local_dates=True)`` in place of :data:`FORMAT` reads text dates in the locale's
 date order, as Excel does (:mod:`xlsx_agent.read.types`).
 
+Tables the application knows from its own configuration -- sheets by name or glob, a
+table over several sheets, the header row, the key, column ids and descriptions, columns
+hidden from the model, key-value tables -- are declared as plain data, never by the model,
+so they cost no definition tokens: ``format(tables=[...])`` for every workbook, or
+``declare(session, [...])`` for one session's (:mod:`xlsx_agent.declare`)::
+
+    toolbox = Toolbox(TOOLS, formats=[format(tables={"tables": [
+        {"name": "checks", "sheets": "Area *", "header_row": 3, "key": "Ref",
+         "fields": [{"header": "Reviewer notes", "hidden": True}]}]})], groups=GROUPS)
+
 Everything is in memory: workbooks and inputs are bytes under handles.  In 0.1.0 the
 tools are the shared ``open_document``, ``close_document`` and ``read_blob``, the
 workbook's ``describe`` and ``find_text`` (:mod:`.shared`), ``xlsx_read`` and ``xlsx_profile``
@@ -56,10 +66,12 @@ The library's address and query errors become tool errors with their valid optio
 
 from __future__ import annotations
 
+from typing import Any
+
 from ooxml_edit.tools import CORE, DocumentFormat, shared as _shared
 
 from .docformat import (ERRORS, KIND, PROMPT, QUERY_CODES, REGION_CODES, STRICT_FIRST, FORMAT,
-                        detect, tool_error, workbook_format)
+                        declare, detect, tool_error, workbook_format)
 from .compare import TOOLS as COMPARE_TOOLS
 from .derive import TOOLS as DERIVE_TOOLS
 from .query import TOOLS as QUERY_TOOLS
@@ -76,13 +88,15 @@ TOOLS = [*SHARED_TOOLS, *READ_TOOLS, *QUERY_TOOLS, *DERIVE_TOOLS, *COMPARE_TOOLS
 CORE_TOOLS = [t.name for t in TOOLS if t.group == CORE]
 
 
-def format(*, grouping: bool = True, local_dates: bool = False) -> DocumentFormat:  # noqa: A001
+def format(*, grouping: bool = True, local_dates: bool = False,  # noqa: A001
+           tables: Any = None) -> DocumentFormat:
     """The xlsx format with the application's reader settings (ROADMAP.md, "Values and
-    types"; :meth:`Workbook.open <xlsx_agent.Workbook.open>`); its workbooks are read in
-    the session's locale.  :data:`FORMAT` is ``format()``."""
-    return workbook_format(grouping=grouping, local_dates=local_dates)
+    types"; :meth:`Workbook.open <xlsx_agent.Workbook.open>`) and its declared ``tables``
+    (:mod:`xlsx_agent.declare`), declared on every workbook it opens; its workbooks are
+    read in the session's locale.  :data:`FORMAT` is ``format()``."""
+    return workbook_format(grouping=grouping, local_dates=local_dates, tables=tables)
 
 
 __all__ = ["CORE_TOOLS", "ERRORS", "FORMAT", "GROUPS", "KIND", "PROMPT", "QUERY_CODES",
            "REGION_CODES",
-           "STRICT_FIRST", "TOOLS", "detect", "format", "tool_error"]
+           "STRICT_FIRST", "TOOLS", "declare", "detect", "format", "tool_error"]

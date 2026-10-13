@@ -9,8 +9,11 @@ third library beside `pptx-agent` and `docx-agent`, on `ooxml-edit` and `ooxml-c
 **0.1.0: read and derive** (milestones R0-R14 of [ROADMAP.md](ROADMAP.md)). A workbook is
 opened, catalogued, read, queried, profiled and searched by address; figures are derived
 here, each with its source cells, and kept as datasets (`d:<id>`); two workbooks are
-compared by key, and a workbook is checked against a declared schema. Nothing is edited or
-saved yet: that is 0.2. Not released to PyPI; installed from source.
+compared by key, and a workbook is checked against a declared schema. Since 0.1.0: the
+application's own tables declared from its configuration (a table over several sheets,
+column ids and descriptions, columns hidden from the model, key-value tables), addresses
+by key, dates, tables as sources for decks and documents ([CHANGELOG.md](CHANGELOG.md)).
+Nothing is edited or saved yet: that is 0.2. Not released to PyPI; installed from source.
 
 - The Python API: [docs/api-tour.md](docs/api-tour.md).
 - The tools, for Claude and OpenAI: [src/xlsx_agent/tools/README.md](src/xlsx_agent/tools/README.md).

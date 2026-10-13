@@ -86,7 +86,7 @@ def xlsx_query(call: Any, doc: str, table: str, columns: list[str] | None = None
     where = [{k: v for k, v in item.items() if v is not None} for item in where or ()]
     sort = [{k: v for k, v in item.items() if v is not None} for item in sort or ()]
     # A cursor belongs to one query: its region (as it is now), columns, filters and sort.
-    key = json.dumps([label, region.range.text, region.columns, names, where, sort],
+    key = json.dumps([label, region.where, region.columns, names, where, sort],
                      ensure_ascii=False, sort_keys=True)
     found = _matches(workbook, region, key, where, sort, names)
     total = len(found.rows)
@@ -94,9 +94,10 @@ def xlsx_query(call: Any, doc: str, table: str, columns: list[str] | None = None
     rows_limit = min(limit or call.limits.max_list_items, READ_ROWS)
     chars = call.limits.max_result_chars
 
-    sheet = _sheet(workbook, workbook.sheet_of(region.range))
-    data: dict[str, Any] = {"target": label, "sheet": _forms(workbook, sheet),
-                            "range": region.range.text}
+    data: dict[str, Any] = {"target": label}
+    if region.span is None:     # a table over several sheets: each value names its own
+        data["sheet"] = _forms(workbook, _sheet(workbook, workbook.sheet_of(region.range)))
+    data["range"] = region.where
     names_cut = 0
     if _size(list(names)) <= chars // 4:
         data["columns"] = list(names)
@@ -113,7 +114,7 @@ def xlsx_query(call: Any, doc: str, table: str, columns: list[str] | None = None
     page = found.rows[start_row:start_row + rows_limit]
     budget = chars - _MARGIN - _size({**data, "cut": _CUT_ROOM}) \
         - len(_summary(label, 1, total, total, region.rows, True))
-    annotate = _Annotations(workbook, sheet, comments=False, hyperlinks=False)
+    annotate = _Annotations(workbook, [], comments=False, hyperlinks=False)
     shown, cut_text, stop, full = _page(read_rows(workbook, region, names, page, kept=found.values), start_row,
                                         start_column, budget, annotate, False, TEXT_SHOWN)
     if stop is None and start_row + len(page) < total:

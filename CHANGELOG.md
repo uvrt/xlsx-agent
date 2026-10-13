@@ -5,6 +5,24 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **Declared tables** (X3) and **key-value tables** (X7): the application declares its own
+  tables from its configuration, as plain data -- `Workbook.declare_tables`, the format
+  (`xlsx_agent.tools.format(tables=...)`) or a session (`xlsx_agent.tools.declare`); no tool
+  takes them, so no definition changes. Sheets by name or glob; a table over several
+  sheets with one header, read as one, every value keeping its own cell's address and keys
+  found on any sheet; header row, first and last data rows, columns; a key checked unique
+  across the sheets; column ids (the header still finds the column) and descriptions,
+  shown by `describe` (`about`) and `xlsx_profile`; columns hidden from the model, left out
+  of every tool's results and refused when named, their cells `withheld` from reads of the
+  sheet and from `find_text`. The sheet is not a column (no `_sheet`). Key-value tables,
+  `t:run/<field>/value`, shown compactly by `describe`; a two-column block of facts with no
+  header is detected as one -- so `describe` of a workbook with no declarations changes
+  where such a block was listed as `header_unclear` (`header_not_text`): it is now a
+  region, with its fields. Problems met only in a hidden column's cells are not listed;
+  one met there too is counted and placed at its other cells only. A declaration that does not fit is refused naming the entry
+  (`DeclarationError`: code, path, valid options), before any table is kept; at
+  `open_document`, `refused`. `Value.origin` and `Value.place` give a value's own cell;
+  `Region.where` its table's range on the sheets.
 - **Tables as sources** (X1; ooxml-edit's O3, whose 0.22.0 is now the floor): the xlsx
   format registers a `t:` resolver and `merge_sources`, so pptx-agent's `ppt_add_table` and
   `ppt_edit_table` and the shared `edit_chart` take a workbook's table as their rows
