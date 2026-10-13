@@ -71,7 +71,7 @@ from __future__ import annotations
 import hashlib
 import math
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Iterable, Sequence
+from typing import TYPE_CHECKING, Callable, Iterable, Sequence
 
 from ooxml_edit.charts.workbook import Area, Cell
 
@@ -244,10 +244,12 @@ class Column:
         return profile(self.workbook, self.region, [self.name])[0]
 
 
-def profile(workbook: "Workbook", region: Region,
-            columns: Sequence[str] | None = None) -> list[ColumnStats]:
+def profile(workbook: "Workbook", region: Region, columns: Sequence[str] | None = None, *,
+            observe: "Callable[[list[Value]], None] | None" = None) -> list[ColumnStats]:
     """The profiles of ``region``'s ``columns`` (names, matched case aside; every column
-    when ``None``), in the order asked, in one streamed pass over the data rows."""
+    when ``None``), in the order asked, in one streamed pass over the data rows.
+    ``observe`` is given each row the pass reads (from the leftmost column asked to the
+    rightmost), for another use of the same pass."""
     names = list(region.columns) if columns is None else \
         [region.columns[region.column_index(name)] for name in columns]
     first = region.area.first.column
@@ -258,9 +260,12 @@ def profile(workbook: "Workbook", region: Region,
         left, right = first + min(offsets), first + max(offsets)
         area = Area(Cell(data.first.row, left), Cell(data.last.row, right))
         positions = [first + offset - left for offset in offsets]
-        for row in workbook.read(RangeAddress(region.sheet_ref, area)):
+        reading = {first + o for o in offsets} if observe is None else None
+        for row in workbook._read(RangeAddress(region.sheet_ref, area), columns=reading):
             for tally, position in zip(tallies, positions):
                 tally.add(row[position])
+            if observe is not None:
+                observe(row)
     rules = _list_rules(workbook, region)
     out = []
     for name, tally in zip(names, tallies):

@@ -74,6 +74,7 @@ from ooxml_edit.charts.workbook import Area, Cell
 from .address import RangeAddress
 from .profile import FIRST_ADDRESSES, Count, majority_type
 from .read.regions import Region
+from .read.stream import CHECKPOINT_ROWS
 from .read.types import Value, day_serial
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -240,7 +241,9 @@ def matches(workbook: "Workbook", region: Region, *,
     typed = [t for t in tests if t.compares]
     found: list[tuple] = []                   # (row, types per typed test, keys per sort key)
     area = Area(Cell(data.first.row, left), Cell(data.last.row, right))
-    for row in workbook.read(RangeAddress(region.sheet_ref, area)):
+    # The cells typed: the filtered and sorted columns', and the kept ones' while they are.
+    reading = {first + o for o in offsets} | {first + o for o in wanted_offsets}
+    for row in workbook._read(RangeAddress(region.sheet_ref, area), columns=reading):
         cells = {o: row[first + o - left] for o in offsets}
         for o, value in cells.items():
             if value.t != "blank":
@@ -257,6 +260,8 @@ def matches(workbook: "Workbook", region: Region, *,
             room -= len(wanted_offsets)
             if room < 0:
                 kept = None
+                reading.difference_update(first + o for o in wanted_offsets)
+                reading.update(first + o for o in offsets)
             else:
                 kept[number] = [row[first + o - left] for o in wanted_offsets]
 
@@ -296,14 +301,32 @@ def read_rows(workbook: "Workbook", region: Region, columns: Sequence[str],
     offsets = [region.column_index(name) for name in columns]
     left, right = first + min(offsets), first + max(offsets)
     wanted = set(rows)
-    area = Area(Cell(min(rows), left), Cell(max(rows), right))
+    reading = {first + o for o in offsets}
     kept: dict[int, list[Value]] = {}
-    for row in workbook.read(RangeAddress(region.sheet_ref, area)):
-        number = row[0].row
-        if number in wanted:
-            kept[number] = [row[first + o - left] for o in offsets]
+    for top, bottom in _runs(sorted(wanted), workbook._rows_apart(region.range)):
+        area = Area(Cell(top, left), Cell(bottom, right))
+        for row in workbook._read(RangeAddress(region.sheet_ref, area), columns=reading):
+            number = row[0].row
+            if number in wanted:
+                kept[number] = [row[first + o - left] for o in offsets]
     for number in rows:
         yield kept[number]
+
+
+def _runs(rows: list[int], apart: bool) -> list[tuple[int, int]]:
+    """Sorted sheet rows as the ranges of rows to read them by: one, from the first to the
+    last; or, where rows far apart read alike apart (``apart``:
+    :meth:`Workbook._rows_apart <xlsx_agent.workbook.Workbook._rows_apart>`), a range per
+    run of rows at most a checkpoint's rows apart."""
+    if not apart:
+        return [(rows[0], rows[-1])]
+    out = [[rows[0], rows[0]]]
+    for row in rows[1:]:
+        if row - out[-1][1] <= CHECKPOINT_ROWS:
+            out[-1][1] = row
+        else:
+            out.append([row, row])
+    return [(top, bottom) for top, bottom in out]
 
 
 # -- filters -----------------------------------------------------------------------------------

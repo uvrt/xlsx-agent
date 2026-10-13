@@ -10,7 +10,7 @@ Until ooxml-edit has its own ``iterparse_xml`` (ROADMAP.md, O6) they are kept he
 from __future__ import annotations
 
 import io
-from typing import Iterable, Iterator
+from typing import BinaryIO, Iterable, Iterator
 
 from lxml import etree
 
@@ -19,7 +19,9 @@ SAFE_OPTIONS = {"remove_blank_text": False, "resolve_entities": False, "huge_tre
                 "no_network": True}
 
 
-def iterparse_xml(data: bytes, events: Iterable[str] = ("end",),
+def iterparse_xml(data: "bytes | BinaryIO", events: Iterable[str] = ("end",),
                   tag: "str | Iterable[str] | None" = None) -> Iterator[tuple[str, etree._Element]]:
-    """``lxml.etree.iterparse`` over a part's bytes with :data:`SAFE_OPTIONS`."""
-    return etree.iterparse(io.BytesIO(data), events=tuple(events), tag=tag, **SAFE_OPTIONS)
+    """``lxml.etree.iterparse`` over a part's bytes (or a binary file of them, read as it
+    goes) with :data:`SAFE_OPTIONS`."""
+    source = io.BytesIO(data) if isinstance(data, (bytes, bytearray)) else data
+    return etree.iterparse(source, events=tuple(events), tag=tag, **SAFE_OPTIONS)

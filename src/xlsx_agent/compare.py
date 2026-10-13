@@ -452,7 +452,9 @@ def _rows(workbook: "Workbook", region: Region, offsets: list[int]
     first = region.area.first.column
     left, right = first + min(offsets), first + max(offsets)
     area = Area(Cell(data.first.row, left), Cell(data.last.row, right))
-    for position, row in enumerate(workbook.read(RangeAddress(region.sheet_ref, area)), 1):
+    reading = {first + o for o in offsets}
+    for position, row in enumerate(workbook._read(RangeAddress(region.sheet_ref, area),
+                                                  columns=reading), 1):
         yield position, tuple(_kept(row[first + o - left]) for o in offsets)
 
 
