@@ -31,6 +31,11 @@ CANONICAL = [
     ("#3!A1:B9", RangeAddress, "range"),
     ("#12!4:4", RangeAddress, "range"),
     ("#0!A1", RangeAddress, "cell"),
+    ("Stock!", RangeAddress, "sheet"),
+    ("'Q3 sales'!", RangeAddress, "sheet"),
+    ("'Bob''s list'!", RangeAddress, "sheet"),
+    ("'A1'!", RangeAddress, "sheet"),
+    ("#3!", RangeAddress, "sheet"),
     ("t:Products", TableAddress, "table"),
     ("t:Stock!A1", TableAddress, "region"),
     ("t:Stock!Prices", TableAddress, "table"),
@@ -69,6 +74,31 @@ def test_every_form_parses_and_formats_back_to_itself(text, cls, kind):
     assert address.text == text == str(address) == format_address(address)
     assert parse_address(address.text) == address
     assert cls.parse(text) == address
+
+
+def test_a_whole_sheet_is_the_whole_grid_clipped_to_the_used_range():
+    whole = parse_address("'Q3 sales'!")
+    assert whole.span == "sheet" and whole.sheet == SheetRef(name="Q3 sales")
+    assert whole.area == Area(Cell(1, 1), Cell(MAX_ROW, MAX_COLUMN))
+    assert whole.clipped(Area.parse("B2:D9")) == Area.parse("B2:D9")
+    assert whole.clipped(None) is None
+    assert whole.on(SheetRef(id=3)).text == "#3!"
+    assert RangeAddress.parse("#3!").sheet == SheetRef(id=3)
+    assert parse_address(" Stock! ").text == "Stock!"
+    assert parse_address("'Stock'!").text == "Stock!"
+    assert parse_address("Überblick!").text == "'Überblick'!"
+    # the same cells as a rectangle are a range, not the sheet
+    assert parse_address("Stock!A1:XFD1048576") != parse_address("Stock!")
+    with pytest.raises(ValueError, match="whole grid"):
+        RangeAddress(SheetRef(name="Stock"), Area.parse("A1:B2"), "sheet")
+
+
+@pytest.mark.parametrize("name", ["Stock", "Q3 sales", "Bob's list", "A1", "TRUE", "#3",
+                                  "R1C1", "it''s", "Ünïcödé 2026"])
+def test_a_whole_sheet_round_trips_any_sheet_name(name):
+    text = SheetRef(name=name).text + "!"
+    address = parse_address(text)
+    assert address.kind == "sheet" and address.sheet.name == name and address.text == text
 
 
 def test_every_example_in_forms_is_canonical():
@@ -219,7 +249,9 @@ INVALID = [
     ("A1:B2", "names its sheet"),
     ("A:A", "names its sheet"),
     ("Products", "t:Name"),
-    ("Stock!", "followed by a cell or range"),
+    ("t:Stock!", "a whole sheet has no t: form"),
+    ("t:#3!", "a whole sheet has no t: form"),
+    ("Stock!!", "not a cell or range"),
     ("!A1", "follows a sheet name"),
     ("Stock!A1:", "not a cell or range"),
     ("Stock!A1:B", "not a cell or range"),
@@ -330,7 +362,7 @@ def test_a_refusal_offers_the_corrected_address_when_there_is_one():
     assert options("Products") == ["t:Products", "d:Products"]
     assert options("A1") == [FORMS["cell"], FORMS["quoted sheet"], FORMS["sheet by id"]]
     # else the forms of the place the error is in
-    assert options("Stock!A0") == [FORMS[k] for k in ("cell", "range", "columns", "rows",
+    assert options("Stock!A0") == [FORMS[k] for k in ("cell", "range", "columns", "rows", "sheet",
                                                        "quoted sheet", "sheet by id")]
     assert "t:Products[Price]" in options("t:Products[")
     assert "d:by_category[average]" in options("d:")

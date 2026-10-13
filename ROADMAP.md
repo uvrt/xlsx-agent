@@ -120,6 +120,7 @@ appear in results and diagnostics; cell content may not appear in diagnostics.
 | --- | --- | --- |
 | cell | `Stock!F2` | one cell |
 | range | `Stock!A1:H40` | a rectangle; `Stock!A:A` and `Stock!2:5` are clipped to the used range |
+| whole sheet | `Stock!` | every cell of the sheet, clipped to its used range; `'Q3 sales'!` and `#3!` as for ranges. `find_text`'s `range` takes it |
 | quoted sheet | `'Q3 sales'!B2:B9` | Excel's quoting: `'` around a name, `''` for a quote inside |
 | sheet by id | `#3!F2` | the sheet whose `sheetId` is 3: survives a rename. Every result gives both forms the first time it names a sheet |
 | table | `t:Products` | an Excel table, a defined name over a range, or a declared region |

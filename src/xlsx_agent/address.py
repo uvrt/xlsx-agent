@@ -5,6 +5,7 @@ Every result names what it returns by address, and every tool takes the same for
 
     Stock!F2                     a cell
     Stock!A1:H40                 a range;  Stock!A:A and Stock!2:5 are whole columns and rows
+    Stock!                       a whole sheet ('Q3 sales'!, #3!), clipped to its used range
     'Q3 sales'!B2:B9             a quoted sheet: ' around the name, '' for a quote inside
     #3!F2                        the sheet whose sheetId is 3 (survives a rename)
     t:Products                   a table, a defined name over a range, or a declared region
@@ -69,6 +70,13 @@ taken as a cell or range, and refused if it is not one cell) and a name otherwis
 is never a cell reference.  A sheet-local name that looks like a cell past the grid
 (``XFE1``, which the standard allows) has no address in this form.
 
+**Whole sheets.**  A sheet and its ``!`` with nothing after it (``Stock!``, ``'Q3 sales'!``,
+``#3!``) is the whole sheet: a :class:`RangeAddress` whose ``span`` is ``"sheet"`` and
+whose area is the whole grid, clipped to the used range when read, as whole columns and
+rows are.  It keeps R2's grammar -- a sheet, ``!``, then where on it -- with nothing for
+"everywhere" (``Stock!A1:XFD1048576`` names the same cells, as a rectangle).
+``t:Stock!`` is not a form: a detected region is named by a cell.
+
 **Positions and ids.**  ``#3!`` names a sheet by id; ``/#5`` names a row by position.  A
 key that begins with ``#`` is quoted, so the two never meet.
 
@@ -96,6 +104,7 @@ FORMS: dict[str, str] = {
     "range": "Stock!A1:H40",
     "columns": "Stock!A:C",
     "rows": "Stock!2:5",
+    "sheet": "Stock!",
     "quoted sheet": "'Q3 sales'!B2:B9",
     "sheet by id": "#3!F2",
     "table": "t:Products",
@@ -116,8 +125,11 @@ TABLE_PREFIX = "t:"
 DATASET_PREFIX = "d:"
 
 #: How a :class:`RangeAddress` spans the grid: a rectangle of cells, whole columns
-#: (``A:C``), or whole rows (``2:5``).
-SPANS = ("cells", "columns", "rows")
+#: (``A:C``), whole rows (``2:5``), or the whole sheet (``Stock!``).
+SPANS = ("cells", "columns", "rows", "sheet")
+
+#: The whole grid: what a whole sheet's area is.
+WHOLE_GRID = Area(Cell(1, 1), Cell(MAX_ROW, MAX_COLUMN))
 
 _PLAIN_SHEET = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
 _CELL_LIKE = re.compile(r"[A-Za-z]{1,3}[0-9]+")
@@ -139,7 +151,7 @@ _COLUMNS = re.compile(r"\$?([A-Za-z]{1,3}):\$?([A-Za-z]{1,3})")
 _ROWS = re.compile(r"\$?([0-9]{1,7}):\$?([0-9]{1,7})")
 _POSITION = re.compile(r"#([1-9][0-9]{0,6})")
 
-_RANGE_FORMS = ("cell", "range", "columns", "rows", "quoted sheet", "sheet by id")
+_RANGE_FORMS = ("cell", "range", "columns", "rows", "sheet", "quoted sheet", "sheet by id")
 _TABLE_FORMS = ("table", "sheet-scoped name", "detected region", "column", "value by key",
                 "row by position")
 _DATASET_FORMS = ("d:by_category", "d:by_category[average]", "d:by_category/Hardware/average",
@@ -306,12 +318,14 @@ class SheetRef:
 
 @dataclass(frozen=True)
 class RangeAddress:
-    """A cell or a range on one sheet: ``Stock!F2``, ``Stock!A1:H40``, ``#3!A:A``.
+    """A cell, a range or a whole sheet: ``Stock!F2``, ``Stock!A1:H40``, ``#3!A:A``,
+    ``Stock!``.
 
     ``span`` is ``"cells"``, ``"columns"`` (``A:C``: ``area`` runs from row 1 to
-    :data:`~ooxml_edit.charts.workbook.MAX_ROW`) or ``"rows"`` (``2:5``: column 1 to
-    :data:`~ooxml_edit.charts.workbook.MAX_COLUMN`).  Whole columns and rows are clipped to
-    the sheet's used range when read (:meth:`clipped`)."""
+    :data:`~ooxml_edit.charts.workbook.MAX_ROW`), ``"rows"`` (``2:5``: column 1 to
+    :data:`~ooxml_edit.charts.workbook.MAX_COLUMN`) or ``"sheet"`` (``Stock!``: ``area`` is
+    :data:`WHOLE_GRID`).  Whole columns, rows and sheets are clipped to the sheet's used
+    range when read (:meth:`clipped`)."""
 
     sheet: SheetRef
     area: Area
@@ -328,10 +342,14 @@ class RangeAddress:
             raise ValueError("whole columns run from row 1 to the last row")
         if self.span == "rows" and (first.column, last.column) != (1, MAX_COLUMN):
             raise ValueError("whole rows run from column A to the last column")
+        if self.span == "sheet" and self.area != WHOLE_GRID:
+            raise ValueError("a whole sheet is the whole grid, A1 to XFD1048576")
 
     @property
     def kind(self) -> str:
-        """``"cell"`` or ``"range"``."""
+        """``"cell"``, ``"range"`` or ``"sheet"`` (a whole sheet)."""
+        if self.span == "sheet":
+            return "sheet"
         if self.span == "cells" and self.area.first == self.area.last:
             return "cell"
         return "range"
@@ -350,6 +368,8 @@ class RangeAddress:
             where = f"{column_letters(first.column)}:{column_letters(last.column)}"
         elif self.span == "rows":
             where = f"{first.row}:{last.row}"
+        elif self.span == "sheet":
+            where = ""
         else:
             where = self.area.ref
         return f"{self.sheet.text}!{where}"
@@ -362,8 +382,8 @@ class RangeAddress:
         return RangeAddress(sheet, self.area, self.span)
 
     def clipped(self, used: Area | None) -> Area | None:
-        """The cells meant, given the sheet's used range: whole columns and rows clipped to
-        it (``None`` when they miss it, or the sheet is empty); a rectangle of cells as it
+        """The cells meant, given the sheet's used range: whole columns, rows and sheets
+        clipped to it (``None`` when they miss it, or the sheet is empty); a rectangle of cells as it
         is, used range or not."""
         if self.span == "cells":
             return self.area
@@ -379,7 +399,8 @@ class RangeAddress:
 
     @classmethod
     def parse(cls, text: str) -> "RangeAddress":
-        """``text`` as a cell or range; :class:`AddressError` for any other form."""
+        """``text`` as a cell, range or whole sheet; :class:`AddressError` for any other
+        form."""
         return _expect(text, cls, _RANGE_FORMS)
 
 
@@ -715,6 +736,8 @@ class _Parser:
     def sheet_range(self, at: int) -> RangeAddress:
         self.forms = [FORMS[form] for form in _RANGE_FORMS]
         sheet, bang = self.sheet(at)
+        if bang + 1 == len(self.body):
+            return RangeAddress(sheet, WHOLE_GRID, "sheet")
         area, span = self.where(bang + 1, len(self.body))
         return RangeAddress(sheet, area, span)
 
@@ -734,6 +757,9 @@ class _Parser:
                 column, key, position = self.selection(end)
                 return TableAddress(name=name, scope=sheet, column=column, key=key,
                                     position=position)
+            if end == bang + 1:
+                self.fail("a detected region is named by one cell, its header's first: "
+                          "t:Stock!A1; a whole sheet has no t: form", end)
             area, span = self.where(bang + 1, end)
             if span != "cells" or area.first != area.last:
                 options = None if span != "cells" else \

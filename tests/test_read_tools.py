@@ -146,6 +146,9 @@ def test_a_range_is_clipped_to_the_used_range_and_says_so(box):
     assert result.total == 5
     whole = _read(box, session, target="Stock!C:C")
     assert whole.data["range"] == "Stock!C1:C5" and whole.data["requested"] == "Stock!C:C"
+    sheet = _read(box, session, target="#1!")                     # a whole sheet (R9)
+    assert sheet.data["range"] == "Stock!A1:D5" and sheet.data["requested"] == "#1!"
+    assert sheet.total == 5
     empty = _read(box, session, target="Stock!M1:N4")
     assert empty.ok and empty.data["rows"] == [] and empty.total == 0
     assert empty.data["range"] is None and empty.summary == "Stock!M1:N4: no cells to read"

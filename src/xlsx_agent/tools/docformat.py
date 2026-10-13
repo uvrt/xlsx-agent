@@ -51,8 +51,8 @@ their key column, each column's type, fill and values, sample rows, flags and pr
 cut says what a large workbook's catalogue left out, next which tool gives it.
 - xlsx_read reads cells by any address, paged; xlsx_profile gives a region's columns in full; \
 xlsx_query gives a region's rows that meet filters, sorted, with the count of all matches.
-- Addresses: Stock!F2 a cell; Stock!A1:H40 a range; 'Q3 sales'!B2 a quoted sheet; #3!F2 \
-the sheet whose id is 3 (it survives a rename). t:Products a table, defined name or \
+- Addresses: Stock!F2 a cell; Stock!A1:H40 a range; Stock! a whole sheet; 'Q3 sales'!B2 a \
+quoted sheet; #3!F2 the sheet whose id is 3 (it survives a rename). t:Products a table, defined name or \
 declared region; t:Stock!Prices a name local to a sheet; t:Stock!A1 a region detected at \
 its header's first cell; t:Products[Price] a column; t:Products/SKU-0042/Price the value \
 in the row whose key is SKU-0042; t:Products/#5 the fifth data row (a position).
