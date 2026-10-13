@@ -29,6 +29,8 @@ address resolves against::
     wb.read("t:Products[Price]")         # the column's data cells, as any range is read
     wb.expand("t:Products/*/Price")      # ['t:Products/SKU-0001/Price', ...]: by key
     wb.declare_region("Returns", "Returns!A3:F200", header_rows=2, headers=[...])
+    wb.declare_tables([{"name": "checks", "sheets": "Area *", "header_row": 3,
+                        "key": "Ref"}])   # the caller's tables (xlsx_agent.declare)
 
 and what each column holds (:mod:`xlsx_agent.profile`), and the whole workbook at a
 glance (:mod:`xlsx_agent.catalogue`)::

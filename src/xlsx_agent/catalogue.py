@@ -24,6 +24,13 @@ whose header is not detected (``header_unclear``, with the reason: declare them)
 defined names that are not ranges (with the reason, never evaluated), and the problems the
 workbook has (by code, address and count).
 
+**Declared tables** (:mod:`xlsx_agent.declare`) are listed as regions too, with the
+caller's description (``about``) and each column's id and description (``about``); a
+table over several sheets gives each sheet's range, joined by ``,``; a column hidden from
+the model is not there.  The blocks they cover are not detected again.  A key-value table
+(``shape`` ``"key_value"``) is shown compactly: its columns, then ``fields``, each field
+with its value (the first :data:`FIELDS_SHOWN`; ``more_fields`` counts the rest).
+
 **The token target.**  ``max_tokens`` (default :data:`DEFAULT_TOKENS`, about 3,000) bounds
 the catalogue as the siblings' offline proxy counts it (:func:`estimate_tokens`: compact
 JSON, characters / 3.5, times 1.48).  A workbook too big for it loses, in order: its second
@@ -452,9 +459,10 @@ def _key_value(found: _Found, out: dict, level: _Level, shown: int) -> dict:
 
 def _column(stats: ColumnStats) -> dict:
     """A column's profile, summarised: what an agent needs to pick columns and filters."""
-    out: dict = {"name": stats.column, "type": stats.type, "fill": round(stats.fill, 2)}
+    out: dict = {"name": stats.column}
     if stats.description is not None:
         out["about"] = stats.description
+    out.update(type=stats.type, fill=round(stats.fill, 2))
     if stats.measured:
         out["min"], out["max"] = _shown(stats.min), _shown(stats.max)
         if stats.mean is not None:

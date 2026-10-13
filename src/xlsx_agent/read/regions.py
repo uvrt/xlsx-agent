@@ -53,6 +53,21 @@ key by position, and which keys two rows share), kept until the locale changes: 
 key, a key set and :meth:`Regions.expand` look keys up there, never by reading the column
 again.
 
+**Declared tables** (:mod:`xlsx_agent.declare`): tables the caller declares from its own
+configuration are declared regions too, with column ids (``Region.headers`` keeps each
+header, which finds the column as well), descriptions and a ``shape``.  One over several
+sheets, or with columns hidden from the model, is read as one rectangle of its own
+(:class:`Span`): a range on its own sheet (``t:<name>``) is read sheet by sheet, each
+value given in the table's place with its own cell kept, so every address a result gives
+is a real cell's.  Its blocks are not detected again (:meth:`Regions.find`), and a region
+detected or declared over a hidden column's cells is refused (``declared``).
+
+**Key-value blocks.**  A block of two columns whose first row holds something other than
+text (so no header is detected) and whose first column is a different text on each of
+two or more rows is detected as a key-value region (``shape`` ``"key_value"``): no header
+row, its columns ``field`` and ``value``, its key ``field``
+(``t:Run!A1/report_date/value``).
+
 **Selectors and key sets** (:mod:`xlsx_agent.address`).  ``t:Products/*/Price`` resolves
 as ``t:Products[Price]``, ``t:Products/*`` and ``t:Products/*/*`` as the table, and
 ``t:Products/SKU-0042/*`` as the row, each keeping its own text.  A key set
@@ -309,7 +324,9 @@ class Selection:
     data cells selected (header and totals rows excluded; ``None`` when the region has no
     data rows, and for a key set); ``row`` the data row's position (from 1) for a row or a
     value; ``column`` the column's name as the region spells it; ``positions`` a key set's
-    rows, in its order (:attr:`areas` gives their cells)."""
+    rows, in its order (:attr:`areas` gives their cells).  For a declared table read as
+    one (a :attr:`Region.span`), ``range`` is in the table's own rectangle: reading it
+    gives each cell's own address, and :meth:`Region.located` gives the sheets'."""
 
     address: str
     kind: str
@@ -809,7 +826,10 @@ class Regions:
         (``rows_above``: a header of two rows, or a title, may start there); when a header
         cell holds something other than text (``header_not_text``); or when the first
         data row is all text and some column's later rows are all something else
-        (``multi_row_header``: a second header row)."""
+        (``multi_row_header``: a second header row).  A block of two columns whose header
+        is not text is a key-value region instead, when it is one (see the module's
+        notes).  A cell in a table declared from configuration is refused
+        (``declared``, with the table as ``valid_options``)."""
         if isinstance(where, str):
             where = parse_address(where)
         if isinstance(where, TableAddress):

@@ -287,6 +287,9 @@ stock = wb.table("t:Stock!A1")                        # a detected region
 wb.declare_region("returns", "Returns!A3:F200",      # a merged two-row header,
                   header_rows=2,                      # declared, never guessed
                   headers=["SKU", "Date", "Qty", "Reason", "Store", "Refund"])
+wb.declare_tables([{"name": "stock", "sheets": "Store *",   # the caller's own tables (X3):
+                    "header_row": 2, "key": "SKU",          # several sheets as one, ids,
+                    "fields": [{"header": "Cost", "hidden": True}]}])   # hidden columns
 
 products.column("Price").stats()     # ColumnStats(type="number", fill=0.98, min=..., ...)
 products.query(["SKU", "Price"], where={"Category": {"eq": "Hardware"}}, limit=20)
@@ -577,6 +580,64 @@ tool definition changes -- the loaded core stays 3,462 estimated, about 5,124 by
 offline proxy; every definition 3,684 (guard 3,700); `strict_problems` is clean. The
 workbook prompt gains one sentence (a slide or document table or chart takes `t:` or
 `d:`).
+
+*X3 and X7 as built* (production feedback, 2026-10-13): **Tables declared from the
+caller's configuration** (`xlsx_agent.declare`). Declarations are the application's
+configuration, never a model's -- no tool parameter, so no definition changes -- given as
+plain data to `Workbook.declare_tables` (or `declare_table`), to the format
+(`xlsx_agent.tools.format(tables=...)`: every workbook it opens) or to one session
+(`xlsx_agent.tools.declare(session, ...)`, in place of the format's); the format's
+`configure` hook declares them on a workbook joining the session, after its locale, so
+ooxml-edit is unchanged. A declaration gives the table's `name`; its `sheets` (exact
+names, case aside, or globs; the workbook's order); `header_row` (one row; 0 for none),
+`first_row`, `last_row` (else the first blank row ends the data, and more below is flagged
+`rows_below`), `columns` (`A:F`); `key`; a `description`; `fields` by header or column
+letter, each with an `id`, a `description` and `hidden`; `type` (`rows`, `key_value`); and
+`optional`. **A table over several sheets** is one rectangle of its own
+(`read.regions.Span`): its rows each sheet's, in order, its header the first sheet's (every
+sheet's must be the same text, or the declaration is refused naming both cells); a read
+through it (`Workbook._read` on its own sheet, `t:<name>`, a name no sheet can have) reads
+each sheet and gives every value in the table's place with its own cell kept
+(`Value.origin`; `Value.a` is the cell's address). So reads, queries, samples, profiles
+(`range` each sheet's, joined by `,`), a derive's sources (by key; without a key, each
+sheet's ranges) and left-out cells, a dataset's sources, comparisons and checks (a run of
+problem cells never crosses two sheets) all name the real cell, and a key finds its row on
+any sheet; a key two rows share, on one sheet or two, or a row without one, is refused at
+declaration, naming the cells, never the key. **Decided: the sheet is not a column**
+(no `_sheet`): a value is a cell and a sheet's name is no cell's, and every address names
+its sheet; for one sheet's figures, declare that sheet's table too. **Ids and
+descriptions**: a column's `id` addresses it and is what `describe` shows; its header text
+finds it too (`Region.headers`); descriptions show in `describe` (`about`, the table's and
+each column's) and `xlsx_profile` (`description`, and `header` when an id names it).
+**Hidden columns** are left out of the table's own rectangle, so nothing that reads a
+table can show them, and an address naming one is `not_found` without it among the
+options; their cells are withheld from reads of the sheet's cells (`xlsx_read` gives
+`{"a": ..., "withheld": true}`), from `find_text`, and from a region detected or declared
+over them (`RegionError` `declared`, pointing to the table); the blocks a declared table
+covers are no longer detected as regions of their own. An Excel-hidden column stays a column
+unless declared hidden. Still visible: a sheet problem's address in a hidden column (codes
+and addresses only). **X7, key-value tables**: `type: "key_value"`, columns `field` and
+`value` (ids rename them; headers find them) and any more; the key is the field column;
+`t:run/report_date/value`; `describe` shows the fields and their values compactly
+(`fields`, at most 25, the rest counted). A two-column block with no header whose first row
+holds a non-text value (so header detection fails, `header_not_text`) and whose first column
+is a different text on each of two or more rows is **detected** as one
+(`t:'Run facts'!A1/author/value`); wider blocks are not, since a first row of years over a
+table looks the same. Hidden sheets were already read like any other and their values
+flagged `hidden`; now tested. **Validation**: `DeclarationError` (`code`, `path` such as
+`tables[0].fields[2].header`, `valid_options`) for a declaration of the wrong form (checked
+when given to the format or session) or one the workbook does not fit, before any table is
+kept; at `open_document` it is `refused` with the code and path in `details`. **Sizes**
+(offline estimator, a made-up workbook of six area sheets of 20 checks with six columns,
+one a long text, a summary sheet and a hidden sheet of run facts): `describe` undeclared
+2,864 estimated tokens on main, 2,914 here (the run facts now detected as key-value, +50;
+both cut to fit 3,000: 3,494 and 3,544 in full); declared as one table with its key 1,335
+(nothing cut); with two ids and a hidden column 1,272; with a table description and five
+column descriptions 1,361 (+89 for six descriptions); with the run facts declared as
+key-value 1,357. **Budget**: no definition changes (a declaring format's definitions equal
+the plain one's: tested); the loaded core is as before, 5,009 online; `strict_problems` is
+clean; the workbook prompt is unchanged. The goldens are unchanged; describe of an
+undeclared workbook changes only where a two-column key-value block was `header_unclear`.
 
 ### 0.2 — edit
 

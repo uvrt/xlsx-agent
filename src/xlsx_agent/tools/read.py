@@ -17,6 +17,11 @@ A dataset (``d:by_region``, ``d:by_region[total]``, ``d:by_region/#2/total``...)
 :func:`.derive.read_dataset`: no ``doc`` is needed, since a dataset outlives its workbook,
 and ``sources`` adds each value's source cells (R11).  Every other target needs ``doc``.
 
+**Declared tables** (:mod:`xlsx_agent.declare`): a table over several sheets is read as one,
+each cell with its own address; the result's ``range`` is each sheet's, joined by ``,``,
+and it names no one ``sheet``.  A cell of a column hidden from the model is never given:
+a read of the sheet's cells gives it as ``{"a": ..., "withheld": true}``.
+
 **Bounded.**  A page holds at most ``limit`` rows (by default ``Limits.max_list_items``, at
 most :data:`READ_ROWS`) and its whole result at most ``max_chars`` characters (by default,
 and at most, ``Limits.max_result_chars``); a row too wide for what is left is split, the

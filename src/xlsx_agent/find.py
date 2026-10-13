@@ -36,9 +36,13 @@ a constant, an unknown sheet) come last.  Each occurrence is a match; one of no 
 **Hidden**: matches on a hidden or very hidden sheet, in a hidden row or column, and hidden
 defined names are found like any other, and say ``hidden``.
 
+**Withheld**: the cells of a column a declared table hides from the model
+(:mod:`xlsx_agent.declare`), and their comments, are never searched.
+
 **within**: a sheet (``Stock!``), a cell or range (``Stock!A1:H40``, ``Stock!A:C``), a
 table, name or region (``t:Products``: all of it, header and totals rows too) or a part of
-one (``t:Products[Price]``, ``t:Products/#5``: its data cells).  A table or name is found
+one (``t:Products[Price]``, ``t:Products/#5``: its data cells); a declared table over
+several sheets is searched sheet by sheet.  A table or name is found
 when its range overlaps ``within``; a comment or header when its cell is inside it; a name
 that is not a range never is.
 

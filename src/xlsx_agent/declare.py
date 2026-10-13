@@ -639,8 +639,11 @@ def _check_keys(workbook: "Workbook", region: Region, path: str) -> None:
                                valid_options=[cell(p) for p in missing[:50]])
     if index.duplicates:
         rows = next(iter(index.duplicates.values()))
-        raise DeclarationError("duplicate_key", f"{path}.key", f"{len(index.duplicates)} keys "
-                               f"of column {region.key!r} are on more than one row: "
+        count = len(index.duplicates)
+        which = "a key" if count == 1 else f"{count} keys"
+        are = "is" if count == 1 else "are"
+        raise DeclarationError("duplicate_key", f"{path}.key", f"{which} of column "
+                               f"{region.key!r} {are} on more than one row: "
                                f"{cell(rows[0])} and {cell(rows[1])} hold the same",
                                valid_options=[cell(p) for p in rows[:50]])
 

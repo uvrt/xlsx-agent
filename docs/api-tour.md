@@ -101,6 +101,70 @@ wb.declare_region("Returns", "Returns!A3:F200", header_rows=2,
                   headers=["SKU", "Date", "Qty", "Reason", "Store", "Refund"])
 ```
 
+## Declaring tables
+
+An application that knows its workbooks -- a template filled in per run, say -- declares
+their tables from its own configuration, as plain data, before anything is described. A
+model never does: no tool takes a declaration (the tool layer takes them from the
+application, `xlsx_agent.tools.format(tables=...)` or `declare(session, ...)`). This
+example's workbook (made up, as in `tests/test_declare.py`) has a sheet of checks per area,
+each with a title over its header on row 3, and a hidden sheet of run facts:
+
+```python
+wb.declare_tables({"tables": [
+    {"name": "checks", "sheets": "Area *", "header_row": 3, "key": "Ref",
+     "description": "One row per check, every area",
+     "fields": [{"header": "Rating (1 to 5, in halves)", "id": "rating",
+                 "description": "The reviewer's rating"},
+                {"header": "Remark", "hidden": True}]},
+    {"name": "run", "type": "key_value", "sheets": "Run facts"}]})
+
+wb.region("t:checks").where       # "'Area North'!A3:D5,'Area South'!A3:D6"
+wb.cell("t:checks/S-2/rating").as_dict()  # {'a': "'Area South'!C5", 'v': 5, 't': 'number'}
+wb.cell("t:checks/#3/Topic").a    # "'Area South'!B4": positions count across the sheets
+wb.cell("t:run/report_date/value").as_dict()
+# {'a': "'Run facts'!B1", 'v': '2026-10-01', 't': 'date', 'serial': 46296.0, 'hidden': True}
+ds = wb.derive("t:checks", group_by=["Topic"],
+               measures=[{"fn": "mean", "column": "rating", "as": "avg"}])
+ds.rows[0], ds.provenance[0]["avg"].sources   # {'Topic': 'door', 'avg': 2.75},
+                                              # (t:checks/{N-1,S-1}/rating,)
+wb.cell("t:checks/N-1/Remark")    # NameNotFound: its columns are Ref, Topic, rating, Note
+```
+
+What a declaration says:
+
+- **Sheets** by exact name (case aside) or glob (`Area *`), one or a list. A table over
+  several sheets is one table: their rows in the workbook's order, the header the same text
+  on every sheet. Every value keeps its own cell's address -- in reads, queries, samples,
+  a derive's sources and left-out cells, datasets, comparisons and checks -- and a key finds
+  its row on whichever sheet holds it. The table's range is each sheet's, joined by `,`.
+- **Rows**: `header_row` (1 by default; 0 for none), `first_row`, `last_row`. Without
+  `last_row` the data ends at the first blank row, as a detected region's does; anything
+  further down within the columns is flagged `rows_below`. `columns` (`"A:F"`) when the
+  header row's extent is not the table's.
+- **The key**: every row has one, and no two rows share one, across every sheet; otherwise
+  the declaration is refused, naming the cells (never the key).
+- **Fields** (by `header` or `column` letter): an `id` to address and show the column by
+  (its header still finds it), a `description` (shown by `describe` as `about`, by
+  `xlsx_profile` as `description`, with the header), and `hidden`: left out of everything a
+  model sees -- describe, read, query, derive, profile, compare, validate, a deck's `from`,
+  `find_text`, a region detected or declared over it -- and refused as unknown when named.
+  A column Excel hides is a column like any other unless declared hidden.
+- **The sheet is not a column.** A value is a cell, and the sheet's name is no cell's, so
+  there is no `_sheet` to group by; every address names its sheet. For one sheet's
+  figures, declare its own table too (`"sheets": "Area North"`).
+- **Key-value tables** (`"type": "key_value"`): a field column, a value column and any
+  more; `t:run/<field>/value`, shown compactly by `describe` as its fields and values. A
+  two-column block without a header whose first row holds a date or a number (so no header
+  is detected) and whose first column is a different text on every row is detected as one:
+  `t:'Run facts'!A1/author/value`.
+
+A declaration that does not fit the workbook is refused before any table is kept
+(`DeclarationError`: `code`, `path` such as `tables[0].fields[2].header`,
+`valid_options`): an unknown sheet, a glob matching none (unless `optional`), a header that
+differs on one sheet, an unknown header, an id that would name two columns, a hidden key,
+a key two rows share. Nothing is guessed past.
+
 ## Query
 
 ```python
