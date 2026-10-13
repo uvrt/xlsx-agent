@@ -216,7 +216,7 @@ Every result is bounded by `Limits.max_result_chars` (24,000) and
 | `open_document` (shared) | `blob` | `d1`, the summary: sheets, tables, size, problems at open | the zip limits; `.xls`/`.xlsb` refused |
 | `describe` (shared) | `doc` | the catalogue: sheets (id, name, visible, hidden or very hidden, protected, used range); tables, names and detected regions with their key columns; per column: header, inferred type, fill rate, min/max/mean or distinct values when 12 or fewer, text length median and max, formula share, data-validation list, flags (mixed types, numbers as text, no cached value, cut at 32,767); up to two sample rows per table; workbook flags (recalculation, external links, macros) | about 3,000 tokens by default; a workbook too big for that lists every table and the first columns, and says which were left for `xlsx_profile` |
 | `xlsx_profile` | `doc`, `target` (table or column), `columns`, `cursor` | the full per-column profile for one table, every column | one table per call; 50 columns a page, within 24,000 characters; paged |
-| `xlsx_read` | `doc`, `target` (range, table, column, row, dataset), `formats`, `formulas`, `comments`, `hyperlinks`, `merges`, `key_column`, `limit`, `max_chars`, `cursor` | typed values by row, with addresses; optionally format codes, formula text, comments, links, merges; the array blocks over the rows always | default 50 rows, at most 500 or 24,000 characters; paged, a row too wide for a page split across pages |
+| `xlsx_read` | `doc` (not for a dataset), `target` (range, table, column, row, dataset), `formats`, `formulas`, `comments`, `hyperlinks`, `merges`, `sources` (a dataset's), `key_column`, `limit`, `max_chars`, `cursor` | typed values by row, with addresses; optionally format codes, formula text, comments, links, merges; the array blocks over the rows always | default 50 rows, at most 500 or 24,000 characters; paged, a row too wide for a page split across pages |
 | `xlsx_query` | `doc`, `table`, `columns`, `where` (`eq`, `in`, `gte`, `lte`, `contains`, `blank`, `not_blank`, combined with and), `sort`, `limit`, `cursor` | matching rows with their addresses, and the count of all matches | as `xlsx_read`; a filter on a column of the wrong type is refused naming the column's type |
 | `find_text` (shared) | `doc`, `text`, `regex`, `range` (a sheet, range or table), `cursor` | matches by address and kind: cell (text cells; numbers and dates are not searched, having no display string yet), table or region name, column header, comment, defined name; hidden ones marked; formula text not searched (the shared tool has no option for it) | 50 per page |
 | `xlsx_derive` | `doc`, `from` (table, region or dataset), `where`, `group_by`, `measures` (`count`, `sum`, `mean`, `median`, `min`, `max`, `share`, `distinct`, each with `column` and `as`), `bins` (edges for a number or date column), `pivot` (a column whose values become columns), `sort`, `top`, `round`, `id` | `d:<id>`: columns, rows, the rounding applied, and for every value its sources (see *Provenance*); the rows left out and why, counted by reason | at most 1,000 result rows and 50 shown; a measure on a column whose type does not allow it is refused before anything is computed |
@@ -285,7 +285,11 @@ ds = wb.derive(from_="t:Products", where={"Status": {"in": ["Active"]}},
                sort=[("average", "desc")], round=2, id="by_category")
 ds.rows                              # [{"Category": "Hardware", "average": 41.25, "items": 12}, ...]
 ds.sources["Hardware"]["average"]    # [Area("Stock!F3:F14")] minus ds.excluded
-ds.excluded                          # {"numbers_as_text": ["Stock!F9"], "blank": [...]}
+ds.excluded                          # {"average": {"number_as_text": Count(1, ("Stock!F9",)), ...}}
+ds.dataset()                         # ooxml_edit.tools.Dataset: rows as reported, sources as text
+DatasetTable(ds).read("d:by_category/Hardware/average")   # [[DatasetValue(...)]], by address
+wb.derive(from_=ds, measures=[{"fn": "max", "column": "average"}])   # from a dataset (R11):
+                                     # its sources are the original cells, not the dataset's
 
 Workbook.compare(old, new, table="t:Products", key="SKU")   # Diff
 wb.validate_data(schema)             # [Problem(address, code)], never cell text
@@ -319,7 +323,7 @@ with ooxml-edit's history.
    `ROUND`), applied to the reported value only; the unrounded value stays in the dataset.
 4. **Nothing is coerced silently.** Blanks, errors, numbers stored as text and
    no-cached-value formulas are left out of a measure and counted by reason; a caller may
-   opt in to `coerce: ["numbers_as_text"]`, and the result says it did.
+   opt in to `coerce: ["number_as_text"]`, and the result says it did.
 5. **Bounded results.** Every result has a row, item and character cap and a cursor; a
    catalogue has a token target. Totals are always given, even when rows are cut.
 6. **Untrusted input.** Zip size, part count and ratio limits (`check_package`) before
@@ -335,7 +339,7 @@ with ooxml-edit's history.
    slicers, sparklines (worksheet `extLst`), the VBA project, custom XML, printer settings.
    An edited worksheet keeps every element it does not understand. Undo of anything is the
    original bytes.
-9. **Facts, not verdicts.** Flags say what is there (`numbers_as_text: 14 cells`), not
+9. **Facts, not verdicts.** Flags say what is there (`number_as_text: 14 cells`), not
    whether it is acceptable.
 
 ---
@@ -381,7 +385,7 @@ descriptions and the optional `sheets` and `charts` subpackages.
 | | Change | Needed by |
 | --- | --- | --- |
 | **O1** (0.18.0) | The shared tools learn kind `xlsx`: `shared.KINDS`; `describe`'s and `find_text`'s descriptions say what a workbook returns and that `range` takes a sheet, range or table; `save_document`'s `format` enum gains `xlsx`, `xlsm`, `xltx`; `new_document`'s `kind` gains `xlsx`. The deck and Word cores are re-counted, since the shared definitions are sent to them too | R6 (describe, find_text); E1 and E9 (save, new) |
-| **O2** | A session-level **dataset store**: `Session.datasets`, `Call.define_dataset(id, dataset)` and `Call.dataset(address)`; `d:<id>` resolved by the dispatcher in a tool's declared fields (as `Tool.refs` declares ref fields), refused with the known ids as `valid_options`; a dataset records its source document and that document's `version`, outlives `close_document`, and is marked `stale` (never refreshed silently) once its source changes; `Limits.max_datasets` and `Limits.max_dataset_cells`. Format-neutral: a dataset is columns, rows and sources | R11 |
+| **O2** (0.20.0) | A session-level **dataset store**: `Session.datasets`, `Call.define_dataset(id, dataset)` and `Call.dataset(address)`; `d:<id>` resolved by the dispatcher in a tool's declared fields (as `Tool.refs` declares ref fields), refused with the known ids as `valid_options`; a dataset records its source document and that document's `version`, outlives `close_document`, and is marked `stale` (never refreshed silently) once its source changes; `Limits.max_datasets` and `Limits.max_dataset_cells`. Format-neutral: a dataset is columns, rows and sources | R11 |
 | **O3** | Consumers of datasets: `edit_chart`'s `add`, `set_values` and `add_series` take `from: "d:<id>"` with a column mapping, and the chart keeps the dataset's sources in its result; pptx-agent's `ppt_add_table`/`ppt_edit_table` and docx-agent's table path take the same. Changes in ooxml-edit, pptx-agent and docx-agent, each held to its own core budget | after 0.1 (it is what makes `d:` cross-format) |
 | **O4** | **Lift `charts/workbook.py`'s cell writer** into a public, optional `ooxml_edit.sheets` (moved with its history, `charts.workbook` a re-export), with what a whole workbook needs: a shared-string index built once, booleans, formulas, a style index, `r`-less rows; chart outputs byte-identical in both siblings' suites | E1 |
 | **O5** | A chart host for a workbook: in a `.xlsx` a chart's series point at the host's own sheets, not at an embedded workbook, so `ooxml_edit.charts` writes the host's cells through O4 | E9 |
@@ -413,6 +417,20 @@ Each item is one PR, small enough to review in a sitting, and leaves the suite g
 | R12 | **`xlsx_compare`** and `Workbook.compare` | S | added, removed, changed and duplicate-key cases on fixtures |
 | R13 | **`xlsx_validate_data`** and `wb.validate_data` | S | every problem code has a fixture; no cell text in any problem |
 | R14 | **Release 0.1.0.** The online budget count (`provider`-marked, with a key), the tools README (setup per provider, as the siblings'), `docs/api-tour.md`, golden transcripts of three read-and-derive tasks replayed to identical results, CHANGELOG | S | the online core count is under 6,000 and recorded here |
+
+*R11 as built* (ooxml-edit 0.20.0): `xlsx_derive` keeps `Derived.dataset()` (rows as
+reported, each value's sources as range text, `keys` the key columns, the `Derived` as
+`detail`) under `d:<id>`; a dataset's id is ooxml-edit's `DATASET_ID` (a letter or `_`,
+then letters, digits, `_ . -`, at most 64), which the address parser now enforces.
+`xlsx_derive`'s result shows its first rows (`Limits.max_list_items`, within
+`max_result_chars`), each value typed with its address by position (`d:by_region/#2/total`)
+and at most eight source ranges, the rest counted in `more`; `cut` and `next` (a target and
+cursor) continue in `xlsx_read`. `xlsx_read` takes `d:` targets without a `doc` (a dataset
+outlives its workbook) and `sources: true` (eight ranges a value; one value pages through
+all of them). Deriving from a dataset measures a `Derived`'s unrounded values, and each
+value's sources are the original cells, merged again. Until 0.2 a workbook has no history,
+so the session counts its changes upwards: a stale dataset stays stale (no undo yet); the
+tests make the change with a test-only changing tool.
 
 ### 0.2 — edit
 
