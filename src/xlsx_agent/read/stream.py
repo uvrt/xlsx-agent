@@ -478,6 +478,16 @@ class SheetReader:
             value.issue = "no_cached_value"
         return value
 
+    @staticmethod
+    def shared_index(node) -> int | None:
+        """The shared string a ``t="s"`` cell's ``v`` names, as :meth:`value` reads it
+        (``None`` for none or no number)."""
+        v_text = None
+        for child in node:
+            if child.tag in _V:
+                v_text = child.text or ""
+        return _int(v_text)
+
     def _shared_string(self, value: Value, v_text: str | None) -> None:
         index = _int(v_text)
         cached = self._string_cache.get(index) if index is not None else None

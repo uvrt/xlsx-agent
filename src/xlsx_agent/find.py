@@ -70,6 +70,10 @@ MATCH_SHOWN = 80
 #: Examples of what ``within`` takes, offered when it is something else.
 WITHIN_FORMS = ["Stock!", "Stock!A1:H40", "t:Products"]
 
+#: The cell types (ST_CellType) the reader may give as text: shared and inline strings and
+#: a formula's text (:meth:`~xlsx_agent.read.stream.SheetReader.value`).
+TEXT_KINDS = ("s", "inlineStr", "str")
+
 _ORDER = {"table": 0, "region": 0, "name": 1, "header": 2, "cell": 3, "comment": 4}
 _CELL_SHEETS = ("worksheet", "macrosheet")
 
@@ -248,7 +252,13 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
     extras.sort(key=lambda item: item[:4])
 
     reader = workbook._reader(sheet)
-    ordered = workbook.scan(sheet).ordered
+    scanned = workbook.scan(sheet)
+    ordered = scanned.ordered
+    # Within an area of an ordered sheet, the pass starts at the last checkpoint above it.
+    start = None
+    if area is not None and ordered and scanned.index is not None:
+        checkpoint = scanned.index.before(area.first.row)
+        start = (scanned.index, checkpoint) if checkpoint is not None else None
 
     def flush(upto: tuple[int, int, int] | None) -> Iterator[Found]:
         nonlocal next_extra
@@ -259,18 +269,35 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
             hidden = hidden_sheet or row in reader.hidden_rows or reader.column_hidden(column)
             yield from make(hidden)
 
+    # Whether each shared string holds a match, as it is first met: a cell whose string
+    # holds none is not read further.
+    strings = workbook.strings
+    holds: dict[int, bool] = {}
     next_extra = 0
-    for value in workbook._stream(sheet, reader.values):
-        if area is not None and not _inside(Cell(value.row, value.column), area):
-            if ordered and value.row > area.last.row:
+    for row, column, row_hidden, node in workbook._stream(sheet, lambda: reader._walk(start)):
+        if area is not None and not _inside(Cell(row, column), area):
+            if ordered and row > area.last.row:
                 break
             continue
-        if ordered:
-            yield from flush((value.row, value.column, _ORDER["cell"]))
+        if ordered and next_extra < len(extras):
+            yield from flush((row, column, _ORDER["cell"]))
+        kind = node.get("t")
+        if kind not in TEXT_KINDS:   # a cell of no other type is ever text
+            continue
+        if kind == "s":
+            index = reader.shared_index(node)
+            if index is not None and 0 <= index < len(strings):
+                found = holds.get(index)
+                if found is None:
+                    found = holds[index] = next(_occurrences(pattern, strings[index]),
+                                                None) is not None
+                if not found:
+                    continue
+        value = reader.value(row, column, row_hidden, node)
         if value.t != "text" or not isinstance(value.v, str):
             continue
-        if headers and any(_inside(Cell(value.row, value.column), h) for h in headers):
+        if headers and any(_inside(Cell(row, column), h) for h in headers):
             continue
-        for start, end in _occurrences(pattern, value.v):
-            yield Found("cell", value.a, value.v, start, end, hidden=value.hidden)
+        for begin, end in _occurrences(pattern, value.v):
+            yield Found("cell", value.a, value.v, begin, end, hidden=value.hidden)
     yield from flush(None)

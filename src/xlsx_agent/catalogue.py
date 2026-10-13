@@ -54,7 +54,7 @@ from typing import TYPE_CHECKING, Any
 from ooxml_edit.charts.workbook import Area, Cell
 
 from .address import RangeAddress, quote_sheet
-from .profile import ColumnStats
+from .profile import ColumnStats, profile
 from .read.regions import Region, RegionError, UnclearRegion
 from .read.types import Value
 
@@ -203,7 +203,15 @@ def _gather(workbook: "Workbook") -> _Gathered:
 
 
 def _found(workbook: "Workbook", region: Region) -> _Found:
-    stats = workbook.profile(region)
+    # The key columns, if they are wanted, are found in the profile's pass: every data row,
+    # every column.
+    finder = workbook.regions.key_finder(region) if region.key is None \
+        and region.data is not None \
+        and len(region.columns) == region.data.last.column - region.data.first.column + 1 \
+        else None
+    stats = profile(workbook, region, observe=finder.add if finder is not None else None)
+    if finder is not None:
+        workbook.regions.keep_keys(region, finder)
     if region.key is not None:
         keys = [region.key]
     elif any(_may_be_key(s) for s in stats):

@@ -580,7 +580,7 @@ class Regions:
         out: list[Region | UnclearRegion] = []
         written = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
         row_number = used.first.row
-        rows = self._rows(sheet, used, row_number)
+        rows = self._open_rows(sheet, used, row_number, taken)
         while True:
             row = next(rows, None)
             if row is None:
@@ -611,8 +611,34 @@ class Regions:
                 column = region.area.last.column
                 bottom = max(bottom, region.area.last.row)
             if bottom > row_number:
-                rows = self._rows(sheet, used, bottom + 1)
+                rows = self._open_rows(sheet, used, bottom + 1, taken)
         return out
+
+    def _open_rows(self, sheet: "Sheet", used: Area, top: int,
+                   taken: list[Area]) -> Iterator[list[Value]]:
+        """The rows from ``top`` that may start a block: those of the used range, less the
+        rows the areas in ``taken`` cover from its first column to its last (such a row
+        holds nothing outside them), skipped by starting a read after them -- when the
+        sheet's index makes a read start near its rows; else every row, in one pass.
+        ``taken`` is read as it is when each run of rows starts: an area added while a run
+        is read covers rows up to the one being read, or :meth:`find` starts again below
+        it."""
+        if self.workbook.scan(sheet).index is None:
+            yield from self._rows(sheet, used, top)
+            return
+        row, last = top, used.last.row
+        while row <= last:
+            edges = sorted({e for a in taken for e in (a.first.row, a.last.row + 1)})
+            while row <= last and _covered(row, used, taken):
+                row = next((e for e in edges if e > row), last + 1)
+            if row > last:
+                return
+            end = row
+            while end <= last and not _covered(end, used, taken):
+                end = next((e for e in edges if e > end), last + 1)
+            yield from self.workbook.read(RangeAddress(SheetRef(name=sheet.name), Area(
+                Cell(row, used.first.column), Cell(min(end, last + 1) - 1, used.last.column))))
+            row = end
 
     def _rows(self, sheet: "Sheet", used: Area, top: int) -> Iterator[list[Value]]:
         if top > used.last.row:
@@ -691,26 +717,27 @@ class Regions:
         """The columns of ``region`` that can be its key: every data cell holds text or a
         whole number, and no two hold the same key (as :meth:`resolve` matches keys).  A
         region with no data rows has none."""
-        cache = (region.kind, region.sheet, region.area, region.columns)
+        cache = _key_cache(region)
         if cache in self._keys:
             return list(self._keys[cache])
+        finder = KeyFinder(region)
         data = region.data
-        out: list[str] = []
         if data is not None:
-            width = data.last.column - data.first.column + 1
-            seen: list[set[str] | None] = [set() for _ in range(width)]
             for row in self.workbook.read(RangeAddress(region.sheet_ref, data)):
-                for index, value in enumerate(row):
-                    keys = seen[index]
-                    if keys is None:
-                        continue
-                    text = key_text(value)
-                    if text is None or text in keys:
-                        seen[index] = None
-                    else:
-                        keys.add(text)
-            out = [region.columns[i] for i, keys in enumerate(seen) if keys is not None]
-        self._keys[cache] = out
+                finder.add(row)
+        return self.keep_keys(region, finder)
+
+    def key_finder(self, region: Region) -> "KeyFinder | None":
+        """A :class:`KeyFinder` for ``region`` to be given its data rows by a pass that
+        reads them anyway (the catalogue's profile), then :meth:`keep_keys`; ``None`` when
+        :meth:`key_columns` knows them already."""
+        return None if _key_cache(region) in self._keys else KeyFinder(region)
+
+    def keep_keys(self, region: Region, finder: "KeyFinder") -> list[str]:
+        """What ``finder`` found, given every data row of ``region``: kept as
+        :meth:`key_columns`' answer."""
+        out = finder.keys()
+        self._keys[_key_cache(region)] = out
         return list(out)
 
     def _find_key(self, region: Region, wanted: str, key: str | None) -> int:
@@ -732,6 +759,37 @@ class Regions:
                               f"key in column {column!r}; name the row by its position",
                               address=whole.text, valid_options=options)
         return found[0]
+
+
+class KeyFinder:
+    """The columns of a region that can be its key (:meth:`Regions.key_columns`), from its
+    data rows, each given whole and in order to :meth:`add`: a column is dropped at its
+    first cell that is not a key, or a key met before."""
+
+    def __init__(self, region: Region) -> None:
+        self.columns = region.columns
+        data = region.data
+        width = 0 if data is None else data.last.column - data.first.column + 1
+        self._seen: list[set[str] | None] = [set() for _ in range(width)]
+
+    def add(self, row: Sequence[Value]) -> None:
+        seen = self._seen
+        for index, value in enumerate(row):
+            keys = seen[index]
+            if keys is None:
+                continue
+            text = key_text(value)
+            if text is None or text in keys:
+                seen[index] = None
+            else:
+                keys.add(text)
+
+    def keys(self) -> list[str]:
+        return [self.columns[i] for i, keys in enumerate(self._seen) if keys is not None]
+
+
+def _key_cache(region: Region) -> tuple:
+    return (region.kind, region.sheet, region.area, region.columns)
 
 
 def key_text(value: Value) -> str | None:
@@ -771,6 +829,18 @@ def _second_header(data: list[list[Value]]) -> bool:
         if later and "text" not in later:
             return True
     return False
+
+
+def _covered(row: int, used: Area, taken: list[Area]) -> bool:
+    """Whether the areas in ``taken`` cover ``row`` from the used range's first column to
+    its last."""
+    reach = used.first.column
+    for first, last in sorted((a.first.column, a.last.column) for a in taken
+                              if a.first.row <= row <= a.last.row):
+        if first > reach:
+            return False
+        reach = max(reach, last + 1)
+    return reach > used.last.column
 
 
 def _overlaps(one: Area, two: Area) -> bool:

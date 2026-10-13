@@ -35,6 +35,7 @@ from ooxml_edit.tools import Result, ToolError, shared
 
 from ..find import KINDS
 from .docformat import KIND, handler
+from .query import KEPT
 from .read import _MARGIN, _cursor, _forms, _parse_cursor, _size
 
 #: The session tools a workbook uses so far; ``undo`` and ``batch`` wait for edits (E1).
@@ -86,14 +87,26 @@ def find_text(call: Any, doc: str, text: str, regex: bool = False, slides: list 
     used = 0
     stop: int | None = None
     total = 0
+    # The count of every match, kept from an earlier page of this search while the
+    # declared regions (whose names are searched) are the same: the pass stops at the page.
+    declared = tuple(workbook.regions.declared)
+    counted = workbook._finds.get(key)
+    if counted is not None and counted[0] != declared:
+        counted = None
+    if counted is not None and start and start >= counted[1]:
+        raise ToolError("invalid_arguments", "cursor is past the end of the matches",
+                        field="cursor")
     for found in workbook.find_text(pattern, within=range):
         index = total
         total += 1
-        kinds[found.kind] += 1
+        if counted is None:
+            kinds[found.kind] += 1
         if index < start or stop is not None:
             continue
         if len(matches) == limit:
             stop = index
+            if counted is not None:
+                break
             continue
         item = found.as_dict()
         sheet = _sheet_of(workbook, found)
@@ -101,11 +114,22 @@ def find_text(call: Any, doc: str, text: str, regex: bool = False, slides: list 
         size = _size(item) + 1 + (_size(_forms(workbook, sheet)) + 1 if new_sheet else 0)
         if used + size > budget and matches:
             stop = index
+            if counted is not None:
+                break
             continue
         if new_sheet:
             sheets[sheet.name] = _forms(workbook, sheet)
         matches.append(item)
         used += size
+        if counted is not None and total == counted[1]:
+            break   # the last match: nothing further to look for
+    if counted is None:
+        workbook._finds[key] = (declared, total, dict(kinds))
+        while len(workbook._finds) > KEPT:
+            workbook._finds.popitem(last=False)
+    else:
+        workbook._finds.move_to_end(key)
+        total, kinds = counted[1], dict(counted[2])
     if start and start >= total:
         raise ToolError("invalid_arguments", "cursor is past the end of the matches",
                         field="cursor")

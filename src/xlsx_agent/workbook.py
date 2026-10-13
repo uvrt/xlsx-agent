@@ -157,6 +157,9 @@ class Workbook:
         self._catalogue: tuple | None = None   # what the catalogue is made from, gathered
         #: ``xlsx_query``'s last few matches, by query: its next page needs them again.
         self._queries: OrderedDict = OrderedDict()
+        #: ``find_text``'s last few counts (total and kinds), by search: its next page
+        #: stops once it is full.
+        self._finds: OrderedDict = OrderedDict()
         self.regions = Regions(self)
 
     # -- lifecycle -------------------------------------------------------------------------
@@ -222,6 +225,7 @@ class Workbook:
         self._scans.clear()
         self._catalogue = None
         self._queries.clear()
+        self._finds.clear()
         self.regions.forget_cells()
 
     def to_bytes(self) -> bytes:
