@@ -229,7 +229,7 @@ Every result is bounded by `Limits.max_result_chars` (24,000) and
 | `xlsx_query` | `doc`, `table`, `columns`, `where` (`eq`, `in`, `gte`, `lte`, `contains`, `words_gt`, `blank`, `not_blank`, combined with and), `sort`, `limit`, `cursor` | matching rows with their addresses, and the count of all matches | as `xlsx_read`; a filter on a column of the wrong type is refused naming the column's type |
 | `find_text` (shared) | `doc`, `text`, `regex`, `range` (a sheet, range or table), `cursor` | matches by address and kind: cell (text cells; numbers and dates are not searched, having no display string yet), table or region name, column header, comment, defined name; hidden ones marked; formula text not searched (the shared tool has no option for it) | 50 per page |
 | `xlsx_derive` | `doc`, `from` (table, region or dataset), `where`, `group_by`, `measures` (`count`, `sum`, `mean`, `median`, `min`, `max` (of dates, a date), `first`, `last` (row order, any column), `share`, `distinct`, each with `column` and `as`), `bins` (edges for a number or date column), `pivot` (a column whose values become columns), `sort`, `top`, `round`, `coerce` (`number_as_text`, `date_as_text`), `id` | `d:<id>`: columns, rows, the rounding applied, and for every value its sources (see *Provenance*); the rows left out and why, counted by reason | at most 1,000 result rows and 50 shown; a measure on a column whose type does not allow it is refused before anything is computed |
-| `xlsx_compare` | `a`, `b` (two open documents), `tables` (default every table and declared region; `table_b` when the one table's name differs in `b`), `key`, `columns`, `cursor` | sheets added, removed and renamed (by id); rows added and removed (by key); cells changed (address in each, old and new value, type: a number and the same number as text is a `type` change); columns added, removed and renamed; duplicate keys reported, not paired by guess | 50 differences per page, totals always |
+| `xlsx_compare` | `a`, `b` (two open documents), `tables` (default every table and declared region; `table_b` when the one table's name differs in `b`), `key`, `columns`, `cursor` | first, each table's summary: per column the cells changed, and for numbers and dates up, down and the largest move each way by key (X10); sheets added, removed and renamed (by id); rows added and removed (by key, `t:Products/SKU-6`); cells changed (address by key, `t:Products/SKU-2/Price`, and in each sheet, old and new value, type: a number and the same number as text is a `type` change); columns added, removed and renamed; duplicate keys reported, not paired by guess | 50 differences per page, totals always, the summary on the first page |
 | `xlsx_validate_data` | `doc`, `schema`: sheets and tables (or declared region specs) required; `key`; per column type, required, unique, enum (with `case`), the column's own drop-down list (`validation_list`), `min`/`max`, `step` (e.g. 1–5 in halves), pattern | problems by address and code (`missing_sheet`, `missing_table`, `missing_column`, `no_validation_list`, `no_cached_value`, `required_blank`, `wrong_type`, `out_of_range`, `off_step`, `not_in_enum`, `not_in_list`, `pattern_mismatch`, `duplicate_key`, `duplicate_value`), counted by code; never cell text | 50 problems per page, counts always |
 
 `xlsx_compare` and `xlsx_validate_data` are in the core if the budget holds; if the
@@ -692,6 +692,41 @@ i7-6567U, 2026-10-13); `^Lead:[^;]*;\s*` about a microsecond. Whether two charac
 classes share a character is decided on the code points up to U+3000 (and a few past
 it): two classes that share only a character past those would be taken as disjoint, and
 such a pattern could cost more than the square bound on text of that character.
+
+*X10 as built* (production feedback, 2026-10-13): **Comparisons by key, summarised per
+column.** Every cell changed is named by key as `b` names it, `t:Products/SKU-2/Price`
+(`CellChange.at`; the values keep each workbook's sheet address), and every row added or
+removed by key in its workbook, `t:Products/SKU-6` (`RowChange.at`). In `xlsx_compare`'s
+differences `at` takes the place of `table`, `key` and `column` (a row's `at` was its
+position, `t:Products/#5`; its cells have their sheet addresses); a key longer than
+`TEXT_SHOWN` keeps the old form, cut. `TableDiff.by_column()` gives a `ColumnSummary` per
+column with a cell changed, in `b`'s order: `changed` (every kind), and for numbers,
+percents, dates and times changed in value, `up`, `down`, `max_up` and `max_down` as the
+address by key and the move (`t:checks/A190/rating +2.5`; a number's exact in shortest
+decimals, 0.09 - 0.08 is `+0.01`; a date's in days, `+7d`; a date and time's in days to
+four places; a time's `+1:30`); the first met wins a tie; a type change, text, a boolean,
+an error and a list count as `changed` only (`CellChange.delta` is `None`). The tool puts
+it in each table's entry, first in the result, on the first page only: `columns` (at most
+`max_list_items`, `more_columns`), `added` and `removed` (ten keys each, `more_added`,
+`more_removed`); the tables' summaries take at most half the page, the rest counted in
+`cut.summaries`. A declared hidden column is no column of its table, so it is never
+compared, counted or named (tested). **No new parameter**: the first page is the summary
+plus the first 50 differences, and paging is the model's choice; a `summary_only` was not
+needed for the common case. **Result size** (offline estimator, a made-up 200-row checks
+table of six columns, keyed by code): 15 changes (7 ratings, 3 statuses, a due date, a
+note, 2 rows removed, 1 added), one page either way: 1,406 tokens on main, 1,380 here (the
+summary +125, the differences -151 by naming cells by key); every second rating changed
+(100 changes, two pages): first page 3,348 → 2,936, both pages 6,740 → 5,863; the summary
+alone, 120 tokens, answers "how many went up, down, and the largest". **Budget**: the
+description adds a sentence on the summary and drops "with addresses": `xlsx_compare` 329 →
+330 estimated, the loaded core 3,462 → 3,474 estimated, about 5,124 → 5,142 by the offline
+proxy (5,009 online before; about 5,027 expected, not counted online); every definition
+3,684 → 3,696 (guard 3,700). `strict_problems` is clean. **Goldens**: g2's comparison now
+gives the summary and names differences by key, so its replay differs from the recording;
+not re-recorded (recording calls a model): `tests/test_golden.py` converts the replay back
+to the recorded form (dropping the summary, reading `table`, `key`, `column` and the
+position back from `at` and the cells) and checks every recorded value, and a new test
+checks g2's summary. g1 and g3 are unchanged.
 
 ### 0.2 — edit
 

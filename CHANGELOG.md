@@ -5,6 +5,16 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **Comparisons by key, summarised per column** (X10): `xlsx_compare` names every cell
+  changed by key, `t:Products/SKU-2/Price` (in `at`, in place of `table`, `key` and
+  `column`; the values keep their sheet addresses), and every row added or removed by key,
+  `t:Products/SKU-6` (its `at` was its position). Each table's entry opens the result with
+  a summary on the first page: per column the cells changed, and for numbers, percents,
+  dates and times how many went up and down and the largest move each way by key
+  (`"max_up": "t:checks/A190/rating +2.5"`, a date's in days, `+7d`); text and lists count
+  as changed only; the rows added and removed by key (ten each, the rest counted). In
+  Python, `CellChange.at`, `CellChange.delta`, `RowChange.at`, `TableDiff.by_column()`
+  (`ColumnSummary`). No new parameter; the description grows by 12 estimated tokens.
 - **Cleaning text** (X6): a declared field takes `clean` -- `strip` (a leading label, a
   pattern matched at the start within the cell's first 256 characters), `collapse_space`
   and `split` (a literal separator: the value becomes a `list`, a new value type; a tuple
