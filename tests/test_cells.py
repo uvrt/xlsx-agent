@@ -551,6 +551,8 @@ def test_values_are_addressed_as_addresses_write_them():
     with pytest.raises(NameNotFound):
         wb.cell("Nowhere!A1")
     with pytest.raises(ValueError, match="later milestone"):
+        list(wb.read("d:by_category"))
+    with pytest.raises(NameNotFound):  # a t: address is resolved (R4): there is no such table
         list(wb.read("t:Products"))
     with pytest.raises(ValueError, match="one cell"):
         wb.cell("'Q3 sales'!A1:B2")
