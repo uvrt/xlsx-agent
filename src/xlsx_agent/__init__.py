@@ -10,7 +10,7 @@ parse and format (:mod:`xlsx_agent.address`), cells are read, typed and streamed
 (:mod:`xlsx_agent.read.regions`), their columns are profiled
 (:mod:`xlsx_agent.profile`), and the workbook is catalogued in one bounded result
 (:mod:`xlsx_agent.catalogue`), which the shared ``describe`` tool returns; a region's rows
-are queried (:mod:`xlsx_agent.query`); ``xlsx_read``, ``xlsx_profile`` and ``xlsx_query``
+are queried (:mod:`xlsx_agent.query`); text is found (:mod:`xlsx_agent.find`); ``xlsx_read``, ``xlsx_profile`` and ``xlsx_query``
 read cells, columns and rows, paged (:mod:`xlsx_agent.tools`)::
 
     from xlsx_agent import Workbook, parse_address
@@ -28,6 +28,7 @@ read cells, columns and rows, paged (:mod:`xlsx_agent.tools`)::
     wb.table("t:Products").query(["SKU"], where={"Price": {"gte": 5}}, sort=["SKU"])
     wb.catalogue()                             # sheets, regions, columns, samples, flags
     wb.comments("Stock"), wb.hyperlinks("Stock"), wb.arrays("Stock")   # over the cells
+    wb.find_text("Hardware", within="Stock!")  # matches by address and kind
 
 A ``.xls``, ``.xlsb`` or encrypted file is refused with an :class:`OpenError` whose
 ``code`` says why.  See ROADMAP.md for the plan and what each milestone adds.
@@ -36,6 +37,7 @@ A ``.xls``, ``.xlsb`` or encrypted file is refused with an :class:`OpenError` wh
 from .address import (FORMS, Address, AddressError, DatasetAddress, NameNotFound,
                       RangeAddress, RefAddress, SheetRef, TableAddress, format_address,
                       is_name, needs_quotes, parse_address, quote_sheet)
+from .find import Found
 from .package import REFUSALS, KindMismatchWarning, OpenError
 from .profile import AllowedList, Column, ColumnStats, Count, Distinct
 from .query import QueryError, QueryResult
@@ -47,7 +49,7 @@ __version__ = "0.0.1"
 
 __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "Column",
            "ColumnStats", "Comment", "Count", "DatasetAddress", "DefinedName", "Distinct",
-           "Hyperlink", "KindMismatchWarning", "Locale", "NameNotFound", "NumberFormat",
+           "Found", "Hyperlink", "KindMismatchWarning", "Locale", "NameNotFound", "NumberFormat",
            "OpenError", "Problem", "QueryError", "QueryResult", "RangeAddress", "RefAddress",
            "Region", "RegionError", "Selection", "Sheet", "SheetRef", "SheetScan",
            "TableAddress", "UnclearRegion", "Value", "Workbook", "__version__",

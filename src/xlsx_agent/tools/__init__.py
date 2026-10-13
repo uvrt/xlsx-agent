@@ -18,14 +18,16 @@ An application puts these in a :class:`ooxml_edit.tools.Toolbox` with the xlsx
         "doc": "d1", "table": "t:Products", "columns": ["SKU", "Price"],
         "where": [{"column": "Category", "op": "eq", "value": "Hardware"}],
         "sort": [{"column": "Price", "desc": True}]})
+    result = toolbox.dispatch(session, "find_text", {"doc": "d1", "text": "Hardware",
+                                                     "range": "Stock!"})
 
 The locale (how text that looks like a number or a date is read) is the application's
 setting, never the model's: ``format(locale=Locale(decimal=",", thousands="."))`` in place
 of :data:`FORMAT`.
 
-Everything is in memory: workbooks and inputs are bytes under handles.  So far (R8) the
+Everything is in memory: workbooks and inputs are bytes under handles.  So far (R9) the
 tools are the shared ``open_document``, ``close_document`` and ``read_blob``, the
-workbook's ``describe`` (:mod:`.shared`), ``xlsx_read`` and ``xlsx_profile``
+workbook's ``describe`` and ``find_text`` (:mod:`.shared`), ``xlsx_read`` and ``xlsx_profile``
 (:mod:`.read`), and ``xlsx_query`` (:mod:`.query`); the derive tools follow (ROADMAP.md,
 "Milestones").  The library's address and query errors become tool errors with their
 valid options (:mod:`.docformat`).
