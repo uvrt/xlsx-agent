@@ -19,9 +19,11 @@ the core (the read tools are loaded): 912 estimated, about 1,350 counted.  R8 ad
 1,654 estimated, about 2,448 counted.  R11 adds ``xlsx_derive`` (789 estimated) and
 ``xlsx_read``'s dataset side (``doc`` optional, ``sources``): 2,488 estimated, about 3,682
 counted.  R12 adds ``xlsx_compare`` (329 estimated, about 487 counted): 2,806 estimated,
-about 4,153 counted, so the check tools stay in the core (ROADMAP.md, "Tools").  Every
-definition (``close_document`` and ``read_blob`` deferred in ``shared_misc``, and the
-tool-search tool) is 3,028 estimated; the guard is 3,100, a regression guard and not a
+about 4,153 counted, so the check tools stay in the core (ROADMAP.md, "Tools").  R13 adds
+``xlsx_validate_data`` (630 estimated, about 932 counted): 3,425 estimated, about 5,069
+counted, still under 6,000, so it is loaded too and no ``xlsx_check`` group is needed.
+Every definition (``close_document`` and ``read_blob`` deferred in ``shared_misc``, and the
+tool-search tool) is 3,647 estimated; the guard is 3,700, a regression guard and not a
 budget, raised as the read tools arrive.
 """
 
@@ -41,7 +43,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6000
-ALL_GUARD = 3100
+ALL_GUARD = 3700
 
 
 @pytest.fixture(scope="module")
@@ -94,7 +96,8 @@ def test_the_groups_are_the_roadmaps():
         groups.setdefault(tool.group, set()).add(tool.name)
     # the read tools are the core; edits (0.2) will be deferred groups of their own
     assert groups == {"core": {"open_document", "describe", "find_text", "xlsx_read",
-                               "xlsx_profile", "xlsx_query", "xlsx_derive", "xlsx_compare"},
+                               "xlsx_profile", "xlsx_query", "xlsx_derive", "xlsx_compare",
+                               "xlsx_validate_data"},
                       "shared_misc": {"close_document", "read_blob"}}
 
 

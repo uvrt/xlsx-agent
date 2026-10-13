@@ -10,7 +10,9 @@ is ``invalid_arguments``; a sheet, column, key, table or ref that names nothing
 (:class:`~xlsx_agent.RegionError`) is ``refused``; a file refused at open
 (:class:`~xlsx_agent.OpenError`) is ``refused``; a query the library refuses
 (:class:`~xlsx_agent.QueryError`) is ``refused`` for a filter its column's type does not
-take (``wrong_type``, :data:`QUERY_CODES`) and ``invalid_arguments`` otherwise.  Each
+take (``wrong_type``, :data:`QUERY_CODES`) and ``invalid_arguments`` otherwise; a schema
+:meth:`~xlsx_agent.Workbook.validate_data` refuses (:class:`~xlsx_agent.schema.SchemaError`)
+is ``invalid_arguments`` on ``schema``, its path in ``details``.  Each
 carries the library's ``valid_options``.  The xlsx handlers go further (:func:`tool_error`, through
 :func:`handler`): a :class:`~xlsx_agent.RegionError` gets the tool error its own ``code``
 calls for (:data:`REGION_CODES`), and the library's code goes in the error's ``details``
@@ -33,6 +35,7 @@ from ..package import (BIFF_BOF, CFB_SIGNATURE, KindMismatchWarning, OpenError,
                        compound_file_refusal)
 from ..query import QueryError
 from ..read.regions import RegionError
+from ..schema import SchemaError
 from ..workbook import Workbook
 
 KIND = "xlsx"
@@ -52,7 +55,7 @@ cut says what a large workbook's catalogue left out, next which tool gives it.
 xlsx_query gives a region's rows that meet filters, sorted, with the count of all matches; \
 xlsx_derive computes figures (counts, sums, means, shares, groups, pivots) and keeps them as \
 a dataset, d:<id>, each value with its source cells; xlsx_compare compares two open \
-workbooks by row key.
+workbooks by row key; xlsx_validate_data checks one against a schema, problems by address.
 - Addresses: Stock!F2 a cell; Stock!A1:H40 a range; Stock! a whole sheet; 'Q3 sales'!B2 a \
 quoted sheet; #3!F2 the sheet whose id is 3 (it survives a rename). t:Products a table, defined name or \
 declared region; t:Stock!Prices a name local to a sheet; t:Stock!A1 a region detected at \
@@ -99,6 +102,7 @@ ERRORS: dict[type[BaseException], Any] = {
     RegionError: ("refused", _options),
     OpenError: "refused",
     QueryError: ("invalid_arguments", _options),
+    SchemaError: ("invalid_arguments", _options),
 }
 
 #: The tool error each :class:`~xlsx_agent.QueryError` code calls for.
@@ -134,6 +138,9 @@ def tool_error(error: BaseException) -> ToolError | None:
             details["column_type"] = error.column_type
         return ToolError(QUERY_CODES.get(error.code, "invalid_arguments"), error.message,
                          valid_options=_options(error), field=error.field, details=details)
+    if isinstance(error, SchemaError):
+        return ToolError("invalid_arguments", error.message, valid_options=_options(error),
+                         field="schema", details={"code": error.code, "path": error.path})
     if isinstance(error, NameNotFound):
         return ToolError("not_found", error.message, valid_options=_options(error),
                          details={"what": error.what})
@@ -152,7 +159,7 @@ def handler(fn: Callable[..., Any]) -> Callable[..., Any]:
     def run(call: Any, *args: Any, **kwargs: Any) -> Any:
         try:
             return fn(call, *args, **kwargs)
-        except (AddressError, NameNotFound, RegionError, QueryError) as error:
+        except (AddressError, NameNotFound, RegionError, QueryError, SchemaError) as error:
             raise tool_error(error) from None
 
     return run
