@@ -243,8 +243,10 @@ class DatasetTable:
         """What a ``d:`` address names here (see the module's notes):
         :class:`~xlsx_agent.address.NameNotFound` for an unknown column or key;
         :class:`~xlsx_agent.read.regions.RegionError` for a position past the end
-        (``position_out_of_range``), a key without one key column (``no_key_column``) or a
-        key two rows share (``duplicate_key``)."""
+        (``position_out_of_range``), a key without one key column (``no_key_column``), a
+        key two rows share (``duplicate_key``) or a key set (``no_key_set``).  ``*`` is
+        every row (``d:by_region/*/total``, the column) or every column
+        (``d:by_region/#2/*``, the row)."""
         if isinstance(address, str):
             parsed = parse_address(address)
             if not isinstance(parsed, DatasetAddress):
@@ -256,8 +258,13 @@ class DatasetTable:
             offsets = (self.column_index(address.column),)
         column = self.columns[offsets[0]] if address.column is not None else None
         whole = DatasetAddress(self.id)
+        if address.keys is not None:
+            raise RegionError("no_key_set", f"a dataset's rows are named one by one, by key "
+                              f"or by position ({whole.text}/#1); a key set is for tables",
+                              address=whole.text, valid_options=[f"{whole.text}/#1"])
+        any_ = {"any_row": address.any_row, "any_column": address.any_column}
         if address.key is None and address.position is None:
-            text = DatasetAddress(self.id, column=column).text
+            text = DatasetAddress(self.id, column=column, **any_).text
             return DatasetSelection(text, address.kind, 1, self.rows, offsets)
         if address.position is not None:
             position = address.position
@@ -266,7 +273,8 @@ class DatasetTable:
                                   "rows", address=whole.text)
         else:
             position = self._find_key(address.key)
-        text = DatasetAddress(self.id, column=column, position=position).text
+        text = DatasetAddress(self.id, column=column, position=position,
+                              any_column=address.any_column).text
         return DatasetSelection(text, address.kind, position, position, offsets)
 
     def _find_key(self, wanted: str) -> int:

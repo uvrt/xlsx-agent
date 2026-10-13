@@ -479,7 +479,7 @@ def _region(workbook: "Workbook | None", from_: Any) -> "Region | DatasetTable":
                               field="from")
         from_ = address if address is not None else from_
     if isinstance(from_, TableAddress):
-        if from_.column is not None or from_.key is not None or from_.position is not None:
+        if not from_.is_whole:
             raise DeriveError("bad_source", "from names a whole table, name or region, not a "
                               "column or row of one", field="from")
         if workbook is None:

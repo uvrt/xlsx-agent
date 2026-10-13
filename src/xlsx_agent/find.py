@@ -151,7 +151,10 @@ def _within(workbook: "Workbook", within) -> "tuple[Sheet, Area | None]":
     """The sheet and the cells ``within`` names (``None``: none of them)."""
     address = parse_address(within) if isinstance(within, str) else within
     if isinstance(address, TableAddress):
-        if address.column is None and address.key is None and address.position is None:
+        if address.keys is not None:
+            raise AddressError("find_text looks within a sheet, range or table; a key set "
+                               "is rows apart", text=str(within), valid_options=WITHIN_FORMS)
+        if address.is_whole:
             region = workbook.region(address)
             return workbook._cell_sheet(workbook.sheet_of(region.range)), region.area
         selection = workbook.resolve(address)

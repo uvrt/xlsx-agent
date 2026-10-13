@@ -144,8 +144,7 @@ def xlsx_compare(call: Any, a: str, b: str, tables: list[str] | None = None,
 
 def _whole(name: str, field: str) -> None:
     address = parse_address(name)
-    if not isinstance(address, TableAddress) or address.key is not None \
-            or address.position is not None or address.column is not None:
+    if not isinstance(address, TableAddress) or not address.is_whole:
         raise ToolError("invalid_arguments", "xlsx_compare takes tables or regions "
                         "(t:Products); name columns in columns", field=field)
 

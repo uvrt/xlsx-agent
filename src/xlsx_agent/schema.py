@@ -435,8 +435,7 @@ def _address(raw: Any, path: str) -> TableAddress:
         address = parse_address(raw) if isinstance(raw, str) else None
     except AddressError as error:
         raise _fail(path, f"is not an address ({error.message})") from None
-    if not isinstance(address, TableAddress) or address.column is not None \
-            or address.key is not None or address.position is not None:
+    if not isinstance(address, TableAddress) or not address.is_whole:
         raise _fail(path, "is a table or region address, as t:Products or t:Stock!A1",
                     ["t:Products"])
     return address

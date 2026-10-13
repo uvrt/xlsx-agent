@@ -38,6 +38,28 @@ with those columns as ``valid_options``.  A key is matched exactly (case counts)
 the cell's text, or a whole number's digits (``42`` matches 42 and 42.0).  A key two rows
 share is refused (``duplicate_key``) with the rows' positions (``t:Products/#3``) as
 ``valid_options``; never the first of them.
+
+**What a key is** (:func:`key_text`).  A text cell is its text, exactly: ``007`` is the
+text ``007`` and never the number 7, and text that looks like a date (``2026-01-05``) is
+that text.  A whole number is its digits, so the text ``7`` and the number 7 are one key
+(two rows holding them share it).  A blank cell, a fraction, a date, a time, a boolean and
+an error are no key: a date's text depends on its format and the locale, so a date is
+never matched by text.  A row whose key cell is no key cannot be named by key; a column
+with one is no key column unless the caller names it (and then that row has no key
+address: :meth:`Regions.expand` refuses it as ``no_key``).
+
+**Key index.**  A region's key column is read once into a :class:`KeyIndex` (each row's
+key by position, and which keys two rows share), kept until the locale changes: a row by
+key, a key set and :meth:`Regions.expand` look keys up there, never by reading the column
+again.
+
+**Selectors and key sets** (:mod:`xlsx_agent.address`).  ``t:Products/*/Price`` resolves
+as ``t:Products[Price]``, ``t:Products/*`` and ``t:Products/*/*`` as the table, and
+``t:Products/SKU-0042/*`` as the row, each keeping its own text.  A key set
+(``t:Products/{SKU-0042,SKU-0043}/Price``) resolves to its rows' positions, in the set's
+order (:attr:`Selection.positions`), each key looked up as a single key is: one unknown or
+shared refuses the whole set.  :meth:`Regions.expand` gives what any of these covers as
+one address by key per cell (or per row).
 """
 
 from __future__ import annotations
@@ -71,7 +93,8 @@ class RegionError(ValueError):
     ``not_a_range`` (a defined name that is a formula or a constant), ``ambiguous_name``,
     ``scoped_name`` (``t:Name`` for a name local to a sheet), ``header_unclear`` (with
     ``reason``, one of :data:`UNCLEAR_REASONS`), ``no_header`` (no header at the cell),
-    ``no_key_column``, ``duplicate_key``, ``position_out_of_range``, ``bad_table``,
+    ``no_key_column``, ``duplicate_key``, ``no_key`` (a row whose key cell is no key,
+    :meth:`Regions.expand`), ``position_out_of_range``, ``bad_table``,
     ``name_taken``, ``bad_name``, ``headers_required``, ``bad_headers``.  The message
     names sheets, tables, names and columns, never a key or a cell's value; ``address``
     is the address in question as text, ``valid_options`` what would work instead."""
@@ -225,11 +248,12 @@ class Region:
 @dataclass(frozen=True)
 class Selection:
     """What a ``t:`` address names, resolved: ``address`` its canonical form; ``kind``
-    ``"table"`` or ``"region"`` (the whole of it), ``"column"``, ``"row"`` or ``"value"``;
-    ``region`` the :class:`Region`; ``range`` the data cells selected (header and totals
-    rows excluded; ``None`` when the region has no data rows); ``row`` the data row's
-    position (from 1) for a row or a value; ``column`` the column's name as the region
-    spells it."""
+    ``"table"`` or ``"region"`` (the whole of it), ``"column"``, ``"row"`` or ``"value"``,
+    ``"rows"`` or ``"values"`` (a key set); ``region`` the :class:`Region`; ``range`` the
+    data cells selected (header and totals rows excluded; ``None`` when the region has no
+    data rows, and for a key set); ``row`` the data row's position (from 1) for a row or a
+    value; ``column`` the column's name as the region spells it; ``positions`` a key set's
+    rows, in its order (:attr:`areas` gives their cells)."""
 
     address: str
     kind: str
@@ -237,6 +261,23 @@ class Selection:
     range: RangeAddress | None
     row: int | None = None
     column: str | None = None
+    positions: tuple[int, ...] = ()
+
+    @property
+    def areas(self) -> list[RangeAddress]:
+        """The cells selected, one range per row of a key set (in the set's order), else
+        :attr:`range` alone (nothing when it is ``None``)."""
+        if not self.positions:
+            return [self.range] if self.range is not None else []
+        region, data = self.region, self.region.data
+        if self.column is not None:
+            left = right = region.area.first.column + region.column_index(self.column)
+        else:
+            left, right = data.first.column, data.last.column
+        return [RangeAddress(region.sheet_ref,
+                             Area(Cell(data.first.row + p - 1, left),
+                                  Cell(data.first.row + p - 1, right)))
+                for p in self.positions]
 
 
 @dataclass(frozen=True)
@@ -264,12 +305,15 @@ class Regions:
         self._declared: dict[str, Region] = {}
         self._detected: dict[tuple, Region] = {}
         self._keys: dict[tuple, list[str]] = {}
+        self._indexes: dict[tuple, KeyIndex] = {}
 
     def forget_cells(self) -> None:
-        """Forget what was found from the cells (detected regions, key columns): the
-        workbook's locale changed.  The tables, names and declared regions stay."""
+        """Forget what was found from the cells (detected regions, key columns, key
+        indexes): the workbook's locale changed.  The tables, names and declared regions
+        stay."""
         self._detected.clear()
         self._keys.clear()
+        self._indexes.clear()
 
     # -- what the workbook holds -----------------------------------------------------------
 
@@ -660,23 +704,30 @@ class Regions:
     def resolve(self, address: "str | TableAddress", *, key: str | None = None) -> Selection:
         address = _table_address(address)
         region = self.region(address)
-        kind = address.kind
         sheet = region.sheet_ref
         whole = region.address
-        if address.key is None and address.position is None:
+        any_ = {"any_row": address.any_row, "any_column": address.any_column}
+        if address.key is None and address.position is None and address.keys is None:
             if address.column is None:
                 data = region.data
-                return Selection(whole.text, kind, region,
+                text = replace(whole, **any_).text
+                return Selection(text, whole.kind, region,
                                  RangeAddress(sheet, data) if data is not None else None)
             name = region.columns[region.column_index(address.column)]
             area = region.column_area(name)
-            text = replace(whole, column=name).text
+            text = replace(whole, column=name, **any_).text
             return Selection(text, "column", region,
                              RangeAddress(sheet, area) if area is not None else None,
                              column=name)
         column = None
         if address.column is not None:
             column = region.columns[region.column_index(address.column)]
+        if address.keys is not None:
+            positions = tuple(self._find_key(region, k, key, k_th=n)
+                              for n, k in enumerate(address.keys, 1))
+            text = replace(whole, keys=address.keys, column=column, **any_).text
+            return Selection(text, "values" if column is not None else "rows", region, None,
+                             column=column, positions=positions)
         if address.position is not None:
             position = address.position
             if position > region.rows:
@@ -693,9 +744,74 @@ class Regions:
             area = Area(Cell(row, c), Cell(row, c))
         else:
             area = Area(Cell(row, data.first.column), Cell(row, data.last.column))
-        text = replace(whole, key=address.key, position=address.position, column=column).text
+        text = replace(whole, key=address.key, position=address.position, column=column,
+                       **any_).text
         return Selection(text, "value" if column is not None else "row", region,
                          RangeAddress(sheet, area), row=position, column=column)
+
+    def expand(self, address: "str | TableAddress", *, key: str | None = None
+               ) -> list[TableAddress]:
+        """What a ``t:`` address covers, as one address by key for each cell, in the
+        table's row order (a key set's, in its order), then column by column:
+        ``t:Products/*/Price`` gives ``t:Products/SKU-0001/Price``, ... for every data row;
+        ``t:Products/*/*`` every value; ``t:Products/SKU-0042/*`` each value of one row; a
+        key set each of its values.  Without a column it gives rows (``t:Products`` and
+        ``t:Products/*``: ``t:Products/SKU-0001``, ...).  A column (``t:Products[Price]``),
+        a row by position and a value come back by key too.
+
+        The keys are the key column's (``key``, else the region's own, as for a row by
+        key): :class:`RegionError` ``no_key_column`` without one.  A row it covers whose
+        key cell is no key (blank, a date, a fraction...) is refused as ``no_key``, and a
+        key two rows share as ``duplicate_key``, each with the rows by position as
+        ``valid_options``: an address by key is never made for a row it would not name
+        alone."""
+        address = _table_address(address)
+        region = self.region(address)
+        index = self.key_index(region, key)
+        whole = region.address
+        if address.keys is not None:
+            positions = [index.find(k, n) for n, k in enumerate(address.keys, 1)]
+        elif address.key is not None:
+            positions = [index.find(address.key)]
+        elif address.position is not None:
+            positions = [self.resolve(replace(address, column=None, any_column=False)).row]
+        else:
+            positions = list(range(1, region.rows + 1))
+        blank = [p for p in positions if index.keys[p - 1] is None]
+        if blank:
+            options = [replace(whole, position=p).text for p in blank[:50]]
+            raise RegionError("no_key", f"{len(blank)} rows of {whole.text} have no key in "
+                              f"column {index.column!r} (blank, or not text or a whole "
+                              "number); name them by position", address=whole.text,
+                              valid_options=options)
+        shared = [p for p in positions if index.keys[p - 1] in index.duplicates]
+        if shared:
+            options = [replace(whole, position=p).text for p in shared[:50]]
+            raise RegionError("duplicate_key", f"{len(shared)} rows of {whole.text} share "
+                              f"a key in column {index.column!r}; name them by position",
+                              address=whole.text, valid_options=options)
+        if address.column is not None:
+            columns: list[str | None] = [region.columns[region.column_index(address.column)]]
+        elif address.any_column:
+            columns = list(region.columns)
+        else:
+            columns = [None]
+        return [replace(whole, key=index.keys[p - 1], column=c)
+                for p in positions for c in columns]
+
+    def key_index(self, region: Region, key: str | None = None) -> "KeyIndex":
+        """The :class:`KeyIndex` of ``region``'s key column (:meth:`key_column`), read once
+        and kept."""
+        column = self.key_column(region, key)
+        cache = (_key_cache(region), column)
+        if cache not in self._indexes:
+            keys: list[str | None] = []
+            area = region.column_area(column)
+            if area is not None:
+                for row in self.workbook.read(RangeAddress(region.sheet_ref, area)):
+                    keys.append(key_text(row[0]))
+            self._indexes[cache] = KeyIndex(region, column, keys)
+        return self._indexes[cache]
 
     def key_column(self, region: Region, key: str | None = None) -> str:
         """The key column of ``region``: ``key`` (a column name) when given, else the
@@ -740,25 +856,53 @@ class Regions:
         self._keys[_key_cache(region)] = out
         return list(out)
 
-    def _find_key(self, region: Region, wanted: str, key: str | None) -> int:
-        column = self.key_column(region, key)
-        area = region.column_area(column)
-        found: list[int] = []
-        if area is not None:
-            for position, row in enumerate(self.workbook.read(RangeAddress(region.sheet_ref,
-                                                                           area)), 1):
-                if key_text(row[0]) == wanted:
-                    found.append(position)
-        whole = region.address
-        if not found:
-            raise NameNotFound(f"no row of {whole.text} has that key in column {column!r}",
-                               what="key", name=wanted)
-        if len(found) > 1:
+    def _find_key(self, region: Region, wanted: str, key: str | None,
+                  k_th: int | None = None) -> int:
+        return self.key_index(region, key).find(wanted, k_th)
+
+
+class KeyIndex:
+    """A region's key column, read once: ``keys`` each data row's key by position (from
+    0: row 1 is ``keys[0]``; ``None`` for a cell that is no key, :func:`key_text`),
+    ``duplicates`` the keys two or more rows share, with their positions.  :meth:`find`
+    looks a key up as an address by key does."""
+
+    def __init__(self, region: Region, column: str, keys: list[str | None]) -> None:
+        self.region = region
+        self.column = column
+        self.keys = keys
+        self._first: dict[str, int] = {}
+        self.duplicates: dict[str, list[int]] = {}
+        for position, k in enumerate(keys, 1):
+            if k is None:
+                continue
+            first = self._first.setdefault(k, position)
+            if first != position:
+                self.duplicates.setdefault(k, [first]).append(position)
+
+    @property
+    def unique(self) -> bool:
+        """Every data row has a key, and no two share one: each row has an address by
+        key."""
+        return not self.duplicates and None not in self.keys
+
+    def find(self, wanted: str, k_th: int | None = None) -> int:
+        """The position of the row whose key is ``wanted``: :class:`NameNotFound` when no
+        row has it, :class:`RegionError` ``duplicate_key`` (with the rows by position) when
+        two do.  ``k_th``: the key's place in a key set, for the message (never the key
+        itself)."""
+        whole = self.region.address
+        which = "that key" if k_th is None else f"key {k_th} of the set"
+        if wanted in self.duplicates:
+            found = self.duplicates[wanted]
             options = [replace(whole, position=p).text for p in found[:50]]
-            raise RegionError("duplicate_key", f"{len(found)} rows of {whole.text} have that "
-                              f"key in column {column!r}; name the row by its position",
-                              address=whole.text, valid_options=options)
-        return found[0]
+            raise RegionError("duplicate_key", f"{len(found)} rows of {whole.text} have "
+                              f"{which} in column {self.column!r}; name the row by its "
+                              "position", address=whole.text, valid_options=options)
+        if wanted not in self._first:
+            raise NameNotFound(f"no row of {whole.text} has {which} in column "
+                               f"{self.column!r}", what="key", name=wanted)
+        return self._first[wanted]
 
 
 class KeyFinder:
@@ -793,8 +937,9 @@ def _key_cache(region: Region) -> tuple:
 
 
 def key_text(value: Value) -> str | None:
-    """A cell as a key: its text, or a whole number's digits (``42`` for 42 and 42.0);
-    ``None`` for anything else (a blank, a fraction, a date, a boolean, an error)."""
+    """A cell as a key: its text, exactly, or a whole number's digits (``42`` for 42 and
+    42.0); ``None`` for anything else (a blank, empty text, a fraction, a date, a time, a
+    boolean, an error).  See the module's notes."""
     if value.t == "text":
         return value.v if value.v else None
     if value.t == "number" and not isinstance(value.v, bool):
