@@ -750,7 +750,8 @@ def _check(workbook: "Workbook", region: Region, spec: _Table, index: int,
         positions = [first + c.offset - left for c in checks]
         key_positions = [first + o - left for o in key_offsets]
         keys: dict = {}
-        for row in workbook.read(RangeAddress(region.sheet_ref, area)):
+        reading = {first + o for o in offsets}
+        for row in workbook._read(RangeAddress(region.sheet_ref, area), columns=reading):
             for check, position in zip(checks, positions):
                 value = row[position]
                 check.run(value, lambda code, v, detail, check=check: out.add(

@@ -41,7 +41,7 @@ from ooxml_edit.charts.workbook import MAX_COLUMN, MAX_ROW, Area, Cell
 from ..xml import iterparse_xml
 from .strings import SharedStrings, item_text
 from .styles import DATE_KINDS, Styles
-from .types import (TEXT_LIMIT, Problem, Value, looks_like_date, looks_like_number,
+from .types import (TEXT_LIMIT, Problem, Value, _letters, looks_like_date, looks_like_number,
                     serial_text)
 
 NS_MAIN = ("http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -198,11 +198,15 @@ class RowIndex:
     the rows before.  Made by :func:`scan` from the marks its pass noted; ``None`` there
     for a part whose bytes it cannot match to the rows the parser met."""
 
-    def __init__(self, header: bytes, checkpoints: list[Checkpoint], hidden: list[int]) -> None:
+    def __init__(self, header: bytes, checkpoints: list[Checkpoint], hidden: list[int],
+                 shared_formulas: bool = False) -> None:
         self.header = header
         self.checkpoints = checkpoints
         #: The hidden rows in the order the pass met them.
         self.hidden = hidden
+        #: Whether the sheet has a shared formula group: a read through rows notes each
+        #: group's first cell for the cells after it, which a read started below misses.
+        self.shared_formulas = shared_formulas
         self._last_rows = [c.last_row for c in checkpoints]
 
     def before(self, row: int) -> Checkpoint | None:
@@ -235,7 +239,8 @@ class RowIndex:
             count += 1
         if count != reader.row_elements or len(checkpoints) != len(marks):
             return None
-        return cls(data[:found.end()], checkpoints, list(reader.hidden_order))
+        return cls(data[:found.end()], checkpoints, list(reader.hidden_order),
+                   bool(reader._shared))
 
 
 class _Resumed:
@@ -574,6 +579,19 @@ class SheetReader:
         value.v = text
         value.t = "time" if match.group(3) else "datetime" if match.group(2) else "date"
 
+    def note_shared(self, row: int, column: int, node) -> None:
+        """What typing a cell would note of its formula for the cells after it: the first
+        cell of a shared formula group (whose other cells name it)."""
+        f_node = None
+        for child in node:
+            if child.tag in _F:
+                f_node = child   # the last, as value() takes it
+        if f_node is not None and f_node.get("t") == "shared" and f_node.text:
+            group = f_node.get("si")
+            if group is not None:
+                self._shared[group] = (f"{self.sheet}!{_letters(column)}{row}",
+                                       is_volatile(f_node.text))
+
     def _formula(self, value: Value, f_node) -> None:
         value.formula = True
         text = f_node.text
@@ -642,18 +660,24 @@ def scan(reader: SheetReader) -> SheetScan:
 
 
 def read_area(reader: SheetReader, area: Area, ordered: bool,
-              index: RowIndex | None = None) -> Iterator[list[Value]]:
+              index: RowIndex | None = None,
+              columns: "set[int] | None" = None) -> Iterator[list[Value]]:
     """The rows of ``area``, each a list of values from its first column to its last,
     blanks filled in.  With ``ordered`` (the sheet's rows and cells in order, as a scan
     found) the pass starts at ``index``'s last checkpoint before the area, if any, and
-    stops after the area's last row; otherwise the area's cells are gathered first."""
+    stops after the area's last row; otherwise the area's cells are gathered first.
+
+    ``columns`` (sheet columns), for a pass that looks at some of the area's columns only:
+    the cells of the others are not typed, and come as blanks.  The set is read as each
+    row is reached, so the pass may change it between rows."""
     top, left = area.first.row, area.first.column
     bottom, right = area.last.row, area.last.column
     width = right - left + 1
     pending: dict[int, dict[int, Value]] = {}
     if not ordered:
         for value in reader.values():
-            if top <= value.row <= bottom and left <= value.column <= right:
+            if top <= value.row <= bottom and left <= value.column <= right \
+                    and (columns is None or value.column in columns):
                 pending.setdefault(value.row, {})[value.column] = value
         for row in range(top, bottom + 1):
             yield _row(reader, row, left, width, pending.pop(row, None))
@@ -678,7 +702,10 @@ def read_area(reader: SheetReader, area: Area, ordered: bool,
                 next_row += 1
             current_row, current = row, {}
         if left <= column <= right:
-            current[column] = reader.value(row, column, row_hidden, node)
+            if columns is None or column in columns:
+                current[column] = reader.value(row, column, row_hidden, node)
+            else:
+                reader.note_shared(row, column, node)
     if current_row is not None:
         yield _row(reader, current_row, left, width, current)
         next_row = current_row + 1

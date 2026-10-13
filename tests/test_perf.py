@@ -7,12 +7,18 @@ the top.
 Every workbook is built with tests/build.py, the sheets it cannot write by hand.
 """
 
+import datetime as dt
+
 import pytest
 
-from build import NS_MAIN, NS_R, WorkbookBuilder, zip_parts
+from build import NS_MAIN, NS_R, Formula, WorkbookBuilder, zip_parts
+from ooxml_edit.tools import Toolbox
 
-from xlsx_agent import Workbook
+from xlsx_agent import Workbook, find, query, workbook
+from xlsx_agent.read import stream
+from xlsx_agent.read.regions import Regions
 from xlsx_agent.read.stream import CHECKPOINT_ROWS, RowIndex
+from xlsx_agent.tools import FORMAT, GROUPS, TOOLS
 
 
 def _with_sheet(body: str, *, before: str = "", after: str = "", prefix: str = "",
@@ -134,3 +140,186 @@ def test_an_index_holds_a_checkpoint_per_block_of_rows_not_the_rows():
     index = wb.scan("Data").index
     assert isinstance(index, RowIndex) and len(index.checkpoints) == 40
     assert len(index.header) < 1000
+
+
+# -- every tool, the fast way and the long way round -------------------------------------------
+
+ROWS = CHECKPOINT_ROWS * 20 + 11
+CATEGORIES = ["Hardware", "Tools", "Garden", "Paint"]
+
+
+def shop_floor(*, shared: bool, changed: bool = False) -> bytes:
+    """A table of :data:`ROWS` rows over several checkpoints (codes and categories as
+    shared strings, amounts, dates, formulas, one with text), hidden rows and a hidden
+    column, a block below it and a table below that; ``shared``: two columns are one
+    shared formula group whose first cell is at the top (so rows far apart are read in
+    one pass), and a block stands to the table's right part-way down (so no row of it is
+    covered across the sheet); ``changed``: some amounts and a code differ."""
+    book = WorkbookBuilder()
+    sheet = book.sheet("Data")
+    columns = ["Code", "Category", "Amount", "Day", "Twice", "Again", "Label"]
+    for r in range(2, ROWS + 2):
+        i = r - 2
+        amount = round(i * 0.37 % 1000, 2) + (1 if changed and i % 211 == 0 else 0)
+        if not shared:
+            twice = again = Formula(f"C{r}*2", cached=amount * 2)
+        elif r == 2:
+            twice = Formula("C2*2", cached=amount * 2, kind="shared", ref=f"E2:F{ROWS + 1}",
+                            si=0)
+            again = Formula("", cached=amount * 2, kind="shared", si=0)
+        else:
+            twice = again = Formula("", cached=amount * 2, kind="shared", si=0)
+        code = f"SKU-{i:06d}" if not (changed and i == 77) else "SKU-NEW"
+        sheet.rows(f"A{r}", [[code, CATEGORIES[i % 4], amount, 45000 + i % 900, twice, again,
+                              Formula(f'"L"&A{r}', cached=f"L{code}")]])
+        if i % 37 == 5:
+            sheet.hide_row(r)
+    sheet.hide_column("C")
+    sheet.table("Big", f"A1:G{ROWS + 1}", columns)
+    if shared:
+        sheet.rows("J900", [["Note", "Qty"], ["Hardware here", 1], ["more", 2]])
+    sheet.rows(f"A{ROWS + 5}", [["Item", "Price"], ["I-1", 1.5], ["Hardware", 2.5]])
+    sheet.rows(f"A{ROWS + 11}", [[f"T-{k}", k, "Garden"] for k in range(10)])
+    sheet.table("Tail", f"A{ROWS + 10}:C{ROWS + 20}", ["Tag", "N", "Kind"])
+    return book.to_bytes()
+
+
+def _calls(ident: str, other: str | None):
+    """The tool calls compared: ``(name, arguments)``, ``"next"`` for the page after the
+    last call's."""
+    late = f"Data!A{ROWS - 40}:G{ROWS + 6}"
+    out = [("describe", {}),
+           ("xlsx_read", {"target": "t:Big"}), "next", "next",
+           ("xlsx_read", {"target": late, "formulas": True, "merges": True}),
+           ("xlsx_read", {"target": "Data!E1500:F1510", "formulas": True}),
+           ("xlsx_read", {"target": "t:Big/SKU-002000", "key_column": "Code"}),
+           ("find_text", {"text": "SKU-0001"}), "next", "next", "next", "next",
+           ("find_text", {"text": "Hardware"}), "next",
+           ("find_text", {"text": "Garden", "range": f"Data!A1500:G{ROWS}"}), "next",
+           ("find_text", {"text": r"L?SKU-00(1|2)\d5", "regex": True}), "next",
+           ("xlsx_query", {"table": "t:Big", "where": [{"column": "Category", "op": "eq",
+                                                         "value": "Tools"}],
+                           "sort": [{"column": "Amount", "desc": True}]}), "next", "next",
+           ("xlsx_query", {"table": "t:Big", "columns": ["Code", "Twice", "Label"],
+                           "sort": [{"column": "Day"}]}), "next",
+           # Again's group's first cell is in Twice: read on the way, or not
+           ("xlsx_query", {"table": "t:Big", "columns": ["Again"], "sort": [{"column": "Day"}]}),
+           ("xlsx_query", {"table": "t:Big", "columns": ["Again"],
+                           "where": [{"column": "Category", "op": "eq", "value": "Tools"}]}),
+           ("xlsx_query", {"table": "t:Big", "columns": ["Twice"],
+                           "where": [{"column": "Amount", "op": "gte", "value": "900"}]}),
+           ("xlsx_profile", {"target": "t:Big", "columns": ["Day", "Label"]}),
+           ("xlsx_derive", {"from": "t:Big", "id": "g", "group_by": ["Category"],
+                            "measures": [{"fn": "sum", "column": "Amount", "as": "total"},
+                                         {"fn": "median", "column": "Twice", "as": "mid"}]}),
+           ("xlsx_validate_data", {"schema": {"tables": [{"table": "t:Big", "key": ["Code"],
+                                                          "columns": [
+               {"name": "Amount", "type": "number", "min": "1"},
+               {"name": "Label", "type": "text", "pattern": "LSKU-0.*"}]}]}})]
+    if other is not None:
+        out.append(("xlsx_compare", {"a": ident, "b": other, "tables": ["t:Big"],
+                                         "key": "Code"}))
+    return out
+
+
+class _Everything:
+    def __contains__(self, item) -> bool:
+        return True
+
+
+def _long_way_round(monkeypatch) -> None:
+    """Every shortcut off: no row index (so no read starts part-way, and find_regions and
+    query read every row), every cell typed, find_text typing every cell, the key columns
+    found in a pass of their own."""
+    monkeypatch.setattr(stream.RowIndex, "build", classmethod(lambda cls, data, reader: None))
+    read_area = stream.read_area
+    monkeypatch.setattr(workbook, "read_area", lambda reader, area, ordered, index=None,
+                        columns=None: read_area(reader, area, ordered, index, None))
+    monkeypatch.setattr(Regions, "key_finder", lambda self, region: None)
+    monkeypatch.setattr(find, "TEXT_KINDS", _Everything())
+    monkeypatch.setattr(stream.SheetReader, "shared_index", staticmethod(lambda node: None))
+
+
+def _run(data: bytes, other: bytes, *, slow: bool) -> list:
+    out = []
+    with Toolbox(TOOLS, formats=[FORMAT], groups=GROUPS, workers=0) as box:
+        session = box.session(clock=lambda: dt.datetime(2026, 10, 13, tzinfo=dt.timezone.utc))
+        for name, blob in (("a.xlsx", data), ("b.xlsx", other)):
+            box.dispatch(session, "open_document", {"blob": session.add_blob(blob, name=name)})
+        last = None
+        for call in _calls("d1", "d2"):
+            if call == "next":
+                if last is None or last[1].next_cursor is None:
+                    continue
+                name, arguments = last[0], {**last[2], "cursor": last[1].next_cursor}
+            else:
+                name, arguments = call
+            if "doc" not in arguments and name not in ("xlsx_compare",):
+                arguments = {"doc": "d1", **arguments}
+            if slow:  # nothing kept from an earlier page
+                session.entry("d1").document._finds.clear()
+            result = box.dispatch(session, name, arguments)
+            assert result.ok, (name, result.error)
+            out.append((name, arguments.get("cursor"), result.to_json()))
+            last = (name, result, arguments)
+    return out
+
+
+@pytest.mark.parametrize("shared", [False, True])
+def test_every_tool_gives_what_it_gave_the_long_way_round(monkeypatch, shared):
+    # a query's pages read their rows, but for one that keeps its few cells
+    monkeypatch.setattr(query, "KEEP_CELLS", 1000)
+    data, other = shop_floor(shared=shared), shop_floor(shared=shared, changed=True)
+    fast = _run(data, other, slow=False)
+    index = Workbook.open(data).scan("Data").index
+    assert index is not None and index.shared_formulas is shared
+    with monkeypatch.context() as patched:
+        _long_way_round(patched)
+        assert Workbook.open(data).scan("Data").index is None
+        slow = _run(data, other, slow=True)
+    assert len(fast) == len(slow) > 20
+    for one, two in zip(fast, slow):
+        assert one == two, one[:2]
+
+
+def _layout(kind: str) -> bytes:
+    """A sheet of tables and blocks laid out to test which rows find_regions may skip."""
+    book = WorkbookBuilder()
+    sheet = book.sheet("Data")
+    n = CHECKPOINT_ROWS * 4
+
+    def table(name: str, corner: str, width: int, rows: int) -> None:
+        top, left = int(corner[1:]), ord(corner[0]) - 64
+        names = [f"{name}{k}" for k in range(width)]
+        sheet.rows(corner, [names] + [[f"{name}-{r}-{k}" if k == 0 else r * k
+                                       for k in range(width)] for r in range(rows)])
+        sheet.table(name, f"{corner}:{chr(64 + left + width - 1)}{top + rows}", names)
+
+    if kind == "beside":       # a block in the last column, beside a table, part-way down
+        table("T", "A1", 4, n)
+        sheet.rows(f"E{n // 2}", [["Note"], ["x"], ["y"]])
+    elif kind == "between":    # blocks between and below tables that span the sheet
+        table("T", "A1", 4, n)
+        sheet.rows(f"A{n + 3}", [["Item", "Qty"], ["a", 1]])
+        table("U", f"A{n + 7}", 4, n)
+        sheet.rows(f"B{2 * n + 10}", [["Title"], ["Code", "Qty"], ["c", 2]])
+    elif kind == "side":       # two tables side by side, together the sheet's width
+        table("T", "A1", 2, n)
+        table("U", "C1", 2, n // 2)
+        sheet.rows(f"C{n // 2 + 4}", [["Late", "Qty"], ["d", 4]])
+    else:                      # a table narrower than the sheet, a block to its left
+        table("T", "C1", 2, n)
+        sheet.rows(f"A{n - 5}", [["Left"], ["e"]])
+    return book.to_bytes()
+
+
+@pytest.mark.parametrize("kind", ["beside", "between", "side", "left"])
+def test_find_regions_skips_only_rows_that_hold_nothing_outside_the_tables(monkeypatch, kind):
+    data = _layout(kind)
+    fast = Workbook.open(data)
+    assert fast.scan("Data").index is not None
+    found = fast.find_regions("Data")
+    with monkeypatch.context() as patched:
+        _long_way_round(patched)
+        assert Workbook.open(data).find_regions("Data") == found
+    assert found   # every layout has a block outside its tables

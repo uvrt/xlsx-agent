@@ -713,7 +713,9 @@ def _rows(workbook: "Workbook | None", region: "Region | DatasetTable", offsets:
     if area is None:
         return None
     left = area.first.column - region.area.first.column
-    return workbook.read(RangeAddress(region.sheet_ref, area)), left
+    first = region.area.first.column
+    return workbook._read(RangeAddress(region.sheet_ref, area),
+                          columns={first + o for o in offsets or [0]}), left
 
 
 def _type_pass(workbook: "Workbook | None", region: "Region | DatasetTable",

@@ -260,7 +260,8 @@ def profile(workbook: "Workbook", region: Region, columns: Sequence[str] | None 
         left, right = first + min(offsets), first + max(offsets)
         area = Area(Cell(data.first.row, left), Cell(data.last.row, right))
         positions = [first + offset - left for offset in offsets]
-        for row in workbook.read(RangeAddress(region.sheet_ref, area)):
+        reading = {first + o for o in offsets} if observe is None else None
+        for row in workbook._read(RangeAddress(region.sheet_ref, area), columns=reading):
             for tally, position in zip(tallies, positions):
                 tally.add(row[position])
             if observe is not None:

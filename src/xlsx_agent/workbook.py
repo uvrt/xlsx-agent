@@ -668,6 +668,12 @@ class Workbook:
         whether its rows are in order; a sheet whose rows are not has the range's cells
         gathered before the first row is given).  A dataset or ref address is not a range:
         ``ValueError``."""
+        return self._read(address, formats=formats)
+
+    def _read(self, address: "str | RangeAddress | TableAddress", *, formats: bool = False,
+              columns: "set[int] | None" = None) -> Iterator[list[Value]]:
+        """:meth:`read`, typing the cells of ``columns`` (sheet columns) only, for a pass
+        that looks at no other (:func:`~xlsx_agent.read.stream.read_area`)."""
         if isinstance(address, str):
             address = parse_address(address)
         if isinstance(address, TableAddress):
@@ -684,7 +690,16 @@ class Workbook:
         if area is None:
             return iter(())
         return self._stream(sheet, lambda: read_area(self._reader(sheet, formats=formats),
-                                                     area, found.ordered, found.index))
+                                                     area, found.ordered, found.index,
+                                                     columns))
+
+    def _rows_apart(self, address: RangeAddress) -> bool:
+        """Whether rows of the range's sheet far apart are read as well by a read for each
+        as by one through them all: its reads start near their rows (it has a
+        :class:`~xlsx_agent.read.stream.RowIndex`), and no cell read depends on one passed
+        on the way (it has no shared formula, whose group's first cell the others name)."""
+        index = self.scan(self._cell_sheet(self.sheet_of(address))).index
+        return index is not None and not index.shared_formulas
 
     def cell(self, address: "str | RangeAddress | TableAddress", *,
              formats: bool = False) -> Value:
