@@ -40,6 +40,10 @@ and where some words are (:mod:`xlsx_agent.find`)::
 
     wb.find_text("Hardware", within="Stock!")          # Found(kind='cell', address='Stock!B7', ...)
 
+and what changed between two versions of it (:mod:`xlsx_agent.compare`)::
+
+    Workbook.compare(old, new, tables=["t:Products"], key="SKU")   # Diff
+
 Transitional and strict packages (``purl.oclc.org`` namespaces) are read alike.
 """
 
@@ -50,7 +54,7 @@ import os
 import re
 from collections import OrderedDict
 from dataclasses import dataclass, field, replace
-from typing import Any, BinaryIO, Iterator
+from typing import Any, BinaryIO, Iterator, Mapping, Sequence
 
 from lxml import etree
 from ooxml_edit.charts.workbook import Area
@@ -62,6 +66,7 @@ from ooxml_edit.xml import Element
 from .address import (NameNotFound, RangeAddress, SheetRef, TableAddress, nearest,
                       parse_address, quote_sheet)
 from .catalogue import DEFAULT_TOKENS, catalogue
+from .compare import Diff, compare
 from .derive import Derived, derive
 from .find import Found, find_text
 from .package import OpenError, open_package, read_source, workbook_part
@@ -440,6 +445,21 @@ class Workbook:
         return derive(self, from_, where=where, group_by=group_by, measures=measures,
                       bins=bins, pivot=pivot, sort=sort, top=top, round=round,
                       coerce=coerce, id=id)
+
+    # -- comparing -------------------------------------------------------------------------
+
+    @staticmethod
+    def compare(a: "Workbook", b: "Workbook", *,
+                tables: "str | Sequence[str | tuple[str, str]] | None" = None,
+                key: "str | Mapping[str, str] | None" = None,
+                columns: "Sequence[str] | None" = None) -> Diff:
+        """``a`` (the older workbook) against ``b`` (the newer): sheets by id, tables and
+        regions by name (``tables``: some of them, or pairs; every table and declared region
+        when ``None``), rows by key (``key``: a column name, or one per table; else the
+        declared key, or the one key column both find), and cells by type and value, each
+        change with both cells typed.  A key two rows share is reported, never paired; see
+        :mod:`xlsx_agent.compare`."""
+        return compare(a, b, tables=tables, key=key, columns=columns)
 
     # -- finding text ----------------------------------------------------------------------
 

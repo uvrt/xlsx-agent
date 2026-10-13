@@ -12,9 +12,10 @@ parse and format (:mod:`xlsx_agent.address`), cells are read, typed and streamed
 (:mod:`xlsx_agent.catalogue`), which the shared ``describe`` tool returns; a region's rows
 are queried (:mod:`xlsx_agent.query`); text is found (:mod:`xlsx_agent.find`); figures
 are derived, each with its cells (:mod:`xlsx_agent.derive`), and kept as datasets that
-are read by address and derived from again (:mod:`xlsx_agent.dataset`); ``xlsx_read``,
-``xlsx_profile``, ``xlsx_query`` and ``xlsx_derive`` read cells, columns and rows, paged,
-and keep figures as ``d:<id>`` (:mod:`xlsx_agent.tools`)::
+are read by address and derived from again (:mod:`xlsx_agent.dataset`); two workbooks
+are compared by key (:mod:`xlsx_agent.compare`); ``xlsx_read``,
+``xlsx_profile``, ``xlsx_query``, ``xlsx_derive`` and ``xlsx_compare`` read cells, columns
+and rows, paged, keep figures as ``d:<id>`` and compare workbooks (:mod:`xlsx_agent.tools`)::
 
     from xlsx_agent import Workbook, parse_address
 
@@ -38,6 +39,7 @@ and keep figures as ``d:<id>`` (:mod:`xlsx_agent.tools`)::
     ds.dataset()                               # ooxml_edit.tools.Dataset: rows, sources
     DatasetTable(ds).read("d:by_category/Hardware/average")   # [[DatasetValue(...)]]
     wb.derive(ds, measures=[{"fn": "max", "column": "average"}])   # cells carried through
+    Workbook.compare(old, new, tables=["t:Products"], key="SKU")   # Diff, by key
 
 A ``.xls``, ``.xlsb`` or encrypted file is refused with an :class:`OpenError` whose
 ``code`` says why.  See ROADMAP.md for the plan and what each milestone adds.
@@ -46,6 +48,8 @@ A ``.xls``, ``.xlsb`` or encrypted file is refused with an :class:`OpenError` wh
 from .address import (FORMS, Address, AddressError, DatasetAddress, NameNotFound,
                       RangeAddress, RefAddress, SheetRef, TableAddress, format_address,
                       is_name, needs_quotes, parse_address, quote_sheet)
+from .compare import (CellChange, ColumnChange, Diff, DuplicateKey, RowChange,
+                      SheetChange, TableDiff)
 from .dataset import DatasetSelection, DatasetTable, DatasetValue, as_dataset
 from .derive import Derived, DeriveError, Provenance, Total
 from .find import Found
@@ -58,7 +62,8 @@ from .workbook import Sheet, Workbook
 
 __version__ = "0.0.1"
 
-__all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "Column",
+__all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellChange", "Column",
+           "ColumnChange", "Diff", "DuplicateKey", "RowChange", "SheetChange", "TableDiff",
            "ColumnStats", "Comment", "Count", "DatasetAddress", "DatasetSelection",
            "DatasetTable", "DatasetValue", "DefinedName", "DeriveError",
            "Derived", "Distinct",
