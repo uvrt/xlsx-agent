@@ -123,6 +123,7 @@ appear in results and diagnostics; cell content may not appear in diagnostics.
 | quoted sheet | `'Q3 sales'!B2:B9` | Excel's quoting: `'` around a name, `''` for a quote inside |
 | sheet by id | `#3!F2` | the sheet whose `sheetId` is 3: survives a rename. Every result gives both forms the first time it names a sheet |
 | table | `t:Products` | an Excel table, a defined name over a range, or a declared region |
+| sheet-scoped name | `t:Stock!Prices` | a defined name local to one sheet, written with its sheet as Excel writes it; `t:Prices` never reaches it |
 | detected region | `t:Stock!A1` | a region found by header detection, named by its header's first cell (a table name cannot contain `!`, so it never collides) |
 | column | `t:Products[Price]` | one column of a table, header row excluded |
 | value by key | `t:Products/SKU-0042/Price` | the row whose key column holds `SKU-0042`, column `Price`; a key containing `/` or `'` is quoted: `t:Products/'A/7'/Price` |
