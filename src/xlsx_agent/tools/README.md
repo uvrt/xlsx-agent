@@ -144,6 +144,16 @@ toolbox = Toolbox([*DECK_TOOLS, *BOOK_TOOLS], formats=[DECK, WORKBOOK],
                   groups=[*DECK_GROUPS, *BOOK_GROUPS])   # a shared tool merges its kinds
 ```
 
+**Comparing two versions.** `xlsx_compare` pairs rows by key and opens on a summary per
+table: for each column, the cells changed, and for numbers and dates how many went up and
+down and the largest move each way, named by key --
+`{"rating": {"changed": 4, "up": 2, "down": 2, "max_up": "t:checks/A3/rating +1.5", ...}}`
+-- and the rows added and removed by key. The differences that follow name each cell by
+key too (`"at": "t:checks/A3/rating"`, with its sheet address in each workbook), so an
+answer cites the same cell after rows are inserted or sorted. The summary is on the first
+page; the differences page as before. A column the application declared hidden is never
+compared or named.
+
 ### Workbook tables into slides and documents
 
 A deck or document tool that takes its rows from a source takes a workbook's table, or a

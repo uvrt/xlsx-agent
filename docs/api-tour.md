@@ -355,12 +355,30 @@ new = Workbook.open("inventory-reviewed.xlsx")
 diff = Workbook.compare(old, new, tables=["t:Stock"], key="SKU")
 # Diff(tables=(TableDiff(a='t:Stock', key='SKU', rows_a=8, rows_b=8, paired=7, unchanged=5,
 #      added=(RowChange(change='added', key='SKU-0009', row='t:Stock/#8', ...),),
-#      removed=(... 'SKU-0006' ...), changed=(CellChange('changed', 'SKU-0002', 'Price'),
+#      removed=(... 'SKU-0006' ...), changed=(CellChange('changed', 'SKU-0002', 'Price', ...),
 #      CellChange('type', 'SKU-0005', 'Qty'): 9 became the text '9')), ...)
 ```
 
 Sheets are matched by id (renamed, added, removed), tables by name, rows by key, cells by
 type then value. A key two rows share is reported as `duplicate_key`, never paired.
+
+Each change is named by key: a cell as `b` names it, a row in its workbook; the values keep
+each workbook's sheet address. Per column, `by_column()` counts the cells changed and, for
+numbers, percents, dates and times, which way they went and the largest move each way:
+
+```python
+table = diff.tables[0]
+table.changed[0].at, table.changed[0].delta     # ('t:Stock/SKU-0002/Price', Decimal('0.01'))
+table.added[0].at                               # 't:Stock/SKU-0009'
+[c.as_dict() for c in table.by_column()]
+# [{'changed': 1}, {'changed': 1, 'up': 1, 'max_up': 't:Stock/SKU-0002/Price +0.01'}]
+```
+
+`xlsx_compare` gives the same summary first, in each table's entry of its first page
+(`columns`, and `added` and `removed` by key), so a model can answer "what changed, and
+which way" without paging through the differences. A date moves in days (`+7d`), a time
+as `+1:30`; text, booleans and lists count as changed only. A declared hidden column is
+not a column of its table, so it is never compared or named.
 
 ## Validate
 

@@ -12,7 +12,8 @@ here, each with its source cells, and kept as datasets (`d:<id>`); two workbooks
 compared by key, and a workbook is checked against a declared schema. Since 0.1.0: the
 application's own tables declared from its configuration (a table over several sheets,
 column ids and descriptions, columns hidden from the model, key-value tables, text cleaned
-by the caller's rules), addresses by key, dates, tables as sources for decks and documents
+by the caller's rules), addresses by key, comparisons summarised per column, dates, tables
+as sources for decks and documents
 ([CHANGELOG.md](CHANGELOG.md)).
 Nothing is edited or saved yet: that is 0.2. Not released to PyPI; installed from source.
 

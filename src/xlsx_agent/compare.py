@@ -3,7 +3,10 @@ type and value (ROADMAP.md, "Tools": ``xlsx_compare``)::
 
     diff = Workbook.compare(old, new, tables=["t:Products"], key="SKU")
     diff.sheets          # [SheetChange(change='renamed', id=3, a='Stock', b='Stock 2026')]
-    diff.tables[0].changed   # [CellChange(change='changed', key='SKU-1', column='Price', ...)]
+    diff.tables[0].changed   # [CellChange(change='changed', key='SKU-1', column='Price', ...,
+                             #             at='t:Products/SKU-1/Price')]
+    diff.tables[0].by_column()   # (ColumnSummary(column='Price', changed=3, up=2, down=1,
+                                 #   max_up='t:Products/SKU-1/Price +0.5', ...),)
     diff.totals()        # {"sheets": 1, "rows_added": 2, "cells_changed": 3, ...}
 
 ``a`` is the older workbook, ``b`` the newer: what is *added* is in ``b`` only, what is
@@ -50,6 +53,15 @@ compared exactly (case counts); a date as its ISO text; a formula by its cached 
 formula without one is ``blank``, as the reader gives it, and equal to a blank cell).
 Each change carries both cells, typed, with their addresses.
 
+**By key and by column.**  Each cell changed is named by key as ``b`` names it,
+``t:Products/SKU-2/Price`` (``CellChange.at``), with its sheet address in each workbook
+on the values; each row added or removed by key in its workbook, ``t:Products/SKU-6``
+(``RowChange.at``).  :meth:`TableDiff.by_column` counts the cells changed per column and,
+for numbers, percents, dates and times, how many went up and down and the largest move
+each way, by key (:class:`ColumnSummary`): what a model reads before, or instead of, the
+changes one by one.  A column hidden from the model (:mod:`xlsx_agent.declare`) is not a
+column of its table, so it is never compared, counted or named.
+
 **Content** (ROADMAP.md, "Design rules", 7).  Keys and values are cell content: they are in
 the :class:`Diff`, a result, and never in a message; errors name tables, columns and
 codes only.
@@ -57,7 +69,9 @@ codes only.
 
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass, field, replace
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Iterator, Mapping, Sequence
 
 from ooxml_edit.charts.workbook import Area, Cell
@@ -117,25 +131,63 @@ class ColumnChange:
 class RowChange:
     """A row ``added`` (its key in ``b`` only) or ``removed`` (in ``a`` only): ``key``,
     ``row`` its address by position in its workbook (``t:Products/#7``), ``cells`` its
-    compared columns' cells, typed."""
+    compared columns' cells, typed; ``at`` its address by key in its workbook
+    (``t:Products/SKU-7``)."""
 
     change: str
     key: str
     row: str
     cells: tuple[Value, ...]
+    at: str = ""
 
 
 @dataclass(frozen=True)
 class CellChange:
     """A cell of a paired row that differs: ``change`` one of :data:`CELL_CHANGES`;
     ``key`` the row's; ``column`` the column's name in ``b``; ``a`` and ``b`` the cell in
-    each, typed with its address (``blank`` where it holds nothing)."""
+    each, typed with its address (``blank`` where it holds nothing); ``at`` the cell's
+    address by key in ``b`` (``t:Products/SKU-2/Price``)."""
 
     change: str
     key: str
     column: str
     a: Value
     b: Value
+    at: str = ""
+
+    @property
+    def delta(self) -> Decimal | None:
+        """How far the value moved, for a ``changed`` number, percent, date or time: ``b``
+        less ``a``, in its own unit for a number or percent (exact, as the shortest decimals
+        of the two: 0.09 - 0.08 is 0.01), days for a date or date and time, seconds for a
+        time; ``None`` for any other change."""
+        return _delta(self.a, self.b) if self.change == "changed" else None
+
+
+@dataclass(frozen=True)
+class ColumnSummary:
+    """One column's changed cells in a :class:`TableDiff`, counted (:meth:`TableDiff.by_column`):
+    ``changed`` every kind (:data:`CELL_CHANGES`); for numbers, percents, dates and times
+    changed in value, ``up`` and ``down``, and ``max_up`` and ``max_down`` the largest move
+    each way, as the cell's address by key and the move signed (``t:Checks/A3/Rating +1.5``,
+    a date's in days: ``+3d``, a date and time's in days to four places, a time's as
+    ``+1:30`` or ``-0:00:20``); the first met wins a tie.  Text, booleans, errors and lists
+    count as ``changed`` only."""
+
+    column: str
+    changed: int
+    up: int = 0
+    down: int = 0
+    max_up: str | None = None
+    max_down: str | None = None
+
+    def as_dict(self) -> dict:
+        out: dict[str, Any] = {"changed": self.changed}
+        for name in ("up", "down", "max_up", "max_down"):
+            value = getattr(self, name)
+            if value:
+                out[name] = value
+        return out
 
 
 @dataclass(frozen=True)
@@ -155,7 +207,7 @@ class TableDiff:
     renamed it), ``rows_a`` and ``rows_b`` its data rows, ``paired`` the rows matched by
     key and ``unchanged`` those of them with no cell changed; the changes, each in the
     order they are met (``changed`` and ``added`` in ``b``'s row order, ``removed`` in
-    ``a``'s)."""
+    ``a``'s); ``compared`` the columns whose cells were compared, as ``b`` names them."""
 
     a: str
     b: str
@@ -173,6 +225,17 @@ class TableDiff:
     added: tuple[RowChange, ...] = ()
     removed: tuple[RowChange, ...] = ()
     changed: tuple[CellChange, ...] = ()
+    compared: tuple[str, ...] = ()
+
+    def by_column(self) -> tuple[ColumnSummary, ...]:
+        """Each compared column with a cell changed (:class:`ColumnSummary`), in ``b``'s
+        column order: rows added and removed are not in it (they are by key in ``added``
+        and ``removed``)."""
+        changes: dict[str, list[CellChange]] = {}
+        for change in self.changed:
+            changes.setdefault(change.column, []).append(change)
+        order = [*self.compared, *[name for name in changes if name not in self.compared]]
+        return tuple(_summarise(name, changes[name]) for name in order if name in changes)
 
     def totals(self) -> dict[str, int]:
         """The changes counted by kind (zeros left out)."""
@@ -356,8 +419,8 @@ def _table(a: "Workbook", b: "Workbook", old: Region, new: Region, key: str | No
 
     rows_old = _rows(a, old, [key_offset, *compared])
     rows_new = _rows(b, new, [by_old[key_offset], *[by_old[i] for i in compared]])
-    keys_old, unkeyed_old = _by_key(rows_old, old)
-    keys_new, unkeyed_new = _by_key(rows_new, new)
+    keys_old, unkeyed_old = _keyed(rows_old, old)
+    keys_new, unkeyed_new = _keyed(rows_new, new)
 
     duplicates = []
     for text in dict.fromkeys([*keys_old, *keys_new]):
@@ -379,7 +442,7 @@ def _table(a: "Workbook", b: "Workbook", old: Region, new: Region, key: str | No
         if earlier is None:
             added.append(RowChange("added", text, _at(new, position),
                                    _values(new, position, [by_old[o] for o in offsets],
-                                           cells)))
+                                           cells), _by_key(new, text)))
             continue
         paired_rows += 1
         old_position, old_cells = earlier[0]
@@ -392,18 +455,19 @@ def _table(a: "Workbook", b: "Workbook", old: Region, new: Region, key: str | No
             changed.append(CellChange(
                 change, text, titles[index],
                 _value(old, old_position, i, one),
-                _value(new, position, by_old[i], two)))
+                _value(new, position, by_old[i], two),
+                _by_key(new, text, titles[index])))
         if len(changed) == before:
             unchanged += 1
     removed = [RowChange("removed", text, _at(old, found[0][0]),
-                         _values(old, found[0][0], offsets, found[0][1]))
+                         _values(old, found[0][0], offsets, found[0][1]), _by_key(old, text))
                for text, found in keys_old.items() if text not in shared and text not in keys_new]
     return TableDiff(a=old.address.text, b=new.address.text, range_a=old.where,
                      range_b=new.where, key=old.columns[key_offset], rows_a=old.rows,
                      rows_b=new.rows, paired=paired_rows, unchanged=unchanged,
                      columns=tuple(column_changes), duplicates=tuple(duplicates),
                      unkeyed_a=unkeyed_old, unkeyed_b=unkeyed_new, added=tuple(added),
-                     removed=tuple(removed), changed=tuple(changed))
+                     removed=tuple(removed), changed=tuple(changed), compared=tuple(titles))
 
 
 def _key_offset(a: "Workbook", b: "Workbook", old: Region, new: Region, key: str | None,
@@ -461,8 +525,8 @@ def _kept(value: Value) -> _Kept:
     return (value.v, value.t, value.issue, value.formula, value.hidden, value.origin)
 
 
-def _by_key(rows: Iterator[tuple[int, tuple[_Kept, ...]]], region: Region
-            ) -> tuple[dict[str, list], Count]:
+def _keyed(rows: Iterator[tuple[int, tuple[_Kept, ...]]], region: Region
+           ) -> tuple[dict[str, list], Count]:
     """The rows by key, each key's rows in order; the rows without a key, counted."""
     out: dict[str, list] = {}
     unkeyed = 0
@@ -498,6 +562,11 @@ def _at(region: Region, position: int) -> str:
     return replace(region.address, position=position).text
 
 
+def _by_key(region: Region, key: str, column: str | None = None) -> str:
+    """A row's address by key, or with ``column`` a cell's: ``t:Products/SKU-5/Price``."""
+    return replace(region.address, key=key, column=column).text
+
+
 def _value(region: Region, position: int, offset: int, kept: _Kept) -> Value:
     """A kept cell as the reader gives it, with its address."""
     v, t, issue, formula, hidden, origin = kept
@@ -515,3 +584,80 @@ def _values(region: Region, position: int, offsets: list[int],
 def _written(region: Region) -> str:
     """The region's sheet as an address writes it (``Stock``, ``'Q3 sales'``, ``#3``)."""
     return RangeAddress(region.sheet_ref, Area(Cell(1, 1), Cell(1, 1))).text.rpartition("!")[0]
+
+
+# -- the summary by column -----------------------------------------------------------------------
+
+#: The types whose values move up or down: a number's or percent's, a date's, a time's.
+MOVING = ("number", "percent", "date", "datetime", "time")
+
+
+def _delta(a: Value, b: Value) -> Decimal | None:
+    """``b`` less ``a``, when both are of one :data:`MOVING` type (see
+    :attr:`CellChange.delta`)."""
+    if a.t != b.t or a.t not in MOVING or a.v is None or b.v is None:
+        return None
+    try:
+        if a.t in ("number", "percent"):
+            if isinstance(a.v, bool) or isinstance(b.v, bool):
+                return None
+            return Decimal(repr(b.v)) - Decimal(repr(a.v))
+        if a.t == "date":
+            return Decimal((dt.date.fromisoformat(b.v) - dt.date.fromisoformat(a.v)).days)
+        if a.t == "datetime":
+            moved = dt.datetime.fromisoformat(b.v) - dt.datetime.fromisoformat(a.v)
+            return Decimal(moved.days) + Decimal(moved.seconds) / 86400 + \
+                Decimal(moved.microseconds) / 86_400_000_000
+        day = dt.date(2000, 1, 1)
+        moved = dt.datetime.combine(day, dt.time.fromisoformat(b.v)) - \
+            dt.datetime.combine(day, dt.time.fromisoformat(a.v))
+        return Decimal(moved.days * 86400 + moved.seconds) + \
+            Decimal(moved.microseconds) / 1_000_000
+    except (TypeError, ValueError, ArithmeticError):
+        return None
+
+
+def _plain(number: Decimal) -> str:
+    """A decimal written out in full, signed, without trailing zeros: ``+1.5``, ``-0.01``."""
+    text = format(number, "+f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
+
+
+def _signed(delta: Decimal, kind: str) -> str:
+    """A move as the summary writes it (:class:`ColumnSummary`)."""
+    if kind == "date":
+        return f"{_plain(delta)}d"
+    if kind == "datetime":
+        return f"{_plain(round(delta, 4))}d"
+    if kind == "time":
+        sign = "-" if delta < 0 else "+"
+        whole = int(abs(delta))
+        hours, rest = divmod(whole, 3600)
+        minutes, seconds = divmod(rest, 60)
+        return f"{sign}{hours}:{minutes:02d}" + (f":{seconds:02d}" if seconds else "")
+    return _plain(delta)
+
+
+def _summarise(column: str, changes: list[CellChange]) -> ColumnSummary:
+    up = down = 0
+    top: CellChange | None = None
+    bottom: CellChange | None = None
+    high = low = Decimal(0)
+    for change in changes:
+        delta = change.delta
+        if delta is None or not delta:
+            continue
+        if delta > 0:
+            up += 1
+            if delta > high:
+                high, top = delta, change
+        else:
+            down += 1
+            if delta < low:
+                low, bottom = delta, change
+    return ColumnSummary(
+        column, len(changes), up, down,
+        f"{top.at} {_signed(high, top.b.t)}" if top is not None else None,
+        f"{bottom.at} {_signed(low, bottom.b.t)}" if bottom is not None else None)
