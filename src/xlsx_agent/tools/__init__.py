@@ -21,9 +21,15 @@ An application puts these in a :class:`ooxml_edit.tools.Toolbox` with the xlsx
     result = toolbox.dispatch(session, "find_text", {"doc": "d1", "text": "Hardware",
                                                      "range": "Stock!"})
 
-The locale (how text that looks like a number or a date is read) is the application's
-setting, never the model's: ``format(locale=Locale(decimal=",", thousands="."))`` in place
-of :data:`FORMAT`.
+The locale (how text that looks like a number or a date is read, and the language of the
+language-dependent built-in number formats) is the application's setting, never the
+model's: the toolbox's or the session's, as for every format --
+``Toolbox(..., locale=Locale(decimal_separator=",", thousands_separator=".",
+date_order="dmy", language="nl-BE", list_separator=";"))`` with
+:class:`ooxml_common.locales.Locale`, or ``toolbox.session(locale=...)`` per user; en-US
+unless given.  The reader's own settings go on the format:
+``format(local_dates=True)`` in place of :data:`FORMAT` reads text dates in the locale's
+date order, as Excel does (:mod:`xlsx_agent.read.types`).
 
 Everything is in memory: workbooks and inputs are bytes under handles.  So far (R9) the
 tools are the shared ``open_document``, ``close_document`` and ``read_blob``, the
@@ -37,7 +43,6 @@ from __future__ import annotations
 
 from ooxml_edit.tools import CORE, DocumentFormat, shared as _shared
 
-from ..read.types import Locale
 from .docformat import (ERRORS, KIND, PROMPT, QUERY_CODES, REGION_CODES, STRICT_FIRST, FORMAT,
                         detect, tool_error, workbook_format)
 from .query import TOOLS as QUERY_TOOLS
@@ -52,10 +57,11 @@ TOOLS = [*SHARED_TOOLS, *READ_TOOLS, *QUERY_TOOLS]
 CORE_TOOLS = [t.name for t in TOOLS if t.group == CORE]
 
 
-def format(*, locale: Locale | None = None) -> DocumentFormat:  # noqa: A001 (ROADMAP's name)
-    """The xlsx format with the application's ``locale`` (ROADMAP.md, "Values and types":
-    ``xlsx_agent.tools.format(locale=...)``); :data:`FORMAT` is ``format()``."""
-    return workbook_format(locale=locale)
+def format(*, grouping: bool = True, local_dates: bool = False) -> DocumentFormat:  # noqa: A001
+    """The xlsx format with the application's reader settings (ROADMAP.md, "Values and
+    types"; :meth:`Workbook.open <xlsx_agent.Workbook.open>`); its workbooks are read in
+    the session's locale.  :data:`FORMAT` is ``format()``."""
+    return workbook_format(grouping=grouping, local_dates=local_dates)
 
 
 __all__ = ["CORE_TOOLS", "ERRORS", "FORMAT", "GROUPS", "KIND", "PROMPT", "QUERY_CODES",
