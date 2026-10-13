@@ -51,4 +51,5 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["slow: a long measurement, run with --run-slow"]
+markers = ["slow: a long measurement, run with --run-slow",
+           "provider: calls a model provider's API online; skipped without its API key"]
