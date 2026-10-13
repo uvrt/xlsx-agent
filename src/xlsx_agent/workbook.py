@@ -680,7 +680,7 @@ class Workbook:
         if area is None:
             return iter(())
         return self._stream(sheet, lambda: read_area(self._reader(sheet, formats=formats),
-                                                     area, found.ordered))
+                                                     area, found.ordered, found.index))
 
     def cell(self, address: "str | RangeAddress | TableAddress", *,
              formats: bool = False) -> Value:

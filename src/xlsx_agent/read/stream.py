@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import math
 import re
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
@@ -84,6 +84,12 @@ _QUOTED = re.compile(r'"[^"]*"|\'[^\']*\'')
 _COLUMNS: dict[str, int] = {}
 _MISSING = object()
 _CACHE_LIMIT = 1024
+
+#: A sheet's :class:`RowIndex` notes where every this many rows start.
+CHECKPOINT_ROWS = 128
+#: A ``row`` start tag and the ``sheetData`` start tag, as bytes, with any prefix.
+_ROW_TAG = re.compile(rb"<(?:[A-Za-z_][-\w.]*:)?row[\s/>]")
+_SHEET_DATA_TAG = re.compile(rb"<(?:[A-Za-z_][-\w.]*:)?sheetData(?:\s[^>]*)?>")
 
 
 def _column(letters: str) -> int:
@@ -155,6 +161,9 @@ class SheetScan:
     validations: list[Validation] = field(default_factory=list)
     arrays: list[Area] = field(default_factory=list)
     hyperlinks: list[Hyperlink] = field(default_factory=list)
+    #: Where the rows start, for a later read to start near them (an ordered sheet's;
+    #: ``None`` otherwise).
+    index: "RowIndex | None" = field(default=None, repr=False, compare=False)
 
     @property
     def problems(self) -> list[Problem]:
@@ -164,6 +173,92 @@ class SheetScan:
     def _count(self, code: str, value: Value) -> None:
         seen = self.issues.get(code)
         self.issues[code] = (1, value.a) if seen is None else (seen[0] + 1, seen[1])
+
+
+@dataclass(frozen=True)
+class Checkpoint:
+    """Where a row element starts in a sheet part (``offset``, in bytes) and what a pass
+    from the top knows there: the row number before it (``row``: a row without ``r`` is
+    the next), the last cell's row and column, and how many hidden rows it has met."""
+
+    offset: int
+    row: int
+    last_row: int
+    last_column: int
+    hidden: int
+
+
+class RowIndex:
+    """Where a sheet's rows start: a :class:`Checkpoint` every :data:`CHECKPOINT_ROWS`
+    rows, so that a read of later rows starts at the last checkpoint before them rather
+    than at the top (an ordered sheet only: its cells come in reading order, so none after
+    a checkpoint is above it).  The part is parsed from there as its ``header`` (every byte
+    up to and including the ``sheetData`` start tag: the namespaces, ``cols``,
+    ``dimension``) followed by the bytes from the checkpoint on: the same document without
+    the rows before.  Made by :func:`scan` from the marks its pass noted; ``None`` there
+    for a part whose bytes it cannot match to the rows the parser met."""
+
+    def __init__(self, header: bytes, checkpoints: list[Checkpoint], hidden: list[int]) -> None:
+        self.header = header
+        self.checkpoints = checkpoints
+        #: The hidden rows in the order the pass met them.
+        self.hidden = hidden
+        self._last_rows = [c.last_row for c in checkpoints]
+
+    def before(self, row: int) -> Checkpoint | None:
+        """The last checkpoint with every cell before it above ``row``; ``None`` when the
+        first is not (start at the top)."""
+        k = bisect_left(self._last_rows, row) - 1
+        return self.checkpoints[k] if k > 0 else None
+
+    @classmethod
+    def build(cls, data: bytes, reader: "SheetReader") -> "RowIndex | None":
+        """The index of a part from what a whole pass over it noted (``reader.marks``):
+        each checkpoint's row element found by its start tag in the bytes, the
+        ``n``-th tag being the ``n``-th row the parser met.  ``None`` when that cannot be
+        relied on: a comment, CDATA section, document type or processing instruction
+        (whose text may hold a tag), or as many tags as rows not found."""
+        marks = reader.marks
+        if not marks or len(marks) < 2 or b"<!" in data or data.count(b"<?") > 1 \
+                or data.find(b"<?") not in (-1, 0, 3):
+            return None
+        found = _SHEET_DATA_TAG.search(data)
+        if found is None:
+            return None
+        wanted = {mark[0]: mark for mark in marks}
+        checkpoints = []
+        count = 0
+        for match in _ROW_TAG.finditer(data, found.end()):
+            mark = wanted.get(count)
+            if mark is not None:
+                checkpoints.append(Checkpoint(match.start(), *mark[1:]))
+            count += 1
+        if count != reader.row_elements or len(checkpoints) != len(marks):
+            return None
+        return cls(data[:found.end()], checkpoints, list(reader.hidden_order))
+
+
+class _Resumed:
+    """A part's bytes as a binary file read from a checkpoint: ``header``, then ``data``
+    from ``offset`` on, read in pieces (the part is never copied whole)."""
+
+    def __init__(self, header: bytes, data: bytes, offset: int) -> None:
+        self._parts = [memoryview(header), memoryview(data)[offset:]]
+        self._part = self._at = 0
+
+    def read(self, size: int = -1) -> bytes:
+        out = []
+        left = size if size is not None and size >= 0 else None
+        while self._part < len(self._parts) and (left is None or left > 0):
+            part = self._parts[self._part]
+            end = len(part) if left is None else min(len(part), self._at + left)
+            out.append(part[self._at:end])
+            if left is not None:
+                left -= end - self._at
+            self._at = end
+            if end == len(part):
+                self._part, self._at = self._part + 1, 0
+        return b"".join(out)
 
 
 class SheetReader:
@@ -201,6 +296,13 @@ class SheetReader:
         self.hyperlinks: list[Hyperlink] = []
         self.dimension: str | None = None
         self.ordered = True
+        #: Set to a list by :func:`scan`: the pass then notes a checkpoint every
+        #: :data:`CHECKPOINT_ROWS` rows, and the hidden rows in the order met, from which
+        #: :class:`RowIndex` is made.
+        self.marks: list[tuple[int, int, int, int, int]] | None = None
+        self.hidden_order: list[int] = []
+        #: How many row elements the pass met.
+        self.row_elements = 0
         self._shared: dict[str, tuple[str, bool]] = {}
         self._format_cache: dict[str | None, object] = {}
         # Each shared string's text and what it looks like, once per pass (as many as the
@@ -217,10 +319,12 @@ class SheetReader:
         for row, column, row_hidden, node in self._walk():
             yield value(row, column, row_hidden, node)
 
-    def _walk(self):
+    def _walk(self, start: "tuple[RowIndex, Checkpoint] | None" = None):
         """``(row, column, row hidden, c element)`` for each cell.  The pass asks for the
         ``end`` of each row (and of ``col``, ``mergeCell``, ``dimension``), takes the row's
-        cells, then drops the row: one row is held at a time."""
+        cells, then drops the row: one row is held at a time.  ``start``: a sheet's
+        :class:`RowIndex` and one of its checkpoints, where the pass starts instead of the
+        top, as it would be there."""
         if not self.data:
             return
         row = 0
@@ -230,21 +334,39 @@ class SheetReader:
         match_ref = _REF.fullmatch
         columns = _COLUMNS
         cell_tags, row_tags = _C, _ROW
-        for _, node in iterparse_xml(self.data, tag=_STREAMED):
+        marks, hidden_order = self.marks, self.hidden_order
+        elements = 0
+        source = self.data
+        if start is not None:
+            index, checkpoint = start
+            source = _Resumed(index.header, self.data, checkpoint.offset)
+            row, last_row, last_column = checkpoint.row, checkpoint.last_row, checkpoint.last_column
+            hidden_rows.update(index.hidden[:checkpoint.hidden])
+        for _, node in iterparse_xml(source, tag=_STREAMED):
             tag = node.tag
             if tag in row_tags:
+                if marks is not None and elements % CHECKPOINT_ROWS == 0:
+                    marks.append((elements, row, last_row, last_column, len(hidden_order)))
+                elements += 1
+                self.row_elements = elements
                 number = _int(node.get("r"))
                 row = number if number is not None and 1 <= number <= MAX_ROW else row + 1
                 row_hidden = _true(node.get("hidden"))
-                if row_hidden:
+                if row_hidden and row not in hidden_rows:
                     hidden_rows.add(row)
+                    hidden_order.append(row)
                 column = 0
+                # A cell's ``r`` is nearly always its column's letters and this row's
+                # number: those are looked up, the rest matched.
+                digits = str(row)
+                cut = -len(digits)
                 for cell in node:
                     if cell.tag not in cell_tags:
                         continue
                     ref = cell.get("r")
-                    match = match_ref(ref) if ref else None
-                    if match is not None:
+                    if ref and ref.endswith(digits) and ref[:cut] in columns:
+                        column, cell_row, cell_hidden = columns[ref[:cut]], row, row_hidden
+                    elif (match := match_ref(ref) if ref else None) is not None:
                         letters = match.group(1)
                         column = columns.get(letters) or _column(letters)
                         cell_row = int(match.group(2))
@@ -392,18 +514,22 @@ class SheetReader:
         if not v_text:
             return
         text = v_text.strip()
-        try:
-            if not text.isascii():
-                raise ValueError
-            number = int(text) if _INTEGER.fullmatch(text) else float(text)
-        except ValueError:
-            value.issue = "bad_value"
-            return
-        if isinstance(number, float) and not math.isfinite(number):
-            value.issue = "bad_value"
-            return
+        if text.isdigit() and text.isascii():   # most numbers: a whole one, no sign
+            number = int(text)
+        else:
+            try:
+                if not text.isascii():
+                    raise ValueError
+                number = int(text) if _INTEGER.fullmatch(text) else float(text)
+            except ValueError:
+                value.issue = "bad_value"
+                return
+            if isinstance(number, float) and not math.isfinite(number):
+                value.issue = "bad_value"
+                return
         value.v, value.t = number, "number"
-        number_format = self._format(node.get("s"))
+        style = node.get("s")
+        number_format = self._format_cache.get(style) or self._format(style)
         kind = number_format.kind
         if kind == "general" or kind == "number" or kind == "text":
             return
@@ -466,6 +592,7 @@ def scan(reader: SheetReader) -> SheetScan:
     """One full pass over ``reader``'s sheet: the used range, merges, ordering and the
     issues met (see :class:`SheetScan`)."""
     result = SheetScan(reader.sheet)
+    reader.marks = []
     top = left = MAX_ROW + MAX_COLUMN
     bottom = right = 0
     for value in reader.values():
@@ -474,8 +601,15 @@ def scan(reader: SheetReader) -> SheetScan:
                 result._count(value.issue, value)
             continue
         result.cells += 1
-        top, bottom = min(top, value.row), max(bottom, value.row)
-        left, right = min(left, value.column), max(right, value.column)
+        row, column = value.row, value.column
+        if row < top:
+            top = row
+        if row > bottom:
+            bottom = row
+        if column < left:
+            left = column
+        if column > right:
+            right = column
         if value.issue is not None:
             result._count(value.issue, value)
         if value.at_limit:
@@ -491,14 +625,18 @@ def scan(reader: SheetReader) -> SheetScan:
     result.hyperlinks = list(reader.hyperlinks)
     result.hidden_rows = len(reader.hidden_rows)
     result.ordered = reader.ordered
+    if reader.ordered:
+        result.index = RowIndex.build(reader.data, reader)
+    reader.marks = None
     return result
 
 
-def read_area(reader: SheetReader, area: Area, ordered: bool) -> Iterator[list[Value]]:
+def read_area(reader: SheetReader, area: Area, ordered: bool,
+              index: RowIndex | None = None) -> Iterator[list[Value]]:
     """The rows of ``area``, each a list of values from its first column to its last,
     blanks filled in.  With ``ordered`` (the sheet's rows and cells in order, as a scan
-    found) the pass stops after the area's last row; otherwise the area's cells are
-    gathered first."""
+    found) the pass starts at ``index``'s last checkpoint before the area, if any, and
+    stops after the area's last row; otherwise the area's cells are gathered first."""
     top, left = area.first.row, area.first.column
     bottom, right = area.last.row, area.last.column
     width = right - left + 1
@@ -513,7 +651,9 @@ def read_area(reader: SheetReader, area: Area, ordered: bool) -> Iterator[list[V
     next_row = top
     current: dict[int, Value] | None = None
     current_row = None
-    for row, column, row_hidden, node in reader._walk():
+    checkpoint = index.before(top) if index is not None else None
+    start = (index, checkpoint) if checkpoint is not None else None
+    for row, column, row_hidden, node in reader._walk(start):
         if row < top:
             continue
         if row != current_row:
