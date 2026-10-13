@@ -9,7 +9,7 @@ table, name or region, computed here and each traceable to its cells (ROADMAP.md
                    sort=[("average", "desc")], round=2, id="by_category")
     ds.rows               # [{"Category": "Hardware", "average": 41.25, "items": 12}, ...]
     ds.unrounded          # the same rows before rounding
-    ds.sources["Hardware"]["average"]   # [RangeAddress(Stock!F3:F14), ...]: the cells used
+    ds.sources["Hardware"]["average"]   # [t:Products/{SKU-0003,SKU-0007,...}/Price]: by key
     ds.excluded           # {"average": {"blank": Count(2, ("Stock!F9", ...))}}
 
 The model never does arithmetic: every figure an agent reports comes from here or from a
@@ -114,9 +114,22 @@ It applies to number and percent values (a share is a fraction: ``round=2`` give
 
 **Provenance** (ROADMAP.md, "Design rules", 2).  Every value has its sources
 (:attr:`Derived.provenance`): the cells it was computed from, exactly -- the measure's
-cells in the group's rows that were used -- as compact ranges, a run of consecutive rows
-being one range (``Stock!F3:F14``); how many; and how many cells of the group's rows were
-left out, by reason.  A group's key value has the key column's cells of its rows; a
+cells in the group's rows that were used -- how many, and how many cells of the group's
+rows were left out, by reason.
+
+**Sources by key.**  When the table has a key column -- the one an address by key uses:
+declared (``key=``), or the one column that is unique, never blank, text or whole numbers
+(:meth:`~xlsx_agent.read.regions.Regions.key_column`) -- and every data row has a key no
+other row shares, a value's sources are written by key: one key set per value,
+``t:Products/{SKU-0003,SKU-0007,SKU-0012}/Price``, in the table's row order (one key:
+``t:Products/SKU-0003/Price``).  An address by key names the same cell after rows are
+inserted, deleted or sorted, where a range then names others; so a plan, a check or a
+dataset made now still points at the cells it was made from (:attr:`Derived.source_key`
+names the key column).  Without such a key column -- none, several candidates and none
+declared, or a declared one with a blank, a date or a shared key -- the sources are
+compact ranges, a run of consecutive rows being one range (``Stock!F3:F14``), true until
+the sheet's rows change.  The cells left out (``excluded``, ``left_out``) are named by
+their cell addresses either way.  A group's key value has the key column's cells of its rows; a
 ``count`` or ``share`` of rows has the rows' cells in the first group column (else the
 bins' column, the pivot's, or the table's first).  So a check can read each value's
 sources and recompute it, and ``count + left out`` is the group's rows: nothing is dropped
@@ -173,7 +186,7 @@ import bisect
 import hashlib
 import math
 from array import array
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 from fractions import Fraction
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
@@ -186,7 +199,7 @@ from .address import DatasetAddress, RangeAddress, SheetRef, TableAddress, parse
 from .dataset import DatasetTable, as_dataset
 from .profile import FIRST_ADDRESSES, Count, _add_partial, majority_type
 from .query import QueryError, _Bad, _iso_key, _key, _operand, _tests
-from .read.regions import Region
+from .read.regions import Region, RegionError
 from .read.types import TYPES, Value, looks_like_date, serial_text, text_date, text_number
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -263,40 +276,87 @@ class DeriveError(QueryError):
         self.cells = cells
 
 
+class _Keyed:
+    """A keyed table's rows by key, for sources written by key: ``whole`` the table's
+    address, ``keys`` each data row's key by position (from the first data row),
+    ``first_row`` the first data row's sheet row, ``columns`` the region's column names
+    from its ``first_column``, ``column`` the key column's name."""
+
+    __slots__ = ("whole", "keys", "first_row", "first_column", "columns", "column")
+
+    def __init__(self, region: Region, index: Any) -> None:
+        self.whole = region.address
+        self.keys = index.keys
+        self.first_row = region.data.first.row
+        self.first_column = region.area.first.column
+        self.columns = region.columns
+        self.column = index.column
+
+    def address(self, column: int, runs: Sequence[int]) -> "TableAddress | None":
+        """The cells of sheet column ``column`` in the rows ``runs`` (first and last sheet
+        rows, flat), by key: a key set, one key, or ``None`` for no rows."""
+        top, keys = self.first_row, self.keys
+        found = tuple(keys[row - top] for i in range(0, len(runs), 2)
+                      for row in range(runs[i], runs[i + 1] + 1))
+        if not found:
+            return None
+        name = self.columns[column - self.first_column]
+        if len(found) == 1:
+            return replace(self.whole, key=found[0], column=name)
+        return replace(self.whole, keys=found, column=name)
+
+
+def _keyed(workbook: "Workbook", region: Region) -> "_Keyed | None":
+    """The key form of ``region``'s sources: its key column's index when every data row
+    has a key no other row shares; ``None`` (ranges) otherwise."""
+    if region.data is None:
+        return None
+    try:
+        index = workbook.regions.key_index(region)
+    except (RegionError, KeyError):
+        return None
+    return _Keyed(region, index) if index.unique else None
+
+
 class _Sourced:
     """Cells of one column as runs of rows, kept compact (two numbers a run) and given as
-    range addresses when asked for."""
+    addresses when asked for: by key, or as range addresses."""
 
     __slots__ = ()
 
     @property
-    def sources(self) -> "tuple[RangeAddress | str, ...]":
-        """The cells, as compact ranges: a run of consecutive rows is one range
-        (``Stock!F3:F14``), in row order.  Derived from a dataset (``via``), the cells its
-        values came from (:meth:`DatasetTable.sources_of
+    def sources(self) -> "tuple[TableAddress | RangeAddress | str, ...]":
+        """The cells: by key when the table has a key column (``keyed``), one key set
+        (``t:Products/{SKU-0003,SKU-0007}/Price``) in row order; else as compact ranges, a
+        run of consecutive rows one range (``Stock!F3:F14``), in row order.  Derived from a
+        dataset (``via``), the cells its values came from (:meth:`DatasetTable.sources_of
         <xlsx_agent.dataset.DatasetTable.sources_of>`)."""
         if self.via is not None:
             return self.via.sources_of(self.column, self.runs)
+        if self.keyed is not None:
+            found = self.keyed.address(self.column, self.runs)
+            return () if found is None else (found,)
         b, sheet, column = self.runs, self.sheet, self.column
         return tuple(RangeAddress(sheet, Area(Cell(b[i], column), Cell(b[i + 1], column)))
                      for i in range(0, len(b), 2))
 
     @property
     def ranges(self) -> int:
-        """How many ranges :attr:`sources` gives."""
-        if self.via is not None:
+        """How many addresses :attr:`sources` gives."""
+        if self.via is not None or self.keyed is not None:
             return len(self.sources)
         return len(self.runs) // 2
 
 
 @dataclass(frozen=True)
 class Provenance(_Sourced):
-    """Where one value came from: :attr:`sources` the cells it was computed from, as
-    compact ranges; ``count`` how many cells those are; ``excluded`` how many cells of the
-    group's rows were left out of it, by reason.  ``sheet``, ``column`` and ``runs`` (first
-    and last rows, flat) are what :attr:`sources` is made from; ``via`` the dataset it was
-    derived from, if any (then ``column`` is the dataset's, from 0, ``runs`` its positions,
-    and ``count`` how many of its values were used)."""
+    """Where one value came from: :attr:`sources` the cells it was computed from, by key
+    or as compact ranges; ``count`` how many cells those are; ``excluded`` how many cells
+    of the group's rows were left out of it, by reason.  ``sheet``, ``column`` and
+    ``runs`` (first and last rows, flat) are what :attr:`sources` is made from; ``keyed``
+    the table's keys, when they name its rows; ``via`` the dataset it was derived from, if
+    any (then ``column`` is the dataset's, from 0, ``runs`` its positions, and ``count``
+    how many of its values were used)."""
 
     sheet: SheetRef | None
     column: int
@@ -304,6 +364,7 @@ class Provenance(_Sourced):
     count: int
     excluded: dict[str, int] = field(default_factory=dict)
     via: "DatasetTable | None" = field(default=None, repr=False, compare=False)
+    keyed: "_Keyed | None" = field(default=None, repr=False, compare=False)
 
     def as_dict(self) -> dict:
         out: dict = {"sources": [str(s) for s in self.sources], "count": self.count}
@@ -323,6 +384,7 @@ class Total(_Sourced):
     runs: array = field(repr=False)
     count: int
     via: "DatasetTable | None" = field(default=None, repr=False, compare=False)
+    keyed: "_Keyed | None" = field(default=None, repr=False, compare=False)
 
     def as_dict(self) -> dict:
         return {"value": self.value, "sources": [str(s) for s in self.sources],
@@ -351,7 +413,8 @@ class Derived:
     it; ``hidden`` the rows used that hold a
     hidden cell among the columns read; ``totals`` per ``share`` measure, its total;
     ``pivot_columns`` per pivoted column, its measure and pivot value; ``date1904`` the
-    date system its dates are in (its source's).
+    date system its dates are in (its source's); ``source_key`` the key column its
+    sources are written by (``None``: as ranges; see the module's notes).
 
     :meth:`dataset` gives it as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`, what a
     tool session keeps under ``d:<id>`` (:mod:`xlsx_agent.dataset`); ``wb.derive(ds, ...)``
@@ -377,6 +440,7 @@ class Derived:
     totals: dict[str, Total] = field(default_factory=dict)
     pivot_columns: dict[str, dict[str, Any]] = field(default_factory=dict)
     date1904: bool = False
+    source_key: str | None = None
 
     def dataset(self) -> "Dataset":
         """This result as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`: the rows as
@@ -386,12 +450,12 @@ class Derived:
         return as_dataset(self)
 
     @property
-    def sources(self) -> dict[Any, dict[str, list[RangeAddress]]]:
+    def sources(self) -> "dict[Any, dict[str, list[TableAddress | RangeAddress]]]":
         """Each row's sources by its key (the key column's value; a tuple of them with
         several key columns; ``None`` without any), then by column.  Two keys that show
         alike (a number and a bool, a date and its ISO text) keep the first row's: by
         position, :attr:`provenance` has every one."""
-        out: dict[Any, dict[str, list[RangeAddress]]] = {}
+        out: dict[Any, dict[str, list]] = {}
         keys = self.columns[:self.key_columns]
         for row, where in zip(self.unrounded, self.provenance):
             if not keys:
@@ -407,7 +471,8 @@ class Derived:
         return out
 
     def as_dict(self) -> dict:
-        """The result as plain data: rows as lists in column order, sources as range text."""
+        """The result as plain data: rows as lists in column order, sources as address
+        text."""
         out: dict = {"from": self.address, "columns": list(self.columns),
                      "key_columns": self.key_columns, "types": dict(self.types),
                      "rows": [[row[c] for c in self.columns] for row in self.rows],
@@ -417,6 +482,8 @@ class Derived:
                      "matched": self.matched, "used": self.used, "groups": self.groups}
         if self.id is not None:
             out["id"] = self.id
+        if self.source_key is not None:
+            out["source_key"] = self.source_key
         if self.rows != self.unrounded:
             out["unrounded"] = [[row[c] for c in self.columns] for row in self.unrounded]
         for name in ("left_out", "excluded"):
@@ -1230,6 +1297,7 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
     via = plan.via
     sheet = region.sheet_ref if via is None else None
     first_column = region.area.first.column if via is None else 0
+    keyed = _keyed(plan.workbook, region) if via is None and state.used else None
     bins = plan.bins
     keys = list(plan.group) + ([bins.name] if bins else [])
     # the output columns: (name, measure, pivot key)
@@ -1292,18 +1360,19 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
             row[column] = shown[k]
             t, key = g[k]
             sort_keys[column] = None if t == "blank" else (TYPES.index(t), _text_key(key, t))
-            where[column] = _row_sources(group, sheet, first_column + offset, via)
+            where[column] = _row_sources(group, sheet, first_column + offset, via, keyed)
         if bins:
             row[bins.name] = bins.labels[index]
             sort_keys[bins.name] = index
-            where[bins.name] = _row_sources(group, sheet, first_column + bins.offset, via)
+            where[bins.name] = _row_sources(group, sheet, first_column + bins.offset, via,
+                                            keyed)
         for name, m, pkey in measure_columns:
             cell = group.cells.get(pkey) if group is not None else None
             t = plan.offset_types[m.offset] if m.offset is not None else None
             value, key = _value(m, cell, t, plan, state)
             row[name] = value
             sort_keys[name] = key
-            where[name] = _cell_sources(m, cell, sheet, first_column, plan, via)
+            where[name] = _cell_sources(m, cell, sheet, first_column, plan, via, keyed)
         built.append((row, sort_keys, where))
 
     groups = len(built)
@@ -1353,11 +1422,11 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
             for group in state.groups.values():
                 runs = _merge(runs, group.runs)
             totals[m.name] = Total(n, sheet, first_column + plan.row_offset, runs.bounds, n,
-                                   via)
+                                   via, keyed)
         else:
             partials, runs, n = state.totals[m.offset]
             totals[m.name] = Total(math.fsum(partials), sheet, first_column + m.offset,
-                                   runs.bounds, n, via)
+                                   runs.bounds, n, via, keyed)
     left_out = {c: {r: counters[r].done() for r in REASONS if r in counters}
                 for c, counters in state.left_out.items()}
     return Derived(
@@ -1369,7 +1438,7 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
         excluded=excluded, coerced=coerced,
         not_compared={c: counter.done() for c, counter in state.not_compared.items()},
         hidden=state.hidden.done(), totals=totals, pivot_columns=pivot_columns,
-        date1904=plan.date1904)
+        date1904=plan.date1904, source_key=keyed.column if keyed is not None else None)
 
 
 def _merge(a: _Runs, b: _Runs) -> _Runs:
@@ -1386,22 +1455,23 @@ def _merge(a: _Runs, b: _Runs) -> _Runs:
     return out
 
 
-def _row_sources(group: _Group | None, sheet, column: int, via) -> Provenance:
+def _row_sources(group: _Group | None, sheet, column: int, via, keyed) -> Provenance:
     if group is None:
-        return Provenance(sheet, column, array("l"), 0, via=via)
-    return Provenance(sheet, column, group.runs.bounds, group.count, via=via)
+        return Provenance(sheet, column, array("l"), 0, via=via, keyed=keyed)
+    return Provenance(sheet, column, group.runs.bounds, group.count, via=via, keyed=keyed)
 
 
 def _cell_sources(m: _Measure, cell: _Cell | None, sheet, first_column: int,
-                  plan: _Plan, via) -> Provenance:
+                  plan: _Plan, via, keyed) -> Provenance:
     column = first_column + (plan.row_offset if m.offset is None else m.offset)
     if cell is None:
-        return Provenance(sheet, column, array("l"), 0, via=via)
+        return Provenance(sheet, column, array("l"), 0, via=via, keyed=keyed)
     if m.offset is None:
-        return Provenance(sheet, column, cell.runs.bounds, cell.count, via=via)
+        return Provenance(sheet, column, cell.runs.bounds, cell.count, via=via, keyed=keyed)
     acc = cell.accs[m.offset]
     return Provenance(sheet, column, acc.runs.bounds, acc.count,
-                      {r: acc.excluded[r] for r in REASONS if r in acc.excluded}, via=via)
+                      {r: acc.excluded[r] for r in REASONS if r in acc.excluded}, via=via,
+                      keyed=keyed)
 
 
 def _text_key(key: Any, t: str) -> Any:

@@ -39,13 +39,14 @@ BY_REP = {"group_by": ["Region", "Rep"],
           "round": 1}
 
 
-def interleaved(rows: int = 30) -> WorkbookBuilder:
-    """Two groups whose rows alternate, so each value's sources are many ranges."""
+def interleaved(rows: int = 30, keyed: bool = False) -> WorkbookBuilder:
+    """Two groups whose rows alternate, so each value's sources are many ranges; with
+    ``keyed``, its notes are a key column (unique, text), so the sources are by key."""
     book = WorkbookBuilder()
     sheet = book.sheet("Log")
     sheet.rows("A1", [["Team", "Hours", "Note"]]
-               + [["Red" if r % 2 else "Blue", r + 0.5, f"n{r} {MARKER}"]
-                  for r in range(1, rows + 1)])
+               + [["Red" if r % 2 else "Blue", r + 0.5,
+                   f"n{r if keyed else r % 4} {MARKER}"] for r in range(1, rows + 1)])
     sheet.table("Log", f"A1:C{rows + 1}", ["Team", "Hours", "Note"], write_header=False)
     return book
 
@@ -363,6 +364,48 @@ def test_a_value_shows_eight_ranges_and_pages_through_all_of_them(box):
     other = call(box, session, "xlsx_read", target="d:teams/Blue/sum Hours", sources=True,
                  cursor=page_cursor(box, session))
     assert not other.ok and err(other)["code"] == "invalid_arguments"
+
+
+def _keys(sources: list[str]) -> list[str]:
+    """The keys of key-set sources, in order."""
+    out = []
+    for text in sources:
+        address = parse_address(text)
+        out.extend(address.keys if address.keys is not None else [address.key])
+    return out
+
+
+def test_sources_by_key_show_eight_keys_and_page_through_all_of_them(box):
+    session = _session(box, interleaved(keyed=True))
+    result = call(box, session, "xlsx_derive", doc="d1", **{"from": "t:Log"}, id="teams",
+                  group_by=["Team"], measures=[{"fn": "sum", "column": "Hours"},
+                                               {"fn": "share"}])
+    assert result.ok, result.error
+    hours = result.data["rows"][0][1]
+    note = f" {MARKER}"
+    assert hours["sources"] == ["t:Log/{" + ",".join(f"n{r}{note}" for r in range(1, 17, 2))
+                                + "}/Hours"]
+    assert hours["more"] == 15 - SOURCES_SHOWN
+    share = result.data["totals"]["share"]
+    assert (share["count"], share["more"]) == (30, 30 - SOURCES_SHOWN)
+    assert _keys(share["sources"]) == [f"n{r}{note}" for r in range(1, 9)]
+    given, cursor, pages = [], None, 0
+    while True:
+        page = call(box, session, "xlsx_read", target="d:teams/Red/sum Hours", sources=True,
+                    limit=4, **({"cursor": cursor} if cursor else {}))
+        assert page.ok, page.error
+        assert page.total == 15 and len(page.data["sources"]) == 1
+        given += _keys(page.data["sources"])
+        pages += 1
+        cursor = page.next_cursor
+        if cursor is None:
+            break
+        assert page.data["cut"] == {"sources": 15 - len(given)}
+    assert pages == 4 and given == [f"n{r}{note}" for r in range(1, 31, 2)]
+    # every key names the cell it was made from
+    workbook = session.entry("d1").document
+    cells = [workbook.cell(f"t:Log/n{r}{note}/Hours") for r in (1, 29)]
+    assert [c.a for c in cells] == ["Log!B2", "Log!B30"]
 
 
 def page_cursor(box, session) -> str:

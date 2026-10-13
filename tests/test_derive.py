@@ -26,6 +26,7 @@ from xlsx_agent import (DeriveError, Locale, NameNotFound, QueryError, Region, R
                         Workbook)
 from xlsx_agent import derive as derive_module
 from xlsx_agent.derive import FUNCTIONS, TYPES_BY_FUNCTION, _round
+from xlsx_agent.address import TableAddress
 from xlsx_agent.query import _key
 from xlsx_agent.read.types import serial_text, text_date, text_number
 
@@ -103,8 +104,7 @@ def _cells(workbook: Workbook, sources, table: "dict | None" = None, first: int 
     if table is None:
         return [v for source in sources for row in workbook.read(source) for v in row]
     out = []
-    for source in sources:
-        area = source.area
+    for area in (a for source in sources for a in _areas(workbook, source)):
         for number in range(area.first.row, area.last.row + 1):
             row = table[number]
             for column in range(area.first.column, area.last.column + 1):
@@ -112,6 +112,13 @@ def _cells(workbook: Workbook, sources, table: "dict | None" = None, first: int 
                 assert (cell.row, cell.column) == (number, column)
                 out.append(cell)
     return out
+
+
+def _areas(workbook: Workbook, source) -> list:
+    """The areas a source names: a range's own, or a key set's rows, one by one."""
+    if isinstance(source, TableAddress):
+        return [a.area for a in workbook.resolve(source).areas]
+    return [source.area]
 
 
 def _reason(value, t: str) -> str:
@@ -189,7 +196,8 @@ def check_provenance(workbook: Workbook, region: Region, ds, measures: list[dict
     checked = 0
     sheet = region.sheet_ref.text
     for where in ds.provenance:
-        assert all(s.sheet.text == sheet for p in where.values() for s in p.sources)
+        assert all(s.whole.text == region.address.text if isinstance(s, TableAddress)
+                   else s.sheet.text == sheet for p in where.values() for s in p.sources)
     lookup = (table, first) if once else (None, 1)
 
     def read(sources) -> list:

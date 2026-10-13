@@ -94,7 +94,8 @@ class RegionError(ValueError):
     ``scoped_name`` (``t:Name`` for a name local to a sheet), ``header_unclear`` (with
     ``reason``, one of :data:`UNCLEAR_REASONS`), ``no_header`` (no header at the cell),
     ``no_key_column``, ``duplicate_key``, ``no_key`` (a row whose key cell is no key,
-    :meth:`Regions.expand`), ``position_out_of_range``, ``bad_table``,
+    :meth:`Regions.expand`), ``no_key_set`` (a key set of a dataset's rows,
+    :mod:`xlsx_agent.dataset`), ``position_out_of_range``, ``bad_table``,
     ``name_taken``, ``bad_name``, ``headers_required``, ``bad_headers``.  The message
     names sheets, tables, names and columns, never a key or a cell's value; ``address``
     is the address in question as text, ``valid_options`` what would work instead."""
