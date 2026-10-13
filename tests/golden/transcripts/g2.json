@@ -1,0 +1,706 @@
+{
+ "task": "g2-compare-review",
+ "recorded": {
+  "how": "recorded",
+  "model": "claude-haiku-5-5",
+  "date": "2026-10-13"
+ },
+ "prompt": "d1 is inventory-generated.xlsx, as a tool wrote it, and d2 is inventory-reviewed.xlsx, the copy a reviewer changed. Compare the Stock table of the two by SKU and report what the reviewer changed, with addresses.",
+ "inputs": [
+  {
+   "file": "inventory-generated.xlsx",
+   "as": "document",
+   "sha256": "be5cc08af229c01fdef8bcf47a75ea03330fdd5fc5e6f6607fb4db4768168491",
+   "content_sha256": "3e89f9f0cb41bcd4105f16344c8fad717ac8719c9eed0bc1436abfe419353c5f"
+  },
+  {
+   "file": "inventory-reviewed.xlsx",
+   "as": "document",
+   "sha256": "78aa96399ed991c4145d546e01f6164c733bfe4a23bffc046f978682e1bdd4e3",
+   "content_sha256": "9702e0936395701409d275053d16e1fd3c9394d02e56f8481fc3a699e94d6f08"
+  }
+ ],
+ "calls": [
+  {
+   "tool": "describe",
+   "arguments": {
+    "doc": "d1"
+   },
+   "result": {
+    "ok": true,
+    "doc": "d1",
+    "version": 0,
+    "summary": "Described inventory-generated.xlsx",
+    "changed": [],
+    "created": [],
+    "removed": [],
+    "renamed": {},
+    "warnings": [],
+    "checks": {},
+    "data": {
+     "name": "inventory-generated.xlsx",
+     "kind": "xlsx",
+     "date_system": 1900,
+     "sheets": [
+      {
+       "name": "Stock",
+       "id": 1,
+       "used": "A1:E9"
+      }
+     ],
+     "regions": [
+      {
+       "address": "t:Stock",
+       "kind": "table",
+       "range": "Stock!A1:E9",
+       "rows": 8,
+       "key_candidates": [
+        "SKU",
+        "Item",
+        "Qty"
+       ],
+       "columns": [
+        {
+         "name": "SKU",
+         "type": "text",
+         "fill": 1.0,
+         "values": [
+          [
+           "SKU-0001",
+           1
+          ],
+          [
+           "SKU-0002",
+           1
+          ],
+          [
+           "SKU-0003",
+           1
+          ],
+          [
+           "SKU-0004",
+           1
+          ],
+          [
+           "SKU-0005",
+           1
+          ],
+          [
+           "SKU-0006",
+           1
+          ],
+          [
+           "SKU-0007",
+           1
+          ],
+          [
+           "SKU-0008",
+           1
+          ]
+         ],
+         "text_length": [
+          8,
+          8
+         ]
+        },
+        {
+         "name": "Item",
+         "type": "text",
+         "fill": 1.0,
+         "values": [
+          [
+           "Hex bolt M6",
+           1
+          ],
+          [
+           "Wood screw 4x40",
+           1
+          ],
+          [
+           "Wall plug 6 mm",
+           1
+          ],
+          [
+           "Claw hammer",
+           1
+          ],
+          [
+           "Spirit level 60 cm",
+           1
+          ],
+          [
+           "Masking tape 25 mm",
+           1
+          ],
+          [
+           "Sandpaper P120",
+           1
+          ],
+          [
+           "Utility knife",
+           1
+          ]
+         ],
+         "text_length": [
+          14,
+          18
+         ]
+        },
+        {
+         "name": "Category",
+         "type": "text",
+         "fill": 1.0,
+         "values": [
+          [
+           "Hardware",
+           3
+          ],
+          [
+           "Tools",
+           3
+          ],
+          [
+           "Supplies",
+           2
+          ]
+         ],
+         "text_length": [
+          8,
+          8
+         ]
+        },
+        {
+         "name": "Qty",
+         "type": "number",
+         "fill": 1.0,
+         "min": 9,
+         "max": 800,
+         "mean": 209.375,
+         "values": [
+          [
+           120,
+           1
+          ],
+          [
+           800,
+           1
+          ],
+          [
+           450,
+           1
+          ],
+          [
+           14,
+           1
+          ],
+          [
+           9,
+           1
+          ],
+          [
+           60,
+           1
+          ],
+          [
+           200,
+           1
+          ],
+          [
+           22,
+           1
+          ]
+         ]
+        },
+        {
+         "name": "Price",
+         "type": "number",
+         "fill": 1.0,
+         "min": 0.05,
+         "max": 24.5,
+         "mean": 6.8975,
+         "values": [
+          [
+           0.35,
+           1
+          ],
+          [
+           0.08,
+           1
+          ],
+          [
+           0.05,
+           1
+          ],
+          [
+           18.9,
+           1
+          ],
+          [
+           24.5,
+           1
+          ],
+          [
+           2.75,
+           1
+          ],
+          [
+           0.6,
+           1
+          ],
+          [
+           7.95,
+           1
+          ]
+         ]
+        }
+       ],
+       "sample": [
+        [
+         "SKU-0001",
+         "Hex bolt M6",
+         "Hardware",
+         120,
+         0.35
+        ],
+        [
+         "SKU-0002",
+         "Wood screw 4x40",
+         "Hardware",
+         800,
+         0.08
+        ]
+       ]
+      }
+     ]
+    },
+    "next_cursor": null
+   }
+  },
+  {
+   "tool": "describe",
+   "arguments": {
+    "doc": "d2"
+   },
+   "result": {
+    "ok": true,
+    "doc": "d2",
+    "version": 0,
+    "summary": "Described inventory-reviewed.xlsx",
+    "changed": [],
+    "created": [],
+    "removed": [],
+    "renamed": {},
+    "warnings": [],
+    "checks": {},
+    "data": {
+     "name": "inventory-reviewed.xlsx",
+     "kind": "xlsx",
+     "date_system": 1900,
+     "sheets": [
+      {
+       "name": "Stock",
+       "id": 1,
+       "used": "A1:E9"
+      }
+     ],
+     "regions": [
+      {
+       "address": "t:Stock",
+       "kind": "table",
+       "range": "Stock!A1:E9",
+       "rows": 8,
+       "key_candidates": [
+        "SKU",
+        "Item",
+        "Qty"
+       ],
+       "columns": [
+        {
+         "name": "SKU",
+         "type": "text",
+         "fill": 1.0,
+         "values": [
+          [
+           "SKU-0001",
+           1
+          ],
+          [
+           "SKU-0002",
+           1
+          ],
+          [
+           "SKU-0003",
+           1
+          ],
+          [
+           "SKU-0004",
+           1
+          ],
+          [
+           "SKU-0005",
+           1
+          ],
+          [
+           "SKU-0007",
+           1
+          ],
+          [
+           "SKU-0008",
+           1
+          ],
+          [
+           "SKU-0009",
+           1
+          ]
+         ],
+         "text_length": [
+          8,
+          8
+         ]
+        },
+        {
+         "name": "Item",
+         "type": "text",
+         "fill": 1.0,
+         "values": [
+          [
+           "Hex bolt M6",
+           1
+          ],
+          [
+           "Wood screw 4x40",
+           1
+          ],
+          [
+           "Wall plug 6 mm",
+           1
+          ],
+          [
+           "Claw hammer",
+           1
+          ],
+          [
+           "Spirit level 60 cm",
+           1
+          ],
+          [
+           "Sandpaper P120",
+           1
+          ],
+          [
+           "Utility knife",
+           1
+          ],
+          [
+           "Paint brush 50 mm",
+           1
+          ]
+         ],
+         "text_length": [
+          14,
+          18
+         ]
+        },
+        {
+         "name": "Category",
+         "type": "text",
+         "fill": 1.0,
+         "values": [
+          [
+           "Hardware",
+           3
+          ],
+          [
+           "Tools",
+           3
+          ],
+          [
+           "Supplies",
+           2
+          ]
+         ],
+         "text_length": [
+          8,
+          8
+         ]
+        },
+        {
+         "name": "Qty",
+         "type": "number",
+         "fill": 1.0,
+         "min": 14,
+         "max": 800,
+         "mean": 234.428571428571,
+         "values": [
+          [
+           120,
+           1
+          ],
+          [
+           800,
+           1
+          ],
+          [
+           450,
+           1
+          ],
+          [
+           14,
+           1
+          ],
+          [
+           "9",
+           1
+          ],
+          [
+           200,
+           1
+          ],
+          [
+           22,
+           1
+          ],
+          [
+           35,
+           1
+          ]
+         ],
+         "text_length": [
+          1,
+          1
+         ],
+         "also": {
+          "text": 1
+         },
+         "flags": {
+          "number_as_text": 1
+         }
+        },
+        {
+         "name": "Price",
+         "type": "number",
+         "fill": 1.0,
+         "min": 0.05,
+         "max": 24.5,
+         "mean": 6.955,
+         "values": [
+          [
+           0.35,
+           1
+          ],
+          [
+           0.09,
+           1
+          ],
+          [
+           0.05,
+           1
+          ],
+          [
+           18.9,
+           1
+          ],
+          [
+           24.5,
+           1
+          ],
+          [
+           0.6,
+           1
+          ],
+          [
+           7.95,
+           1
+          ],
+          [
+           3.2,
+           1
+          ]
+         ]
+        }
+       ],
+       "sample": [
+        [
+         "SKU-0001",
+         "Hex bolt M6",
+         "Hardware",
+         120,
+         0.35
+        ],
+        [
+         "SKU-0002",
+         "Wood screw 4x40",
+         "Hardware",
+         800,
+         0.09
+        ]
+       ]
+      }
+     ],
+     "problems": [
+      {
+       "code": "number_as_text",
+       "address": "Stock!D6"
+      }
+     ]
+    },
+    "next_cursor": null
+   }
+  },
+  {
+   "tool": "xlsx_compare",
+   "arguments": {
+    "a": "d1",
+    "b": "d2",
+    "tables": [
+     "t:Stock"
+    ],
+    "key": "SKU"
+   },
+   "result": {
+    "ok": true,
+    "doc": "d1",
+    "version": 0,
+    "summary": "d1 and d2: 1 tables compared; 1 rows added, 1 rows removed, 2 cells changed; differences 1-4 of 4",
+    "changed": [],
+    "created": [],
+    "removed": [],
+    "renamed": {},
+    "warnings": [],
+    "checks": {},
+    "data": {
+     "a": "d1",
+     "b": "d2",
+     "tables": [
+      {
+       "a": "t:Stock",
+       "range_a": "Stock!A1:E9",
+       "range_b": "Stock!A1:E9",
+       "key": "SKU",
+       "rows": [
+        8,
+        8
+       ],
+       "paired": 7,
+       "unchanged": 5,
+       "totals": {
+        "rows_added": 1,
+        "rows_removed": 1,
+        "cells_changed": 2
+       }
+      }
+     ],
+     "totals": {
+      "rows_added": 1,
+      "rows_removed": 1,
+      "cells_changed": 2
+     },
+     "differences": [
+      {
+       "table": "t:Stock",
+       "row": "added",
+       "key": "SKU-0009",
+       "at": "t:Stock/#8",
+       "cells": [
+        {
+         "a": "Stock!A9",
+         "v": "SKU-0009",
+         "t": "text"
+        },
+        {
+         "a": "Stock!B9",
+         "v": "Paint brush 50 mm",
+         "t": "text"
+        },
+        {
+         "a": "Stock!C9",
+         "v": "Supplies",
+         "t": "text"
+        },
+        {
+         "a": "Stock!D9",
+         "v": 35,
+         "t": "number"
+        },
+        {
+         "a": "Stock!E9",
+         "v": 3.2,
+         "t": "number"
+        }
+       ]
+      },
+      {
+       "table": "t:Stock",
+       "row": "removed",
+       "key": "SKU-0006",
+       "at": "t:Stock/#6",
+       "cells": [
+        {
+         "a": "Stock!A7",
+         "v": "SKU-0006",
+         "t": "text"
+        },
+        {
+         "a": "Stock!B7",
+         "v": "Masking tape 25 mm",
+         "t": "text"
+        },
+        {
+         "a": "Stock!C7",
+         "v": "Supplies",
+         "t": "text"
+        },
+        {
+         "a": "Stock!D7",
+         "v": 60,
+         "t": "number"
+        },
+        {
+         "a": "Stock!E7",
+         "v": 2.75,
+         "t": "number"
+        }
+       ]
+      },
+      {
+       "table": "t:Stock",
+       "cell": "changed",
+       "key": "SKU-0002",
+       "column": "Price",
+       "a": {
+        "a": "Stock!E3",
+        "v": 0.08,
+        "t": "number"
+       },
+       "b": {
+        "a": "Stock!E3",
+        "v": 0.09,
+        "t": "number"
+       }
+      },
+      {
+       "table": "t:Stock",
+       "cell": "type",
+       "key": "SKU-0005",
+       "column": "Qty",
+       "a": {
+        "a": "Stock!D6",
+        "v": 9,
+        "t": "number"
+       },
+       "b": {
+        "a": "Stock!D6",
+        "v": "9",
+        "t": "text",
+        "issue": "number_as_text"
+       }
+      }
+     ]
+    },
+    "next_cursor": null,
+    "total": 4
+   }
+  }
+ ],
+ "answer": "The reviewer made four changes to the Stock table, matched by SKU:\n\n1. **Row removed: SKU-0006** (Masking tape 25 mm, Supplies, Qty 60, Price 2.75). It was at Stock!A7:E7 in inventory-generated.xlsx and no longer exists in inventory-reviewed.xlsx.\n\n2. **Row added: SKU-0009** (Paint brush 50 mm, Supplies, Qty 35, Price 3.20). It is at Stock!A9:E9 in inventory-reviewed.xlsx.\n\n3. **Price changed for SKU-0002** (Wood screw 4x40): Stock!E3 went from 0.08 to 0.09.\n\n4. **Qty type changed for SKU-0005** (Spirit level 60 cm): Stock!D6 went from the number 9 to the text \"9\". This is the only type problem flagged in the reviewed file (number_as_text at Stock!D6), so it will affect any numeric sums or lookups on Qty.\n\nEverything else in the table (5 rows) is unchanged. Note that SKU-0006 and SKU-0009 are not a rename of each other: they have different items, so the reviewer appears to have deleted one product and added another rather than editing a row in place."
+}

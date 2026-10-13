@@ -1,0 +1,148 @@
+{
+ "task": "g3-validate-orders",
+ "recorded": {
+  "how": "recorded",
+  "model": "claude-haiku-5-5",
+  "date": "2026-10-13"
+ },
+ "prompt": "orders.xlsx is open as d1. Check it against this schema (pass it as the schema object) and report every problem with its address: {\"tables\": [{\"table\": \"t:Orders\", \"key\": [\"Order\"], \"columns\": [{\"name\": \"Customer\", \"type\": \"text\", \"required\": true}, {\"name\": \"Status\", \"enum\": [\"Open\", \"Shipped\", \"Closed\"]}, {\"name\": \"Qty\", \"type\": \"number\", \"min\": \"1\"}, {\"name\": \"Discount\", \"type\": \"number\", \"min\": \"0\", \"max\": \"0.5\"}]}]}",
+ "inputs": [
+  {
+   "file": "orders.xlsx",
+   "as": "document",
+   "sha256": "b129231d21bcb2d832cb7fd32573da1b5139a324532d01d4a0d394658a3e779f",
+   "content_sha256": "9eeadbe4e88b02e442d04be13f7c73ce9bcb2c83b78698ff835e90ae64992e51"
+  }
+ ],
+ "calls": [
+  {
+   "tool": "xlsx_validate_data",
+   "arguments": {
+    "doc": "d1",
+    "schema": {
+     "tables": [
+      {
+       "table": "t:Orders",
+       "key": [
+        "Order"
+       ],
+       "columns": [
+        {
+         "name": "Customer",
+         "type": "text",
+         "required": true
+        },
+        {
+         "name": "Status",
+         "enum": [
+          "Open",
+          "Shipped",
+          "Closed"
+         ]
+        },
+        {
+         "name": "Qty",
+         "type": "number",
+         "min": "1"
+        },
+        {
+         "name": "Discount",
+         "type": "number",
+         "min": "0",
+         "max": "0.5"
+        }
+       ]
+      }
+     ]
+    }
+   },
+   "result": {
+    "ok": true,
+    "doc": "d1",
+    "version": 0,
+    "summary": "d1: 1 tables checked; problem cells: 1 required blank, 1 wrong type, 2 out of range, 1 not in enum, 1 duplicate key; problems 1-6 of 6",
+    "changed": [],
+    "created": [],
+    "removed": [],
+    "renamed": {},
+    "warnings": [],
+    "checks": {},
+    "data": {
+     "doc": "d1",
+     "ok": false,
+     "counts": {
+      "required_blank": 1,
+      "wrong_type": 1,
+      "out_of_range": 2,
+      "not_in_enum": 1,
+      "duplicate_key": 1
+     },
+     "tables": [
+      {
+       "table": "t:Orders",
+       "range": "Orders!A1:E9",
+       "rows": 8,
+       "columns": 5
+      }
+     ],
+     "problems": [
+      {
+       "code": "required_blank",
+       "at": "Orders!B4",
+       "table": "t:Orders",
+       "column": "Customer",
+       "message": "Orders!B4 (Customer): blank; a value is required"
+      },
+      {
+       "code": "not_in_enum",
+       "at": "Orders!C5",
+       "table": "t:Orders",
+       "column": "Status",
+       "enum_size": 3,
+       "case": "exact",
+       "message": "Orders!C5 (Status): not one of the 3 allowed values (case counts)"
+      },
+      {
+       "code": "duplicate_key",
+       "at": "Orders!A6",
+       "table": "t:Orders",
+       "column": "Order",
+       "first": "Orders!A3",
+       "message": "Orders!A6 (Order): the key repeats that of the row at Orders!A3"
+      },
+      {
+       "code": "out_of_range",
+       "at": "Orders!D7",
+       "table": "t:Orders",
+       "column": "Qty",
+       "min": "1",
+       "message": "Orders!D7 (Qty): less than 1"
+      },
+      {
+       "code": "wrong_type",
+       "at": "Orders!D8",
+       "table": "t:Orders",
+       "column": "Qty",
+       "expected": "number",
+       "found": "text",
+       "issue": "number_as_text",
+       "message": "Orders!D8 (Qty): not number (found text, number_as_text)"
+      },
+      {
+       "code": "out_of_range",
+       "at": "Orders!E9",
+       "table": "t:Orders",
+       "column": "Discount",
+       "min": "0",
+       "max": "0.5",
+       "message": "Orders!E9 (Discount): outside 0 to 0.5"
+      }
+     ]
+    },
+    "next_cursor": null,
+    "total": 6
+   }
+  }
+ ],
+ "answer": "The validation found 6 problems in t:Orders (range Orders!A1:E9, 8 data rows):\n\n1. **Orders!B4** (Customer): required value is blank.\n2. **Orders!C5** (Status): \"not one of the allowed values\" (Open, Shipped, Closed; case counts).\n3. **Orders!A6** (Order): duplicate key, repeats the value at Orders!A3.\n4. **Orders!D7** (Qty): 0 or less than the minimum of 1.\n5. **Orders!D8** (Qty): stored as text (number_as_text), not a number.\n6. **Orders!E9** (Discount): outside the allowed range 0 to 0.5.\n\nThe document was not changed."
+}
