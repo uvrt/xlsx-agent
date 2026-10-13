@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import json
 import zlib
-from typing import Any
+from typing import Any, Iterable
 
 from ooxml_edit.charts.workbook import Area, Cell
 from ooxml_edit.tools import CORE, Result, ToolError, array, boolean, integer, string, tool
@@ -145,31 +145,9 @@ def xlsx_read(call: Any, doc: str, target: str, formats: bool = False,
     single = area.first == area.last
     cap = None if single else TEXT_SHOWN
 
-    shown: list[list[dict]] = []
-    used = 0
-    cut_text: list[str] = []
-    stop: tuple[int, int] | None = None      # (row, column) of the area where the next page starts
-    full = False
-    for index, values in enumerate(workbook.read(RangeAddress(found.ref, page), formats=formats)):
-        row = start_row + index
-        first = start_column if index == 0 else 0
-        out: list[dict] = []
-        for offset, value in enumerate(values[first:], first):
-            cell, texts = _cell(value, annotate, formulas, cap)
-            size = _size(cell) + 1
-            if used + size > budget:
-                if shown or out:
-                    stop, full = (row, offset), True
-                    break
-                cell, texts = _fit(value, annotate, formulas, budget - used)
-                size = _size(cell) + 1
-            out.append(cell)
-            used += size
-            cut_text.extend(texts)
-        if out:
-            shown.append(out)
-        if stop is not None:
-            break
+    shown, cut_text, stop, full = _page(
+        workbook.read(RangeAddress(found.ref, page), formats=formats), start_row, start_column,
+        budget, annotate, formulas, cap)
     if stop is None and bottom < area.last.row:
         stop = (bottom - area.first.row + 1, 0)
 
@@ -196,6 +174,43 @@ def xlsx_read(call: Any, doc: str, target: str, formats: bool = False,
     summary = _summary(found.label, start_row + 1, start_row + len(shown), total,
                        next_cursor is not None)
     return Result(summary=summary, data=data, total=total, next_cursor=next_cursor)
+
+
+def _page(rows: Iterable[list[Value]], start_row: int, start_column: int, budget: int,
+          annotate: "_Annotations", formulas: bool, cap: int | None
+          ) -> tuple[list[list[dict]], list[str], tuple[int, int] | None, bool]:
+    """A page's rows, filled from ``rows`` (the first of them at ``start_row``, from its
+    ``start_column``) within ``budget`` characters: the rows as cells, the addresses whose
+    text was cut, where the next page starts when the budget ran out (row and column), and
+    whether it did.  A first cell too big for the page by itself is cut to fit
+    (:func:`_fit`); a row too wide for what is left is split."""
+    shown: list[list[dict]] = []
+    used = 0
+    cut_text: list[str] = []
+    stop: tuple[int, int] | None = None
+    full = False
+    for index, values in enumerate(rows):
+        row = start_row + index
+        first = start_column if index == 0 else 0
+        out: list[dict] = []
+        used += 2                            # the row's brackets and the comma after it
+        for offset, value in enumerate(values[first:], first):
+            cell, texts = _cell(value, annotate, formulas, cap)
+            size = _size(cell) + 1
+            if used + size > budget:
+                if shown or out:
+                    stop, full = (row, offset), True
+                    break
+                cell, texts = _fit(value, annotate, formulas, budget - used)
+                size = _size(cell) + 1
+            out.append(cell)
+            used += size
+            cut_text.extend(texts)
+        if out:
+            shown.append(out)
+        if stop is not None:
+            break
+    return shown, cut_text, stop, full
 
 
 class _Found:
@@ -513,20 +528,24 @@ def _cursor(target: str, row: int, column: int) -> str:
     return f"{row}.{column}.{_token(target)}"
 
 
-def _parse_cursor(cursor: str, target: str) -> tuple[int, int]:
+def _parse_cursor(cursor: str, target: str, label: str | None = None) -> tuple[int, int]:
+    """A cursor's position, refused unless it was given for ``target`` (``label``, when
+    given, names it in the message: a query's ``target`` holds its filters' values)."""
     parts = cursor.split(".")
     if len(parts) != 3 or not parts[0].isdigit() or not parts[1].isdigit():
         raise ToolError("invalid_arguments", "cursor is not one this tool gave", field="cursor")
     if parts[2] != _token(target):
-        raise ToolError("invalid_arguments", f"cursor belongs to another target than {target}",
-                        field="cursor")
+        raise ToolError("invalid_arguments", "cursor belongs to another "
+                        + (f"query than this one of {label}" if label is not None
+                           else f"target than {target}"), field="cursor")
     return int(parts[0]), int(parts[1])
 
 
-def _read_cursor(cursor: str | None, target: str, rows: int, width: int) -> tuple[int, int]:
+def _read_cursor(cursor: str | None, target: str, rows: int, width: int,
+                 label: str | None = None) -> tuple[int, int]:
     if not cursor:
         return 0, 0
-    row, column = _parse_cursor(cursor, target)
+    row, column = _parse_cursor(cursor, target, label)
     if row >= rows or column >= max(width, 1):
         raise ToolError("invalid_arguments", "cursor is past the end of the target",
                         field="cursor")
