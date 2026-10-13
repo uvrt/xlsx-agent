@@ -520,3 +520,32 @@ def test_a_formula_in_a_declared_table_keeps_its_cell():
     wb.declare_table("checks", "Area *", key="Ref")
     value = wb.cell("t:checks/S-1/Score")
     assert (value.a, value.v, value.formula) == ("'Area South'!B2", 2, True)
+
+
+def test_problems_in_hidden_columns_are_not_listed_and_mixed_ones_skip_their_cells():
+    built = WorkbookBuilder()
+    sheet = built.sheet("Area North")
+    sheet.rows("A1", [HEADER, ["N-1", "door", 3, "fine", "12"], ["N-2", "lock", 4, "7", "13"]])
+    sheet.cell("G1", Formula("NOW()", cached=1.5))           # volatile, outside the table
+    sheet.cell("E9", Formula("TODAY()", cached=2.5))         # volatile, under the hidden one
+    wb = Workbook.open(built.to_bytes())
+    before = {p.code: (p.address, p.count) for p in wb.problems}
+    assert before["number_as_text"] == ("'Area North'!E2", 3)
+    wb.declare_table("checks", "Area North", fields=[{"header": "Remark", "hidden": True}],
+                     last_row=9)
+    after = {p.code: (p.address, p.count) for p in wb.problems}
+    assert after["number_as_text"] == ("'Area North'!D3", 1)
+    assert after["volatile"] == ("'Area North'!G1", 1)
+    shown = json.dumps(wb.catalogue(detail="full"))
+    assert "'Area North'!E" not in shown and "Remark" not in shown
+
+
+def test_a_tables_own_flags_never_name_a_hidden_cell():
+    built = WorkbookBuilder()
+    sheet = built.sheet("Area North")
+    sheet.rows("A1", [HEADER[:4] + [None], ["N-1", "door", 3, "fine", "x"]])
+    sheet.rows("A4", [[None, None, None, None, "below, hidden"], [None, "below", None, None, None]])
+    wb = Workbook.open(built.to_bytes())
+    region = wb.declare_table("checks", "Area North", columns="A:E",
+                              fields=[{"column": "E", "hidden": True}])
+    assert [(f.code, f.address) for f in region.flags] == [("rows_below", "'Area North'!B5")]

@@ -164,6 +164,8 @@ class Workbook:
         #: ``find_text``'s last few counts (total and kinds), by search: its next page
         #: stops once it is full.
         self._finds: OrderedDict = OrderedDict()
+        #: A sheet's problems without the cells declared tables hide, by sheet and areas.
+        self._withheld_problems: dict = {}
         self.regions = Regions(self)
 
     # -- lifecycle -------------------------------------------------------------------------
@@ -345,13 +347,46 @@ class Workbook:
         :attr:`calculation` flags once each, then, per worksheet, each issue its cells
         have (``no_cached_value``, ``number_as_text``, ``at_limit``, ``volatile``...) with
         its first address and count.  Every worksheet is scanned once (streamed) the first
-        time this is asked."""
+        time this is asked.  The cells of a column a declared table hides from the model
+        (:mod:`xlsx_agent.declare`) are left out: a problem met only there is not listed,
+        and one met there too is counted and placed at its other cells only (the sheet is
+        read once more for it, while the declarations stay as they are)."""
         out = [Problem(code) for code in self.calculation]
         out.extend(self.regions.problems())
         for sheet in self.sheets:
             if sheet.part is not None and sheet.type in _CELL_SHEETS:
-                out.extend(self.scan(sheet).problems)
+                out.extend(self._sheet_problems(sheet))
         return out
+
+    def _sheet_problems(self, sheet: Sheet) -> list[Problem]:
+        found = self.scan(sheet)
+        hidden = self.regions.withheld(sheet.name) if sheet.name else []
+        if not hidden or not found.issues:
+            return found.problems
+        key = (sheet.part, tuple(hidden), self.locale)
+        if key not in self._withheld_problems:
+            counted: dict[str, list] = {}
+
+            def count(code: str, value: Value) -> None:
+                entry = counted.get(code)
+                if entry is None:
+                    counted[code] = [1, value.a]
+                else:
+                    entry[0] += 1
+
+            for value in self.cells(sheet):
+                if any(a.first.row <= value.row <= a.last.row
+                       and a.first.column <= value.column <= a.last.column for a in hidden):
+                    continue
+                if value.issue is not None:
+                    count(value.issue, value)
+                if value.at_limit:
+                    count("at_limit", value)
+                if value.volatile:
+                    count("volatile", value)
+            self._withheld_problems[key] = [Problem(code, address, n) for code, (n, address)
+                                            in sorted(counted.items())]
+        return list(self._withheld_problems[key])
 
     # -- tables, names and regions ---------------------------------------------------------
 

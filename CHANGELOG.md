@@ -16,7 +16,10 @@ has the detail of every milestone.
   of every tool's results and refused when named, their cells `withheld` from reads of the
   sheet and from `find_text`. The sheet is not a column (no `_sheet`). Key-value tables,
   `t:run/<field>/value`, shown compactly by `describe`; a two-column block of facts with no
-  header is detected as one. A declaration that does not fit is refused naming the entry
+  header is detected as one -- so `describe` of a workbook with no declarations changes
+  where such a block was listed as `header_unclear` (`header_not_text`): it is now a
+  region, with its fields. Problems met only in a hidden column's cells are not listed;
+  one met there too is counted and placed at its other cells only. A declaration that does not fit is refused naming the entry
   (`DeclarationError`: code, path, valid options), before any table is kept; at
   `open_document`, `refused`. `Value.origin` and `Value.place` give a value's own cell;
   `Region.where` its table's range on the sheets.

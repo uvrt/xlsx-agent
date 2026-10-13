@@ -615,8 +615,11 @@ options; their cells are withheld from reads of the sheet's cells (`xlsx_read` g
 `{"a": ..., "withheld": true}`), from `find_text`, and from a region detected or declared
 over them (`RegionError` `declared`, pointing to the table); the blocks a declared table
 covers are no longer detected as regions of their own. An Excel-hidden column stays a column
-unless declared hidden. Still visible: a sheet problem's address in a hidden column (codes
-and addresses only). **X7, key-value tables**: `type: "key_value"`, columns `field` and
+unless declared hidden. A sheet's problems (`Workbook.problems`, describe's `problems`)
+leave its withheld cells out: one met only there is not listed, one met there too is
+counted and placed at its other cells (the sheet is read once more for it, kept while the
+declarations stay); a declared table's own flags (`blank_header`, `rows_below`) never name
+a hidden cell. **X7, key-value tables**: `type: "key_value"`, columns `field` and
 `value` (ids rename them; headers find them) and any more; the key is the field column;
 `t:run/report_date/value`; `describe` shows the fields and their values compactly
 (`fields`, at most 25, the rest counted). A two-column block with no header whose first row

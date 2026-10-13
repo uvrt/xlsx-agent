@@ -387,6 +387,7 @@ def build(workbook: "Workbook", spec: TableSpec) -> Region | None:
     left, right = _extent(workbook, spec, first_sheet, used)
     parts: list[Part] = []
     flags: list[Problem] = []
+    belows: list[dict[int, tuple[int, str]]] = []
     names: list[str] | None = None
     texts: list[str] | None = None
     for sheet in sheets:
@@ -416,8 +417,7 @@ def build(workbook: "Workbook", spec: TableSpec) -> Region | None:
                                                       f"{quote_sheet(first_sheet.name)}!{cell}"])
         first = spec.first_row or (header + 1 if header is not None else used.first.row)
         last, below = _last_row(workbook, spec, sheet, used, first, left, right)
-        if below is not None:
-            flags.append(Problem("rows_below", below))
+        belows.append(below)
         parts.append(Part(sheet.name, sheet.id, header, first, last))
     if names is None:
         names = [f"Column {column_letters(c)}" for c in range(left, right + 1)]
@@ -427,7 +427,7 @@ def build(workbook: "Workbook", spec: TableSpec) -> Region | None:
                                    "two columns at least: a field and a value")
         if spec.header_row == 0:
             names[:2] = list(KEY_VALUE_COLUMNS)
-    return _region(workbook, spec, parts, left, right, names, flags)
+    return _region(workbook, spec, parts, left, right, names, flags, belows)
 
 
 def _sheets(workbook: "Workbook", spec: TableSpec) -> "list[Sheet]":
@@ -488,13 +488,14 @@ def _row_values(workbook: "Workbook", sheet: "Sheet", row: int, left: int, right
 
 
 def _last_row(workbook: "Workbook", spec: TableSpec, sheet: "Sheet", used: Area, first: int,
-              left: int, right: int) -> tuple[int, str | None]:
-    """The last data row of ``sheet``, and the first cell holding something below the
-    blank row that ended the rows (``None``: nothing there, or ``last_row`` declared)."""
+              left: int, right: int) -> tuple[int, dict[int, tuple[int, str]]]:
+    """The last data row of ``sheet``, and in each column the first cell holding something
+    below the blank row that ended the rows, by sheet column: its row and address (none:
+    nothing there, or ``last_row`` declared)."""
     if spec.last_row is not None:
-        return min(spec.last_row, max(used.last.row, first - 1)), None
+        return min(spec.last_row, max(used.last.row, first - 1)), {}
     if first > used.last.row:
-        return first - 1, None
+        return first - 1, {}
     last = first - 1
     rows = workbook.read(RangeAddress(SheetRef(name=sheet.name),
                                       Area(Cell(first, left), Cell(used.last.row, right))))
@@ -502,15 +503,17 @@ def _last_row(workbook: "Workbook", spec: TableSpec, sheet: "Sheet", used: Area,
         if all(v.t == "blank" for v in values):
             break
         last = values[0].row
+    below: dict[int, tuple[int, str]] = {}
     for values in rows:
         for value in values:
-            if value.t != "blank":
-                return last, value.a
-    return last, None
+            if value.t != "blank" and value.column not in below:
+                below[value.column] = (value.row, value.a)
+    return last, below
 
 
 def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int, right: int,
-            names: list[str], flags: list[Problem]) -> Region:
+            names: list[str], flags: list[Problem],
+            belows: "list[dict[int, tuple[int, str]]]") -> Region:
     path = spec.path
     width = right - left + 1
     ids: list[str | None] = [None] * width
@@ -576,6 +579,15 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
     elif spec.type == "key_value":
         key = columns[0]
     sheet_columns = tuple(left + i for i in visible)
+    # What the table says of its cells names no cell of a column hidden from the model:
+    # a header flag there is dropped, and more below is flagged at its first visible cell.
+    flags = [f for f in flags if f.address is None
+             or _column_of(f.address) in (None, *sheet_columns)]
+    for below in belows:
+        shown = sorted((row, column, address) for column, (row, address) in below.items()
+                       if column in sheet_columns)
+        if shown:
+            flags.append(Problem("rows_below", shown[0][2]))
     header_rows = 1 if spec.header_row else 0
     common = dict(kind="declared", name=spec.name, columns=tuple(columns[i] for i in visible),
                   header_rows=header_rows, key=key, flags=tuple(dict.fromkeys(flags)),
@@ -605,6 +617,15 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
         else:
             _check_keys(workbook, region, path)
     return region
+
+
+def _column_of(address: str) -> int | None:
+    """The sheet column of a cell's address (``'Area 1'!E3``), ``None`` for another form."""
+    letters = address.rpartition("!")[2].rstrip("0123456789").lstrip("$")
+    try:
+        return column_index(letters) if letters.isalpha() else None
+    except (ValueError, KeyError):
+        return None
 
 
 def _hidden_by(spec: TableSpec, offset: int, left: int, names: list[str]) -> bool:
