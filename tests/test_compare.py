@@ -8,6 +8,7 @@ Every workbook is built with tests/build.py.
 import datetime as dt
 import json
 from datetime import date
+from decimal import Decimal
 
 import pytest
 
@@ -17,7 +18,7 @@ from test_catalogue import MARKER
 
 from xlsx_agent import NameNotFound, RegionError, Workbook
 from xlsx_agent.compare import CELL_CHANGES
-from xlsx_agent.tools import FORMAT, GROUPS, TOOLS
+from xlsx_agent.tools import FORMAT, GROUPS, TOOLS, format as xlsx_format
 from xlsx_agent.tools.read import TEXT_SHOWN
 
 CLOCK = lambda: dt.datetime(2026, 10, 13, 12, 0, tzinfo=dt.timezone.utc)  # noqa: E731
@@ -269,7 +270,14 @@ def test_xlsx_compare_end_to_end(box):
                                "range_b": "'Stock 2026'!A1:D6", "key": "SKU", "rows": [5, 5],
                                "paired": 4, "unchanged": 1,
                                "totals": {"columns": 1, "rows_added": 1, "rows_removed": 1,
-                                          "cells_changed": 5}}]
+                                          "cells_changed": 5},
+                               "columns": {"Name": {"changed": 1},
+                                           "Price": {"changed": 2, "up": 1,
+                                                     "max_up": "t:Products/SKU-2/Price +0.05"},
+                                           "Count": {"changed": 2}},
+                               "added": ["t:Products/SKU-6"],
+                               "removed": ["t:Products/SKU-3"]}]
+    assert list(data) == ["a", "b", "tables", "totals", "differences"]   # the summary first
     assert data["totals"] == {"sheets": 3, "columns": 1, "rows_added": 1, "rows_removed": 1,
                               "cells_changed": 5}
     differences = data["differences"]
@@ -279,14 +287,17 @@ def test_xlsx_compare_end_to_end(box):
         {"sheet": "renamed", "id": 3, "a": "Stock", "b": "Stock 2026"},
         {"sheet": "added", "id": 4, "b": "Fresh"},
         {"table": "t:Products", "column": "renamed", "a": "Qty", "b": "Count"}]
-    assert differences[4]["row"] == "added" and differences[4]["key"] == "SKU-6"
-    assert differences[4]["at"] == "t:Products/#5" and len(differences[4]["cells"]) == 4
-    assert differences[5]["row"] == "removed" and differences[5]["key"] == "SKU-3"
+    assert differences[4]["row"] == "added" and differences[4]["at"] == "t:Products/SKU-6"
+    assert set(differences[4]) == {"row", "at", "cells"} and len(differences[4]["cells"]) == 4
+    assert differences[4]["cells"][0]["a"] == "'Stock 2026'!A6"
+    assert differences[5]["row"] == "removed" and differences[5]["at"] == "t:Products/SKU-3"
     assert differences[7] == {
-        "table": "t:Products", "cell": "type", "key": "SKU-2", "column": "Count",
+        "cell": "type", "at": "t:Products/SKU-2/Count",
         "a": {"a": "Stock!D3", "v": 40, "t": "number"},
         "b": {"a": "'Stock 2026'!D3", "v": "40", "t": "text", "issue": "number_as_text"}}
-    assert differences[-1]["cell"] == "changed" and differences[-1]["key"] == "SKU-5"
+    assert differences[-1] == {"cell": "changed", "at": "t:Products/SKU-5/Name",
+                               "a": {"a": "Stock!B6", "v": "Bracket", "t": "text"},
+                               "b": {"a": "'Stock 2026'!B5", "v": "bracket", "t": "text"}}
     assert "cut" not in data
     assert result.summary == ("d1 and d2: 1 tables compared; 3 sheets, 1 columns, 1 rows added, "
                               "1 rows removed, 5 cells changed; differences 1-11 of 11")
@@ -310,7 +321,9 @@ def test_xlsx_compare_with_table_b_and_columns(box):
                       columns=["W"], key="Key")
     assert result.ok, result.error
     assert result.data["tables"][0]["b"] == "t:Items"
-    assert [d["column"] for d in result.data["differences"]] == ["W"]
+    assert [d["at"] for d in result.data["differences"]] == ["t:Items/K1/W"]
+    assert result.data["tables"][0]["columns"] == {
+        "W": {"changed": 1, "up": 1, "max_up": "t:Items/K1/W +1"}}
 
 
 def test_a_document_compared_with_itself_has_no_differences(box):
@@ -392,7 +405,7 @@ def test_a_large_pair_is_bounded_and_paged(box, large_pair):
     assert len(seen) == expected and pages > 1
     assert [d["row"] for d in seen[:150]] == ["added"] * 100 + ["removed"] * removed
     assert len({json.dumps(d, sort_keys=True) for d in seen}) == expected   # each once
-    long = next(d for d in seen if d.get("key") == "L-00001")
+    long = next(d for d in seen if d.get("at") == "t:Ledger/L-00001/Region")
     assert long["cell"] == "changed" and long["b"]["length"] == 10_000
     assert len(long["b"]["v"]) == TEXT_SHOWN and texts == 1
     # a cursor belongs to its comparison
@@ -434,3 +447,150 @@ def test_no_cell_content_in_summaries_warnings_or_errors(box):
         assert MARKER not in " ".join(result.warnings)
     for record in session.log:
         assert MARKER not in json.dumps(getattr(record, "summary", "") or "")
+
+
+# -- X10: by key and by column -------------------------------------------------------------------
+
+
+def _checks(rows, *, columns=("code", "rating", "share", "due", "stamp", "start", "status",
+                                "ok")) -> Workbook:
+    styles = {2: {"num_fmt": "0%"}}
+    return _open(_book(rows, columns=columns, table="checks", styles=styles))
+
+
+CHECK_ROWS = [["A1", 2.5, 0.1, date(2026, 3, 1), dt.datetime(2026, 3, 1, 8, 0), dt.time(9, 0),
+               "open", True],
+              ["A2", 4.0, 0.2, date(2026, 3, 2), dt.datetime(2026, 3, 2, 8, 0), dt.time(9, 30),
+               "open", True],
+              ["A/3", 1.0, 0.3, date(2026, 3, 3), dt.datetime(2026, 3, 3, 8, 0),
+               dt.time(10, 0), "late", False],
+              ["A4", 3.0, 0.4, date(2026, 3, 4), dt.datetime(2026, 3, 4, 8, 0), dt.time(11, 0),
+               "done", True]]
+
+
+def _moved():
+    rows = [list(r) for r in CHECK_ROWS]
+    rows[0][1:6] = [4.0, 0.15, date(2026, 3, 4), dt.datetime(2026, 3, 1, 20, 0), dt.time(10, 30)]
+    rows[1][1], rows[1][3], rows[1][6] = 2.5, date(2026, 2, 27), "done"
+    rows[2][1], rows[2][2], rows[2][5], rows[2][7] = 2.5, 0.25, dt.time(9, 59, 40), True
+    rows[3][1], rows[3][4] = "3", dt.datetime(2026, 3, 2, 2, 0)      # a type change; -2.25 days
+    return rows
+
+
+def test_each_change_is_named_by_key_and_each_column_counted():
+    old, new = _checks(CHECK_ROWS), _checks(_moved()[:3] + [["A5"] + _moved()[3][1:]])
+    table = Workbook.compare(old, new, key="code").tables[0]
+    rating = [c for c in table.changed if c.column == "rating"]
+    assert [c.at for c in rating] == ["t:checks/A1/rating", "t:checks/A2/rating",
+                                      "t:checks/'A/3'/rating"]    # a key holding / is quoted
+    assert [c.delta for c in rating] == [Decimal("1.5"), Decimal("-1.5"), Decimal("1.5")]
+    assert [r.at for r in table.added] == ["t:checks/A5"]
+    assert [r.at for r in table.removed] == ["t:checks/A4"]
+    summary = {c.column: c.as_dict() for c in table.by_column()}
+    assert list(summary) == ["rating", "share", "due", "stamp", "start", "status", "ok"]
+    assert summary == {
+        "rating": {"changed": 3, "up": 2, "down": 1, "max_up": "t:checks/A1/rating +1.5",
+                   "max_down": "t:checks/A2/rating -1.5"},               # the first of a tie
+        "share": {"changed": 2, "up": 1, "down": 1, "max_up": "t:checks/A1/share +0.05",
+                  "max_down": "t:checks/'A/3'/share -0.05"},
+        "due": {"changed": 2, "up": 1, "down": 1, "max_up": "t:checks/A1/due +3d",
+                "max_down": "t:checks/A2/due -3d"},
+        "stamp": {"changed": 1, "up": 1, "max_up": "t:checks/A1/stamp +0.5d"},
+        "start": {"changed": 2, "up": 1, "down": 1, "max_up": "t:checks/A1/start +1:30",
+                  "max_down": "t:checks/'A/3'/start -0:00:20"},
+        "status": {"changed": 1},
+        "ok": {"changed": 1}}
+
+
+def test_a_type_change_counts_as_changed_never_up_or_down():
+    old, new = _checks(CHECK_ROWS), _checks(_moved())
+    table = Workbook.compare(old, new, key="code").tables[0]
+    rating = next(c for c in table.by_column() if c.column == "rating")
+    assert (rating.changed, rating.up, rating.down) == (4, 2, 1)
+    stamp = next(c for c in table.by_column() if c.column == "stamp")
+    assert stamp.max_down == "t:checks/A4/stamp -2.25d"
+    assert next(c for c in table.changed if c.change == "type").delta is None
+
+
+def test_lists_count_as_changed_only():
+    def book(owners):
+        built = WorkbookBuilder()
+        built.sheet("Tasks").rows("A1", [["Ref", "Owners", "Hours"],
+                                         ["T1", owners[0], 2], ["T2", owners[1], 3]])
+        wb = Workbook.open(built.to_bytes())
+        wb.declare_tables([{"name": "tasks", "sheets": "Tasks", "key": "Ref",
+                            "fields": [{"header": "Owners", "clean": {"split": ";"}}]}])
+        return wb
+    diff = Workbook.compare(book(["Kim;Ash", "Lee"]), book(["Kim", "Lee;Ash"]),
+                            tables=["t:tasks"])
+    (owners,) = diff.tables[0].by_column()
+    assert owners.as_dict() == {"changed": 2}
+    assert [c.b.t for c in diff.tables[0].changed] == ["list", "list"]
+
+
+def test_a_hidden_column_is_never_compared_counted_or_named(box):
+    def book(rows):
+        built = WorkbookBuilder()
+        built.sheet("Log").rows("A1", [["code", "rating", "remark"], *rows])
+        return built.to_bytes()
+    declared = [{"name": "checks", "sheets": "Log", "key": "code",
+                 "fields": [{"header": "remark", "hidden": True}]}]
+    old = Workbook.open(book([["A1", 1, "private one"], ["A2", 2, "private two"]]))
+    new = Workbook.open(book([["A1", 1, "changed one"], ["A2", 3, "changed two"]]))
+    for wb in (old, new):
+        wb.declare_tables(declared)
+    table = Workbook.compare(old, new, tables=["t:checks"]).tables[0]
+    assert [c.column for c in table.by_column()] == ["rating"]
+    assert [c.at for c in table.changed] == ["t:checks/A2/rating"]
+    with Toolbox(TOOLS, formats=[xlsx_format(tables=declared)], groups=GROUPS,
+                 workers=0) as toolbox:
+        session = _session(toolbox, book([["A1", 1, "private one"]]),
+                           book([["A1", 1, "changed one"]]))
+        result = _compare(toolbox, session, tables=["t:checks"])
+    assert result.ok and result.total == 0 and "remark" not in json.dumps(result.data)
+    assert "columns" not in result.data["tables"][0]
+
+
+def test_the_summary_is_on_the_first_page_only_and_bounded(box, large_pair):
+    session = _session(box, *large_pair)
+    first = _compare(box, session, key="Id")
+    (table,) = first.data["tables"]
+    changed = sum(1 for r in range(1, LONG_ROWS + 1) if r % 50 == 0 and r % 400)
+    assert table["columns"]["Amount"] == {"changed": changed, "up": changed,
+                                          "max_up": "t:Ledger/L-00050/Amount +1"}
+    assert table["columns"]["Region"] == {"changed": 1}
+    assert table["added"] == [f"t:Ledger/N-{r:03d}" for r in range(10)]
+    assert table["more_added"] == 90 and len(table["removed"]) == 10
+    assert table["more_removed"] == LONG_ROWS // 400 - 10
+    second = _compare(box, session, key="Id", cursor=first.next_cursor)
+    assert "columns" not in second.data["tables"][0] and "added" not in second.data["tables"][0]
+
+
+def test_a_summary_too_big_for_its_share_of_the_page_is_left_out_and_counted():
+    columns = ("Key",) + tuple(f"Column {i:03d} of a long name" for i in range(1, 60))
+    old = _book([["K1"] + [1] * 59], columns=columns)
+    new = _book([["K1"] + [2] * 59], columns=columns)
+    small = Limits(max_result_chars=4000)
+    with Toolbox(TOOLS, formats=[FORMAT], groups=GROUPS, workers=0, limits=small) as toolbox:
+        result = _compare(toolbox, _session(toolbox, old, new), key="Key")
+    assert result.ok, result.error
+    assert "columns" not in result.data["tables"][0]
+    assert result.data["cut"]["summaries"] == 1
+    assert len(result.to_text()) <= small.max_result_chars
+    with Toolbox(TOOLS, formats=[FORMAT], groups=GROUPS, workers=0) as toolbox:
+        result = _compare(toolbox, _session(toolbox, old, new), key="Key")
+    (table,) = result.data["tables"]
+    assert len(table["columns"]) == toolbox.limits.max_list_items and table["more_columns"] == 9
+
+
+def test_a_key_too_long_to_show_names_its_table_key_and_column():
+    key = "K" * (TEXT_SHOWN + 5)
+    old = _book([[key, 1]], columns=("Key", "V"))
+    new = _book([[key, 2], ["K2", 1]], columns=("Key", "V"))
+    with Toolbox(TOOLS, formats=[FORMAT], groups=GROUPS, workers=0) as toolbox:
+        result = _compare(toolbox, _session(toolbox, old, new), key="Key")
+    row, cell = result.data["differences"]
+    assert row == {"row": "added", "at": "t:Products/K2", "cells": row["cells"]}
+    assert cell["table"] == "t:Products" and cell["column"] == "V" and "at" not in cell
+    assert cell["key"] == key[:TEXT_SHOWN] and cell["key_length"] == len(key)
+    assert result.data["cut"]["text"] == 1
