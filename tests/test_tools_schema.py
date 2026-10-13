@@ -12,9 +12,11 @@ the ratio of the counted to the estimated size the siblings measured on Sonnet 5
 T5b).  The online count is R14's (``test_tools_online.py``, marked ``provider``).
 
 R6 (ooxml-edit 0.18.0): the core is the shared ``open_document`` and ``describe``, 274
-estimated, about 406 counted by the proxy.  Every definition (``close_document`` and
-``read_blob`` deferred in ``shared_misc``, and the tool-search tool) is 496 estimated; the
-guard is 550, a regression guard and not a budget, raised as the read tools arrive.
+estimated, about 406 counted by the proxy.  R7 adds ``xlsx_read`` and ``xlsx_profile`` to
+the core (the read tools are loaded): 912 estimated, about 1,350 counted.  Every definition
+(``close_document`` and ``read_blob`` deferred in ``shared_misc``, and the tool-search
+tool) is 1,135 estimated; the guard is 1,200, a regression guard and not a budget, raised
+as the read tools arrive.
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6000
-ALL_GUARD = 550
+ALL_GUARD = 1200
 
 
 @pytest.fixture(scope="module")
@@ -85,7 +87,7 @@ def test_the_groups_are_the_roadmaps():
     for tool in TOOLS:
         groups.setdefault(tool.group, set()).add(tool.name)
     # the read tools are the core; edits (0.2) will be deferred groups of their own
-    assert groups == {"core": {"open_document", "describe"},
+    assert groups == {"core": {"open_document", "describe", "xlsx_read", "xlsx_profile"},
                       "shared_misc": {"close_document", "read_blob"}}
 
 

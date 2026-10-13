@@ -1,0 +1,551 @@
+"""The read tools: ``xlsx_read`` (cells by address, typed, paged) and ``xlsx_profile``
+(every column of a region in full: ``describe``'s drill-down).  Both are in the loaded core
+(ROADMAP.md, "Tools": the read tools are loaded).
+
+**xlsx_read** takes any address that names cells (ROADMAP.md, "Addresses"): a cell or range
+(``Stock!A1:H40``; whole columns and rows, and any rectangle of more than one cell, are
+clipped to the sheet's used range, outside which every cell is blank), a table, name or
+region (its data rows), a column, a row by position or key, or a value.  Each cell comes
+back typed with its address (:meth:`Value.as_dict <xlsx_agent.read.types.Value.as_dict>`),
+row by row; on request with its number format's code (``formats``), its formula's text
+(``formulas``: ``f``; a shared group's other cells say ``shared_from``), its comment
+(``comments``) and its hyperlink (``hyperlinks``), and with the merged areas over the rows
+(``merges``).  The blocks array formulas and dynamic arrays fill that cross the rows are
+always listed (``arrays``): a cell inside one says nothing of it by itself.
+
+**Bounded.**  A page holds at most ``limit`` rows (by default ``Limits.max_list_items``, at
+most :data:`READ_ROWS`) and its whole result at most ``max_chars`` characters (by default,
+and at most, ``Limits.max_result_chars``); a row too wide for what is left is split, the
+rest of it starting the next page.  Text longer than :data:`TEXT_SHOWN` characters (a
+value, a formula, a comment, a link) is cut, with its ``length``; in a read of one cell, only
+as far as the page needs.  ``cut`` says what the page left out: ``rows`` not yet given
+(the split row among them), ``cells`` of the split row, ``chars`` when the page was full
+before ``limit`` rows, ``text`` the values whose text was cut, ``column_names`` when a
+region's names would take more than a quarter of the page (``describe`` and
+``xlsx_profile`` give them); ``next_cursor``, passed back as
+``cursor`` with the same target, gives the next page.  ``total`` is the target's rows.
+
+**xlsx_profile** gives :mod:`xlsx_agent.profile`'s whole profile of a table's or region's
+columns (all, the ``columns`` named, or the one a column address names), as
+:meth:`ColumnStats.as_dict <xlsx_agent.profile.ColumnStats.as_dict>` writes it: one region
+per call, :attr:`~ooxml_edit.tools.Limits.max_list_items` columns per page at most, within
+``max_result_chars``; text in it cut at :data:`PROFILE_TEXT` characters and each allowed
+list at :data:`ALLOWED_SHOWN` values, and counted in ``cut``.
+
+**Content.**  Results carry cell content -- values, formulas, comments, links -- as asked;
+summaries and errors carry addresses, counts and names only, never a key (ROADMAP.md,
+"Design rules", 7).  A formula's text appears only in a result that asked for it.
+"""
+
+from __future__ import annotations
+
+import json
+import zlib
+from typing import Any
+
+from ooxml_edit.charts.workbook import Area, Cell
+from ooxml_edit.tools import CORE, Result, ToolError, array, boolean, integer, string, tool
+
+from ..address import (DatasetAddress, RangeAddress, RefAddress, SheetRef, TableAddress,
+                       parse_address)
+from ..read.types import Value
+from .docformat import KIND, handler
+
+#: The most rows a page of ``xlsx_read`` holds (ROADMAP.md, "Tools": "at most 500").
+READ_ROWS = 500
+
+#: Text longer than this, in a read of more than one cell, is cut, with its length.
+TEXT_SHOWN = 2000
+
+#: Text in a profile (a value, an allowed value) is cut at this many characters.
+PROFILE_TEXT = 200
+
+#: The most allowed values a profile shows per validation list; the rest are counted.
+ALLOWED_SHOWN = 100
+
+#: The fewest characters a page may be held to: room for the envelope and one cell.
+MIN_CHARS = 1000
+
+#: Room left in a page for what the dispatcher adds to the envelope (version, warnings).
+_MARGIN = 400
+
+#: The most addresses ``cut.text`` lists.
+_FIRST = 3
+
+DOC = string("Document id.")
+CURSOR = string("next_cursor of the previous page, with the same target.", optional=True)
+
+
+# -- xlsx_read ---------------------------------------------------------------------------------
+
+
+@tool("xlsx_read",
+      "Cells by address, typed, row by row, each with its address; paged. Options add "
+      "number formats, formula text (f), comments, hyperlinks, merged areas. cut says what a "
+      "page left out; pass next_cursor back for more.",
+      {"doc": DOC,
+       "target": string("A cell or range (Stock!A1:H40, Stock!A:C), table or region "
+                        "(t:Products: its data rows), column (t:Products[Price]), row "
+                        "(t:Products/#5, t:Products/SKU-0042) or value."),
+       "formats": boolean("Add format, the number format code. Default false.", optional=True),
+       "formulas": boolean("Add f, the formula text. Default false.", optional=True),
+       "comments": boolean("Add comment (author, text). Default false.", optional=True),
+       "hyperlinks": boolean("Add link (url or location). Default false.", optional=True),
+       "merges": boolean("List the merged areas over the rows. Default false.", optional=True),
+       "key_column": string("The key column of a row or value by key, when describe gives "
+                            "none or several.", optional=True),
+       "limit": integer(f"Rows per page. Default 50, at most {READ_ROWS}.", minimum=1,
+                        maximum=READ_ROWS, optional=True),
+       "max_chars": integer("Characters per page. Default and at most 24000.",
+                            minimum=MIN_CHARS, optional=True),
+       "cursor": CURSOR},
+      group=CORE, kind=KIND)
+@handler
+def xlsx_read(call: Any, doc: str, target: str, formats: bool = False,
+              formulas: bool = False, comments: bool = False, hyperlinks: bool = False,
+              merges: bool = False, key_column: str | None = None, limit: int | None = None,
+              max_chars: int | None = None, cursor: str | None = None) -> Result:
+    """``xlsx_read``'s workbook handler (see the module's notes)."""
+    workbook = call.document
+    found = _cells(workbook, target, key_column)
+    rows_limit = min(limit or call.limits.max_list_items, READ_ROWS)
+    chars = min(max_chars or call.limits.max_result_chars, call.limits.max_result_chars)
+    chars = max(chars, MIN_CHARS)
+    area = found.area
+    total = 0 if area is None else area.last.row - area.first.row + 1
+    width = 0 if area is None else area.last.column - area.first.column + 1
+    start_row, start_column = _read_cursor(cursor, found.text, total, width)
+
+    data: dict[str, Any] = {"target": found.text}
+    if found.sheet is not None:
+        data["sheet"] = found.sheet
+    data["range"] = RangeAddress(found.ref, area).text if area is not None else None
+    if found.requested is not None:
+        data["requested"] = found.requested
+    names_cut = 0
+    if found.columns is not None:
+        if _size(found.columns) <= chars // 4:
+            data["columns"] = list(found.columns)
+        else:  # a region too wide for its names on every page: describe and xlsx_profile
+            names_cut = len(found.columns)
+    data["rows"] = []
+    if area is None:
+        return Result(summary=f"{found.label}: no cells to read", data=data, total=0)
+
+    top = area.first.row + start_row
+    bottom = min(area.last.row, top + rows_limit - 1)
+    page = Area(Cell(top, area.first.column), Cell(bottom, area.last.column))
+    sheet = found.sheet_object
+    annotate = _Annotations(workbook, sheet, comments=comments, hyperlinks=hyperlinks)
+    # What lies over the page besides its cells, as wide as the page can be: its length is
+    # kept out of the budget for the cells, and only shrinks once the page is known.
+    extras = _extras(workbook, sheet, found.ref, page, merges)
+    budget = chars - _MARGIN - _size({**data, **extras, "cut": _CUT_ROOM}) \
+        - len(_summary(found.label, 1, total, total, True))
+    single = area.first == area.last
+    cap = None if single else TEXT_SHOWN
+
+    shown: list[list[dict]] = []
+    used = 0
+    cut_text: list[str] = []
+    stop: tuple[int, int] | None = None      # (row, column) of the area where the next page starts
+    full = False
+    for index, values in enumerate(workbook.read(RangeAddress(found.ref, page), formats=formats)):
+        row = start_row + index
+        first = start_column if index == 0 else 0
+        out: list[dict] = []
+        for offset, value in enumerate(values[first:], first):
+            cell, texts = _cell(value, annotate, formulas, cap)
+            size = _size(cell) + 1
+            if used + size > budget:
+                if shown or out:
+                    stop, full = (row, offset), True
+                    break
+                cell, texts = _fit(value, annotate, formulas, budget - used)
+                size = _size(cell) + 1
+            out.append(cell)
+            used += size
+            cut_text.extend(texts)
+        if out:
+            shown.append(out)
+        if stop is not None:
+            break
+    if stop is None and bottom < area.last.row:
+        stop = (bottom - area.first.row + 1, 0)
+
+    data["rows"] = shown
+    # The rows given, each with one cell at least: from the page's first, one after another.
+    covered = Area(Cell(top, area.first.column),
+                   Cell(top + max(len(shown), 1) - 1, area.last.column))
+    data.update(_extras(workbook, sheet, found.ref, covered, merges))
+    cut: dict[str, Any] = {}
+    next_cursor = None
+    if stop is not None:
+        cut["rows"] = total - stop[0]
+        if stop[1]:
+            cut["cells"] = width - stop[1]
+        if full:
+            cut["chars"] = True
+        next_cursor = _cursor(found.text, *stop)
+    if cut_text:
+        cut["text"] = {"count": len(cut_text), "first": cut_text[:_FIRST]}
+    if names_cut:
+        cut["column_names"] = names_cut
+    if cut:
+        data["cut"] = cut
+    summary = _summary(found.label, start_row + 1, start_row + len(shown), total,
+                       next_cursor is not None)
+    return Result(summary=summary, data=data, total=total, next_cursor=next_cursor)
+
+
+class _Found:
+    """What an address names, as cells: ``text`` its canonical form; ``label`` the same
+    without a key (cell content: never in a summary, which the call log keeps); ``ref`` the
+    sheet (by name); ``sheet`` both its forms, as a result names a sheet; ``area`` the
+    cells to read (``None``: none); ``requested`` the rectangle asked for, when it was
+    clipped; ``columns`` the region's column names, for a ``t:`` address."""
+
+    def __init__(self, text: str, ref: SheetRef, sheet: Any, sheet_object: Any,
+                 area: Area | None, requested: str | None = None,
+                 columns: list[str] | None = None, label: str | None = None) -> None:
+        self.text = text
+        self.label = label or text
+        self.ref = ref
+        self.sheet = sheet
+        self.sheet_object = sheet_object
+        self.area = area
+        self.requested = requested
+        self.columns = columns
+
+
+def _cells(workbook: Any, target: str, key_column: str | None) -> _Found:
+    address = parse_address(target)
+    if isinstance(address, DatasetAddress):
+        raise ToolError("invalid_arguments", "a dataset (d:) is read once xlsx_derive makes "
+                        "one; give a cell, range or t: address", field="target")
+    if isinstance(address, RefAddress):
+        raise ToolError("not_found", f"no call has defined {address.text}", field="target")
+    if key_column is not None and not (isinstance(address, TableAddress)
+                                       and address.key is not None):
+        raise ToolError("invalid_arguments", "key_column is for a row or value by key "
+                        "(t:Products/SKU-0042)", field="key_column")
+    if isinstance(address, TableAddress):
+        selection = workbook.resolve(address, key=key_column)
+        region = selection.region
+        sheet = _sheet(workbook, workbook.sheet_of(region.range))
+        columns = list(region.columns) if selection.column is None else [selection.column]
+        area = selection.range.area if selection.range is not None else None
+        label = selection.address
+        if address.key is not None:
+            label = f"a {selection.kind} by key of {region.address.text}"
+        return _Found(selection.address, region.range.sheet, _forms(workbook, sheet), sheet,
+                      area, columns=columns, label=label)
+    sheet = _sheet(workbook, workbook.sheet_of(address))
+    ref = SheetRef(name=sheet.name) if sheet.name else SheetRef(id=sheet.id)
+    area = address.area
+    requested = None
+    if address.kind != "cell":
+        area = address.clipped(workbook.used_range(sheet)) if address.span != "cells" else \
+            _intersect(address.area, workbook.used_range(sheet))
+        if area != address.area:
+            requested = address.text
+    return _Found(address.text, ref, _forms(workbook, sheet), sheet, area, requested)
+
+
+def _sheet(workbook: Any, sheet: Any) -> Any:
+    """``sheet`` when it holds cells; a chart sheet or dialog sheet is refused."""
+    try:
+        return workbook._cell_sheet(sheet)
+    except ValueError as error:
+        raise ToolError("refused", str(error), field="target") from None
+
+
+def _forms(workbook: Any, sheet: Any) -> dict[str, Any]:
+    """Both ways to name a sheet, as a result gives them the first time it names one."""
+    out: dict[str, Any] = {"name": sheet.name}
+    if workbook.sheet_refs(sheet)[1] is not None:
+        out["id"] = sheet.id
+    return out
+
+
+def _intersect(area: Area, used: Area | None) -> Area | None:
+    if used is None:
+        return None
+    first = Cell(max(area.first.row, used.first.row), max(area.first.column, used.first.column))
+    last = Cell(min(area.last.row, used.last.row), min(area.last.column, used.last.column))
+    if first.row > last.row or first.column > last.column:
+        return None
+    return Area(first, last)
+
+
+class _Annotations:
+    """The comments and hyperlinks of a sheet, by cell, read only when asked for."""
+
+    def __init__(self, workbook: Any, sheet: Any, *, comments: bool, hyperlinks: bool) -> None:
+        self.comments: dict[Cell, Any] = {}
+        self.links: dict[Cell, Any] = {}
+        self.spans: list[Any] = []
+        if comments:
+            for comment in workbook.comments(sheet):
+                self.comments.setdefault(comment.cell, comment)
+        if hyperlinks:
+            for link in workbook.hyperlinks(sheet):
+                if link.area.first == link.area.last:
+                    self.links.setdefault(link.area.first, link)
+                else:
+                    self.spans.append(link)
+
+    def link(self, cell: Cell) -> Any:
+        found = self.links.get(cell)
+        if found is not None or not self.spans:
+            return found
+        for link in self.spans:
+            area = link.area
+            if area.first.row <= cell.row <= area.last.row \
+                    and area.first.column <= cell.column <= area.last.column:
+                return link
+        return None
+
+
+def _cell(value: Value, annotate: _Annotations, formulas: bool,
+          cap: int | None) -> tuple[dict, list[str]]:
+    """A value as the result gives it, its text cut at ``cap`` (``None``: not cut), and the
+    address once if any of its text was cut."""
+    out = value.as_dict()
+    cut = False
+    if isinstance(out["v"], str) and cap is not None and len(out["v"]) > cap:
+        out["length"] = len(out["v"])
+        out["v"] = out["v"][:cap]
+        cut = True
+    if formulas and value.formula_text is not None:
+        text = value.formula_text
+        if cap is not None and len(text) > cap:
+            out["f_length"] = len(text)
+            text, cut = text[:cap], True
+        out["f"] = text
+    position = Cell(value.row, value.column)
+    comment = annotate.comments.get(position) if annotate.comments else None
+    if comment is not None:
+        note: dict[str, Any] = {"author": comment.author, "text": comment.text}
+        if cap is not None and len(comment.text) > cap:
+            note["text"], note["length"], cut = comment.text[:cap], len(comment.text), True
+        out["comment"] = note
+    link = annotate.link(position) if (annotate.links or annotate.spans) else None
+    if link is not None:
+        target: dict[str, Any] = {}
+        if link.url is not None:
+            url = link.url
+            if cap is not None and len(url) > cap:
+                url, cut = url[:cap], True
+                target["url_length"] = len(link.url)
+            target["url"] = url
+        if link.location is not None:
+            target["location"] = link.location[:cap] if cap is not None else link.location
+        out["link"] = target
+    return out, [value.a] if cut else []
+
+
+def _fit(value: Value, annotate: _Annotations, formulas: bool,
+         room: int) -> tuple[dict, list[str]]:
+    """A page's first cell, too big for the page as it is: its text cut until it fits
+    ``room`` characters (at the least, to none)."""
+    cap = max(room, 0)
+    while True:
+        cell, texts = _cell(value, annotate, formulas, cap)
+        if _size(cell) + 1 <= room or cap == 0:
+            return cell, texts
+        cap = cap // 2 if cap > 64 else 0
+
+
+def _extras(workbook: Any, sheet: Any, ref: SheetRef, area: Area, merges: bool) -> dict:
+    """The merged areas (when asked) and array blocks that overlap ``area``."""
+    out: dict[str, Any] = {}
+    if merges:
+        found = [RangeAddress(ref, m).text for m in workbook.merges(sheet) if _overlaps(m, area)]
+        if found:
+            out["merges"] = found
+    blocks = [RangeAddress(ref, b).text for b in workbook.arrays(sheet) if _overlaps(b, area)]
+    if blocks:
+        out["arrays"] = blocks
+    return out
+
+
+def _overlaps(one: Area, two: Area) -> bool:
+    return not (one.last.row < two.first.row or two.last.row < one.first.row
+                or one.last.column < two.first.column or two.last.column < one.first.column)
+
+
+#: A ``cut`` at its longest, to keep room for it in a page.
+_CUT_ROOM = {"rows": 1048576, "cells": 16384, "chars": True,
+             "text": {"count": 100000, "first": ["'" + "x" * 31 + "'!XFD1048576"] * _FIRST}}
+
+
+def _summary(target: str, first: int, last: int, total: int, more: bool) -> str:
+    if total == 0 or last < first:
+        return f"{target}: no rows"
+    text = f"{target}: rows {first}-{last} of {total}"
+    return text + "; more with next_cursor" if more else text
+
+
+# -- xlsx_profile ------------------------------------------------------------------------------
+
+
+@tool("xlsx_profile",
+      "Full profile of a table's or region's columns, describe's drill-down: types and mix, "
+      "fill, min/max/mean, distinct values, text lengths, formula share, allowed values, "
+      "flags with first addresses. Paged by column.",
+      {"doc": DOC,
+       "target": string("A table or region (t:Products), or one column (t:Products[Price])."),
+       "columns": array(string(), "Only these columns, by name. Default all.", optional=True),
+       "cursor": CURSOR},
+      group=CORE, kind=KIND)
+@handler
+def xlsx_profile(call: Any, doc: str, target: str, columns: list[str] | None = None,
+                 cursor: str | None = None) -> Result:
+    """``xlsx_profile``'s workbook handler (see the module's notes)."""
+    workbook = call.document
+    address = parse_address(target)
+    if not isinstance(address, TableAddress) or address.key is not None \
+            or address.position is not None:
+        raise ToolError("invalid_arguments", "xlsx_profile takes a table or region (t:Products) "
+                        "or one of its columns (t:Products[Price])", field="target")
+    if address.column is not None and columns:
+        raise ToolError("invalid_arguments", "give a column in the target or columns, not both",
+                        field="columns")
+    region = workbook.region(address.whole)
+    wanted = [address.column] if address.column is not None else (columns or list(region.columns))
+    names = list(dict.fromkeys(region.columns[region.column_index(n)] for n in wanted))
+    text = region.address.text
+    start = _profile_cursor(cursor, text, len(names))
+    chars = call.limits.max_result_chars
+    page = names[start:start + call.limits.max_list_items]
+    stats = workbook.profile(region, page)
+
+    data: dict[str, Any] = {"target": text, "range": region.range.text, "rows": region.rows,
+                            "columns": []}
+    budget = chars - _MARGIN - _size({**data, "cut": _PROFILE_CUT_ROOM}) \
+        - len(_summary_profile(text, 1, len(names), len(names), True))
+    used = 0
+    counts = {"text": 0, "allowed_values": 0}
+    full = False
+    for item in stats:
+        shaped, cut = _profile(item.as_dict())
+        size = _size(shaped) + 1
+        if used + size > budget:
+            if data["columns"]:
+                full = True
+                break
+            shaped, cut = _profile(item.as_dict(), compact=True)
+            size = _size(shaped) + 1
+        data["columns"].append(shaped)
+        used += size
+        for key in counts:
+            counts[key] += cut.get(key, 0)
+    given = len(data["columns"])
+    end = start + given
+    cut_out: dict[str, Any] = {}
+    next_cursor = None
+    if end < len(names):
+        cut_out["columns"] = len(names) - end
+        if full:
+            cut_out["chars"] = True
+        next_cursor = _cursor(text, end, 0)
+    cut_out.update({key: n for key, n in counts.items() if n})
+    if cut_out:
+        data["cut"] = cut_out
+    summary = _summary_profile(text, start + 1, end, len(names), next_cursor is not None)
+    return Result(summary=summary, data=data, total=len(names), next_cursor=next_cursor)
+
+
+_PROFILE_CUT_ROOM = {"columns": 16384, "chars": True, "text": 100000, "allowed_values": 100000}
+
+
+def _summary_profile(target: str, first: int, last: int, total: int, more: bool) -> str:
+    text = f"{target}: columns {first}-{last} of {total}" if last >= first else \
+        f"{target}: no columns"
+    return text + "; more with next_cursor" if more else text
+
+
+def _profile(stats: dict, *, compact: bool = False) -> tuple[dict, dict[str, int]]:
+    """A column's profile with its text cut at :data:`PROFILE_TEXT` characters and its
+    allowed lists at :data:`ALLOWED_SHOWN` values; ``compact`` (a column too big for a page
+    by itself) leaves the values and allowed values out, counted.  The counts of what was
+    cut, by kind."""
+    cut = {"text": 0, "allowed_values": 0}
+
+    def shown(v: Any) -> Any:
+        if isinstance(v, str) and len(v) > PROFILE_TEXT:
+            cut["text"] += 1
+            return v[:PROFILE_TEXT] + "…"
+        return v
+
+    for name in ("min", "max"):
+        if name in stats:
+            stats[name] = shown(stats[name])
+    if "values" in stats:
+        if compact:
+            cut["text"] += len(stats["values"])
+            stats["values"] = len(stats["values"])
+        else:
+            for item in stats["values"]:
+                item["v"] = shown(item["v"])
+    for rule in stats.get("validation", ()):
+        values = rule.get("values")
+        if values is None:
+            continue
+        keep = 0 if compact else ALLOWED_SHOWN
+        if len(values) > keep:
+            cut["allowed_values"] += len(values) - keep
+            rule["more"] = len(values) - keep
+        rule["values"] = [shown(v) for v in values[:keep]]
+    return stats, cut
+
+
+# -- cursors and sizes -------------------------------------------------------------------------
+
+
+def _token(target: str) -> str:
+    return f"{zlib.crc32(target.encode('utf-8')):08x}"
+
+
+def _cursor(target: str, row: int, column: int) -> str:
+    """A page's start, opaque to the model: a position and the target it belongs to."""
+    return f"{row}.{column}.{_token(target)}"
+
+
+def _parse_cursor(cursor: str, target: str) -> tuple[int, int]:
+    parts = cursor.split(".")
+    if len(parts) != 3 or not parts[0].isdigit() or not parts[1].isdigit():
+        raise ToolError("invalid_arguments", "cursor is not one this tool gave", field="cursor")
+    if parts[2] != _token(target):
+        raise ToolError("invalid_arguments", f"cursor belongs to another target than {target}",
+                        field="cursor")
+    return int(parts[0]), int(parts[1])
+
+
+def _read_cursor(cursor: str | None, target: str, rows: int, width: int) -> tuple[int, int]:
+    if not cursor:
+        return 0, 0
+    row, column = _parse_cursor(cursor, target)
+    if row >= rows or column >= max(width, 1):
+        raise ToolError("invalid_arguments", "cursor is past the end of the target",
+                        field="cursor")
+    return row, column
+
+
+def _profile_cursor(cursor: str | None, target: str, count: int) -> int:
+    if not cursor:
+        return 0
+    start, column = _parse_cursor(cursor, target)
+    if column or start >= count:
+        raise ToolError("invalid_arguments", "cursor is past the end of the columns",
+                        field="cursor")
+    return start
+
+
+def _size(data: Any) -> int:
+    """Characters of ``data`` as compact JSON, as a result's text writes it."""
+    return len(json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str))
+
+
+TOOLS = [xlsx_read, xlsx_profile]

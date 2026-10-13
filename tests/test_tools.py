@@ -154,12 +154,12 @@ def test_detect_claims_workbooks_only():
 
 def test_the_tools_are_the_shared_ones_with_an_xlsx_describe(box):
     assert [t.name for t in TOOLS] == ["open_document", "close_document", "read_blob",
-                                       "describe"]
-    assert CORE_TOOLS == ["open_document", "describe"]
+                                       "describe", "xlsx_read", "xlsx_profile"]
+    assert CORE_TOOLS == ["open_document", "describe", "xlsx_read", "xlsx_profile"]
     describe = next(t for t in TOOLS if t.name == "describe")
     assert describe.same_definition(shared.definition("describe")) and describe.kinds == ["xlsx"]
     loaded = [d["name"] for d in box.definitions("anthropic", groups="core")]
-    assert loaded == ["open_document", "describe"]
+    assert loaded == ["open_document", "describe", "xlsx_read", "xlsx_profile"]
 
 
 def test_describe_merges_with_another_kinds_handler():

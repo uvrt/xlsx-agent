@@ -279,7 +279,10 @@ def test_the_cut_goes_from_samples_to_columns_to_regions(large):
     roomy = large.catalogue(max_tokens=16000)
     narrow = large.catalogue(max_tokens=6000)
     tight = large.catalogue(max_tokens=300)
-    assert len(roomy["regions"][0]["sample"]) == 1 and roomy["cut"] == {"sample_rows": True}
+    assert len(roomy["regions"][0]["sample"]) == 1
+    assert roomy["cut"] == {"sample_rows": True, "next": "xlsx_read gives its rows"}
+    assert narrow["cut"]["next"] == ("xlsx_profile gives a region's every column; "
+                                     "xlsx_read gives its rows")
     products = narrow["regions"][0]
     assert 0 < len(products["columns"]) < WIDE and len(products["sample"]) == 1
     assert [c["name"] for c in products["columns"]] + products["more_columns"] == \
