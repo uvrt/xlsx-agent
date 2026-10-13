@@ -103,7 +103,7 @@ def open_package(data: bytes, limits: Limits) -> OpcPackage:
     """Check ``data`` as the module's notes say and open it as a package; :class:`OpenError`
     when it is refused."""
     if data.startswith(CFB_SIGNATURE):
-        raise OpenError(*_compound_file_refusal(data))
+        raise OpenError(*compound_file_refusal(data))
     if data[:2] in BIFF_BOF:
         raise OpenError("xls", "a BIFF file")
     if not data.startswith(b"PK"):
@@ -148,7 +148,7 @@ def workbook_part(package: OpcPackage, source=None) -> tuple[str, str]:
 # -- compound files ----------------------------------------------------------------------------
 
 
-def _compound_file_refusal(data: bytes) -> tuple[str, str]:
+def compound_file_refusal(data: bytes) -> tuple[str, str]:
     """``(code, detail)`` for a compound file, from the names in its directory."""
     try:
         names = compound_file_names(data)
