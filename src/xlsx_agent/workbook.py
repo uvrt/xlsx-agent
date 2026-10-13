@@ -27,16 +27,19 @@ address resolves against::
     wb.read("t:Products[Price]")         # the column's data cells, as any range is read
     wb.declare_region("Returns", "Returns!A3:F200", header_rows=2, headers=[...])
 
-and what each column holds (:mod:`xlsx_agent.profile`)::
+and what each column holds (:mod:`xlsx_agent.profile`), and the whole workbook at a
+glance (:mod:`xlsx_agent.catalogue`)::
 
     wb.table("t:Products").column("Price").stats()     # ColumnStats(type='number', ...)
     wb.profile("t:Products")                           # every column's, in one pass
+    wb.catalogue()                                     # what describe returns
 
 Transitional and strict packages (``purl.oclc.org`` namespaces) are read alike.
 """
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field, replace
 from typing import BinaryIO, Iterator
@@ -49,6 +52,7 @@ from ooxml_edit.xml import Element
 
 from .address import (NameNotFound, RangeAddress, SheetRef, TableAddress, nearest,
                       parse_address, quote_sheet)
+from .catalogue import DEFAULT_TOKENS, catalogue
 from .package import OpenError, open_package, read_source, workbook_part
 from .profile import Column, ColumnStats, profile
 from .read.names import DefinedName, read_names
@@ -122,6 +126,7 @@ class Workbook:
         self._styles: Styles | None = None
         self._scans: dict[str, SheetScan] = {}
         self._table_parts_read: list[TablePart] | None = None
+        self._catalogue: tuple | None = None   # what the catalogue is made from, gathered
         self.regions = Regions(self)
 
     # -- lifecycle -------------------------------------------------------------------------
@@ -365,6 +370,21 @@ class Workbook:
         numbers."""
         region = address if isinstance(address, Region) else self.regions.region(address)
         return self.regions.key_columns(region)
+
+    # -- the catalogue ---------------------------------------------------------------------
+
+    def catalogue(self, *, detail: str = "catalogue", max_tokens: int = DEFAULT_TOKENS) -> dict:
+        """What the workbook holds, as data: sheets, regions with their key columns and
+        each column's profile summarised, sample rows, flags and problems, within
+        ``max_tokens`` as the siblings' offline proxy counts them (``detail="full"``:
+        every column's whole profile, nothing cut).  What the shared ``describe`` tool
+        returns; see :mod:`xlsx_agent.catalogue`."""
+        return catalogue(self, detail=detail, max_tokens=max_tokens)
+
+    def describe(self, *, max_tokens: int = DEFAULT_TOKENS) -> str:
+        """The catalogue as text: :meth:`catalogue`'s data as compact JSON."""
+        return json.dumps(self.catalogue(max_tokens=max_tokens), ensure_ascii=False,
+                          separators=(",", ":"), default=str)
 
     def _table_parts(self) -> list[TablePart]:
         if self._table_parts_read is None:
