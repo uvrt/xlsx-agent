@@ -221,12 +221,14 @@ Every result is bounded by `Limits.max_result_chars` (24,000) and
 | `find_text` (shared) | `doc`, `text`, `regex`, `range` (a sheet, range or table), `cursor` | matches by address and kind: cell (text cells; numbers and dates are not searched, having no display string yet), table or region name, column header, comment, defined name; hidden ones marked; formula text not searched (the shared tool has no option for it) | 50 per page |
 | `xlsx_derive` | `doc`, `from` (table, region or dataset), `where`, `group_by`, `measures` (`count`, `sum`, `mean`, `median`, `min`, `max`, `share`, `distinct`, each with `column` and `as`), `bins` (edges for a number or date column), `pivot` (a column whose values become columns), `sort`, `top`, `round`, `id` | `d:<id>`: columns, rows, the rounding applied, and for every value its sources (see *Provenance*); the rows left out and why, counted by reason | at most 1,000 result rows and 50 shown; a measure on a column whose type does not allow it is refused before anything is computed |
 | `xlsx_compare` | `a`, `b` (two open documents), `tables` (default every table and declared region; `table_b` when the one table's name differs in `b`), `key`, `columns`, `cursor` | sheets added, removed and renamed (by id); rows added and removed (by key); cells changed (address in each, old and new value, type: a number and the same number as text is a `type` change); columns added, removed and renamed; duplicate keys reported, not paired by guess | 50 differences per page, totals always |
-| `xlsx_validate_data` | `doc`, `schema`: sheets and tables required; per column type, required, unique, enum, `min`/`max`, `step` (e.g. 1–5 in halves), pattern | problems by address and code (`missing_column`, `wrong_type`, `out_of_range`, `not_in_enum`, `duplicate_key`, `required_blank`...), counted by code | 50 problems per page, counts always |
+| `xlsx_validate_data` | `doc`, `schema`: sheets and tables (or declared region specs) required; `key`; per column type, required, unique, enum (with `case`), the column's own drop-down list (`validation_list`), `min`/`max`, `step` (e.g. 1–5 in halves), pattern | problems by address and code (`missing_sheet`, `missing_table`, `missing_column`, `no_validation_list`, `no_cached_value`, `required_blank`, `wrong_type`, `out_of_range`, `off_step`, `not_in_enum`, `not_in_list`, `pattern_mismatch`, `duplicate_key`, `duplicate_value`), counted by code; never cell text | 50 problems per page, counts always |
 
 `xlsx_compare` and `xlsx_validate_data` are in the core if the budget holds; if the
 online count says otherwise they move to a deferred `xlsx_check` group, and R14 records the
 numbers. At R12 `xlsx_compare` is 329 estimated (about 487 counted by the offline
-proxy) and the core with it about 4,153 counted, so it is in the core.
+proxy) and the core with it about 4,153 counted, so it is in the core. At R13
+`xlsx_validate_data` is 630 estimated (about 932 counted) and the core with it 3,425
+estimated, about 5,069 counted: both stay in the core, and no `xlsx_check` group is made.
 
 ### 0.2 — edit (deferred groups)
 
@@ -293,7 +295,8 @@ wb.derive(from_=ds, measures=[{"fn": "max", "column": "average"}])   # from a da
                                      # its sources are the original cells, not the dataset's
 
 Workbook.compare(old, new, tables=["t:Products"], key="SKU")   # Diff
-wb.validate_data(schema)             # [Problem(address, code)], never cell text
+wb.validate_data(schema)             # ValidationReport: [DataProblem(code, address)],
+                                     # counted by code; never cell text
 ```
 
 0.2 adds `wb.set_cells({...})`, `wb.write_table(...)`, `wb.format(...)`,
@@ -447,6 +450,27 @@ Cells are compared by type, then value: `changed`, `type`, `added` (blank before
 differences (sheets, tables, columns, duplicate keys, unkeyed rows, rows added and removed
 with their cells, cells changed) 50 a page within 24,000 characters, `totals` always, the
 comparison kept for its next pages.
+
+*R13 as built*: `wb.validate_data(schema)` (`xlsx_agent.schema`) takes a JSON-able schema:
+`sheets` (names, case aside) and `tables`, each a `t:` address or a declared region spec
+(`range`, `name`, `header_rows`, `headers`; used for the check only, never kept), with
+`key` (columns unique together, never blank) and `columns`: `name` and any of `type` (a
+reader type; nothing coerced, so a percent is not a number), `required`, `unique` (values
+the same as keys are: text exactly, whole numbers by digits), `min`/`max` (written as
+filter values, read by the declared type), `step` (number or percent, from `min` or 0,
+compared as shortest decimals), `enum` (`case`: `exact` by default, or `ignore`),
+`validation_list` (the union of the data-validation lists over the column, as the profile
+reads them) and `pattern` (Python regex, whole match, text cells). A schema that is not one
+is refused before reading (`SchemaError`, `bad_schema`, its path, valid options; tool
+error `invalid_arguments` on `schema`). The `ValidationReport` lists `DataProblem`s by
+code and address -- a run of cells next to each other in a column with the same problem
+is one problem over a range with its `cells` -- with the table, column, what was expected
+(type, range, step, enum or list size, case rule, a `hint` `case_differs`/`space_differs`
+without the value, `first` for a repeat, `reason`, `nearest` names) and a one-line
+`message`; never the cell's text. `counts` (problem cells by code) are always complete;
+at most 10,000 problems are kept, the rest counted (`cut`). `xlsx_validate_data` pages
+them as `xlsx_compare` pages differences; in the strict schema `min`, `max` and `enum` are
+strings and `key` a list.
 
 ### 0.2 — edit
 
