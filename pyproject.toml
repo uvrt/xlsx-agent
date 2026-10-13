@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xlsx-agent"
+version = "0.0.1"
+description = "Workbooks as a source an agent can describe, query and derive from, every figure traceable to its cells"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Evert Koks" }]
+keywords = ["xlsx", "excel", "spreadsheet", "ooxml", "agent", "llm"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+  "Topic :: Office/Business :: Financial :: Spreadsheet",
+  "Topic :: Text Processing :: Markup :: XML",
+]
+# lxml, ooxml-edit and ooxml-common, and nothing else at runtime (ROADMAP.md, "Decisions
+# already made", 6).  ooxml-edit is the format-neutral editing core the siblings share: the
+# OPC package (parts as their original bytes, content types, relationships), the safe parser,
+# the history and, from 0.17.0, the tool layer as pptx-agent and docx-agent use it; its
+# charts.workbook carries the cell and area types xlsx-agent's addresses build on.
+# ooxml-common (standard library only) is named for what xlsx-agent imports from it
+# directly: the package kinds (ooxml_common.kinds: xlsx, xlsm, xltx, xltm), and from 0.14.0
+# the themes and measured text widths the later edit and render milestones need.  Neither is
+# on PyPI yet: install them first from sibling checkouts (`pip install -e ../ooxml-common
+# -e ../ooxml-edit`) or from GitHub.
+dependencies = ["lxml>=4.9", "ooxml-edit>=0.17.0", "ooxml-common>=0.14.0"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.urls]
+Repository = "https://github.com/uvrt/xlsx-agent"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
