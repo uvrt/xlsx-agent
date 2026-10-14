@@ -1,6 +1,9 @@
 """Record the golden transcripts (tests/golden/transcripts) by running each task on Claude.
 
-    ANTHROPIC_API_KEY=... python tools/record_goldens.py --spend spend.txt [task ...]
+    ANTHROPIC_API_KEY=... python tools/record_goldens.py --spend spend.txt --work DIR [task ...]
+
+With no task named, all three are recorded; name one (``g2-compare-review``) to record it
+alone, the others left as they are.
 
 Each task's inputs are built by ``tests/golden_inputs.py`` and opened in a fresh session
 (fixed clock); the model gets the tools as ``Toolbox.definitions("anthropic")`` sends them,
@@ -42,7 +45,7 @@ from zip_content import content_sha256  # noqa: E402
 
 API = "https://api.anthropic.com/v1/messages"
 MODEL = "claude-haiku-5-5"
-#: The fixed clock every session runs on (test_golden.py's).
+#: The fixed clock every session runs on (test_golden.py's), whatever day a task is recorded.
 CLOCK = dt.datetime(2026, 10, 13, 12, 0, tzinfo=dt.timezone.utc)
 MAX_TOKENS = 512
 MAX_TURNS = 8
@@ -187,7 +190,7 @@ def record(task: str, root: Path, spend: Path) -> dict | None:
             print(f"{task}: no answer within {MAX_TURNS} turns")
             return None
     return {"task": task, "recorded": {"how": "recorded", "model": MODEL,
-                                       "date": "2026-10-13"},
+                                       "date": dt.date.today().isoformat()},
             "prompt": PROMPTS[task], "inputs": inputs, "calls": calls, "answer": answer}
 
 

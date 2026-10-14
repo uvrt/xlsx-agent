@@ -724,10 +724,18 @@ description adds a sentence on the summary and drops "with addresses": `xlsx_com
 proxy (5,009 online before; about 5,027 expected, not counted online); every definition
 3,684 → 3,696 (guard 3,700). `strict_problems` is clean. **Goldens**: g2's comparison now
 gives the summary and names differences by key, so its replay differs from the recording;
-not re-recorded (recording calls a model): `tests/test_golden.py` converts the replay back
-to the recorded form (dropping the summary, reading `table`, `key`, `column` and the
-position back from `at` and the cells) and checks every recorded value, and a new test
-checks g2's summary. g1 and g3 are unchanged.
+at first not re-recorded (recording calls a model): `tests/test_golden.py` converted the
+replay back to the recorded form, and a new test checked g2's summary. g1 and g3 are
+unchanged. *Re-recorded* (2026-10-14, approved by the user): g2 alone, by
+`tools/record_goldens.py g2-compare-review` (claude-haiku-5-5, same settings, the same fixed
+clock; three requests, 9,635 tokens written or uncached, 15,383 read from the cache, 689
+out). The model's path is the old one -- `describe` d1, `describe` d2, one `xlsx_compare` of
+`t:Stock` by SKU, same arguments -- and the replay now checks the current shape directly
+(the conversion is gone); the summary test reads the recorded comparison. Its answer
+reports the same four changes, now with the price's `+0.01`, but names SKU-0005's item
+wrongly ("Wall plug 6 mm", SKU-0003's; the comparison names the row by key only and the
+model took the name from the wrong sample row); the answer is for the reader and not
+replayed, so it is kept as recorded.
 
 *Title cells as built* (end-to-end check, 2026-10-14): **A title is no region.** A sheet
 with a title in A1, a blank row and a table from row 3 listed the title as a detected
