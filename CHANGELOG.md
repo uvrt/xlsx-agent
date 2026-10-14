@@ -5,6 +5,14 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **A sheet's dates placed in the locale** (T18b): a date column's ISO text from `t:`, a
+  derive's dates and a dataset labelled `date`/`datetime`/`time` are written in a deck or
+  document in the session locale's day order, as a Python date is (`1/5/2026` en-US,
+  `5/1/2026` nl-BE), and a chart's categories match them written ISO or in the locale
+  (ooxml-edit 0.29.0). The workbook's own results and provenance keep ISO 8601; no cell's
+  display text is produced, so the locale's writing is the only one. No definition
+  changes.
+
 - **Dates in a dataset made in Python** (T18): a Python `date`, `datetime` or `time` in a
   dataset is that type with no label (it was `text`, so `min` and `max` refused it), read
   as ISO 8601 text as a cell's date is; mixed with other values, the column takes the

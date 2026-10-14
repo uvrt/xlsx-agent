@@ -797,7 +797,21 @@ so a refused `min` says so and offers both ways: the `date` label
 gives `TYPE_LABELS`) or `coerce: ["date_as_text"]`; a column labelled `text` is left
 alone. Placing: ooxml-edit writes a Python date in the session locale's day order
 (`3/1/2026` en-US, `1/3/2026` nl-BE); a derive's dates are ISO text, as a sheet's are,
-and are placed as written. Definitions unchanged.
+and are placed as written (until T18b). Definitions unchanged.
+
+*T18b as built* (2026-10-14): **one way to write a date in a deck or document.** A date
+column's ISO text -- a sheet's date column through `t:` (`table_dataset` labels a column
+of one type with it), a derive's `min`/`max`/`first`/`last` of dates, a dataset labelled
+`date`, `datetime` or `time` -- is placed as a Python date is, in the session locale's
+day order (ooxml-edit 0.29.0, `sources.label(..., type=)` through `Rows.label`), so one
+deck no longer mixes `1/3/2026` and `2026-01-20`. A column mixing dates with other types
+has no label and keeps its ISO text, as does an elapsed time (`PT25H30M0S`). **Which text
+wins:** a cell's own display text from its number format is never produced (*Values and
+types*: no display string until Excel's is measured), so nothing competes with the
+locale's writing; the workbook's results (`xlsx_read`, `xlsx_derive`, provenance) keep
+ISO 8601 -- only placing writes the locale's. A chart's categories match a date column's
+rows written either way (ISO, as an older deck has them, or in the locale). Definitions
+unchanged.
 
 *Withheld formulas as built* (T17's gaps, 2026-10-14): **a formula over a hidden column
 keeps its value, not its text.** A visible cell's formula that reaches a withheld cell is

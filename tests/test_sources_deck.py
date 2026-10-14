@@ -75,8 +75,8 @@ def test_a_table_and_a_chart_from_one_workbook_table(toolbox, session):
 
     table = ok(call(toolbox, session, "ppt_add_table", doc="d1", slide="s:256", box=BOX,
                     **{"from": "t:checks", "from_columns": ["code", "rating", "due"]})).data
-    assert table["cells"] == [["code", "rating", "due"], ["A1", "3.5", "2026-01-05"],
-                              ["A2", "4", "2026-02-10"], ["B1", "2.5", "2026-03-15"]]
+    assert table["cells"] == [["code", "rating", "due"], ["A1", "3.5", "1/5/2026"],
+                              ["A2", "4", "2/10/2026"], ["B1", "2.5", "3/15/2026"]]
     placed = table["from"]
     assert placed["source"] == "d2/t:checks" and placed["doc"] == "d2"
     assert placed["version"] == version
@@ -167,15 +167,44 @@ def test_python_dates_are_placed_in_the_sessions_locale(toolbox, locale, cells):
     assert drawn["categories"] == [row[1] for row in cells]   # a category, not a blank
 
 
-def test_a_derive_of_python_dates_places_its_iso_text(toolbox):
-    session = _session(toolbox, locale=DUTCH)
+@pytest.mark.parametrize("locale, cells", [(None, ["1/20/2026", "3/1/2026"]),
+                                           (DUTCH, ["20/1/2026", "1/3/2026"])])
+def test_a_derive_of_python_dates_places_its_dates_in_the_locale(toolbox, locale, cells):
+    session = _session(toolbox, locale=locale)
     _keep_sites(session)
     ok(call(toolbox, session, "xlsx_derive", **{"from": "d:sites"}, id="span",
             measures=[{"fn": "min", "column": "opened", "as": "since"},
                       {"fn": "first", "column": "opened", "as": "first"}]))
     table = ok(call(toolbox, session, "ppt_add_table", doc="d1", slide="s:256", box=BOX,
                     **{"from": "d:span"})).data
-    assert table["cells"] == [["since", "first"], ["2026-01-20", "2026-03-01"]]
+    assert table["cells"] == [["since", "first"], cells]
+    # The derive's own result keeps ISO 8601: only placing writes the locale's.
+    assert session.dataset("span").dataset.rows == (("2026-01-20", "2026-03-01"),)
+
+
+#: The checks' due dates (book(), a date column) as each locale writes them.
+DUE = {"en-US": ["1/5/2026", "2/10/2026", "3/15/2026"],
+       "nl-BE": ["5/1/2026", "10/2/2026", "15/3/2026"]}
+
+
+@pytest.mark.parametrize("locale, key", [(None, "en-US"), (DUTCH, "nl-BE")])
+def test_a_sheets_date_column_reads_as_python_dates_do(toolbox, locale, key):
+    session = _session(toolbox, locale=locale)
+    table = ok(call(toolbox, session, "ppt_add_table", doc="d1", slide="s:256", box=BOX,
+                    **{"from": "t:checks", "from_columns": ["due"]})).data
+    assert [row[0] for row in table["cells"][1:]] == DUE[key]
+    assert table["from"]["columns"][0]["sources"] == ["t:checks/{A1,A2,B1}/due"]
+    drawn = ok(chart(toolbox, session, **{"from": "t:checks", "columns": ["due", "rating"]}))
+    assert drawn.data["categories"] == DUE[key]
+    # An older deck's chart, its categories ISO 8601 and in another order: matched by date.
+    older = ok(chart(toolbox, session, categories=["2026-03-15", "2026-01-05", "2026-02-10"],
+                     data=[{"name": "rating", "values": [0, 0, 0]}])).created[0]
+    for target, values in ((drawn.created[0], [3.5, 4, 2.5]), (older, [2.5, 3.5, 4])):
+        ok(call(toolbox, session, "edit_chart", doc="d1", target=target, action="set_values",
+                series="rating", **{"from": "t:checks", "columns": ["due", "rating"]}))
+        read = ok(call(toolbox, session, "edit_chart", doc="d1", target=target,
+                       action="read"))
+        assert read.data["series"][0]["values"] == values
 
 
 def test_the_workbook_definitions_are_unchanged_and_strict_clean():
