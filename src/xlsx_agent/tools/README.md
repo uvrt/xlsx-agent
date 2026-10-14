@@ -31,7 +31,10 @@ on Azure OpenAI's Responses API.
 | `shared_misc` | `close_document`, `read_blob` |
 
 `describe` and `find_text` are the shared tools with the workbook's handlers: one
-definition for decks, documents and workbooks alike.
+definition for decks, documents and workbooks alike. `describe` of any document also
+lists the session's datasets (ooxml-edit 0.30.0): id, columns, types, row count and
+`from` -- `d1/t:Sales` for a derive from a workbook, `d:by_rep` for one from a dataset --
+never their values.
 
 ## Setup (every provider)
 

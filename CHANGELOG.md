@@ -5,6 +5,13 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **`describe` lists the session's datasets** (T11; ooxml-edit 0.30.0, which it now
+  needs): every `describe` -- of a workbook, a deck or a document -- gives `datasets`, each
+  with id, columns, `types`, `rows` (a count) and `from`: `d1/t:Sales` for an
+  `xlsx_derive` from a workbook (`define_dataset(..., origin=)`), `d:by_rep` for one from
+  a dataset. Never a value. A derive from a declared table cannot take its hidden columns,
+  and `table_dataset` leaves them out, so no listed dataset names one (tested). No
+  definition changes.
 - **Each compared row named by its label** (T19b): `xlsx_compare`'s row and cell
   differences carry the row's `label` -- its text in the table's first text column other
   than the key (named in the table's entry as `label`), visible cells only, at most 60

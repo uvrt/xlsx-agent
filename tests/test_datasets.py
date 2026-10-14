@@ -268,6 +268,26 @@ def test_xlsx_derive_keeps_a_dataset_and_shows_its_rows_with_their_sources(box):
     assert (entry.doc, entry.stale, entry.closed) == ("d1", False, False)
 
 
+def test_describe_of_any_workbook_lists_the_datasets_and_where_they_came_from(box):
+    """Round 5, T11: a dataset's id, columns, types, rows and source, never its values."""
+    session = _session(box, sales(), sales())
+    derive_by_rep(box, session)
+    again = call(box, session, "xlsx_derive", **{"from": "d:by_rep"}, id="by_region",
+                 group_by=["Region"], measures=[{"fn": "sum", "column": "total"}])
+    assert again.ok, again.error
+    for doc in ("d1", "d2"):
+        described = call(box, session, "describe", doc=doc)
+        assert described.ok, described.error
+        assert described.data["datasets"] == [
+            {"id": "d:by_rep", "columns": ["Region", "Rep", "total", "count"],
+             "types": {"Region": "text", "Rep": "text", "total": "number",
+                       "count": "number"}, "rows": 6, "from": "d1/t:Sales"},
+            {"id": "d:by_region", "columns": ["Region", "sum total"],
+             "types": {"Region": "text", "sum total": "number"}, "rows": 4,
+             "from": "d:by_rep"}]
+    assert "North" not in json.dumps(described.data["datasets"])
+
+
 def test_a_dataset_survives_closing_its_workbook_and_is_read_back_by_address(box):
     session = _session(box, sales())
     derive_by_rep(box, session)

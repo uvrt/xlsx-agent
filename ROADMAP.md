@@ -223,7 +223,7 @@ Every result is bounded by `Limits.max_result_chars` (24,000) and
 | Tool | Inputs | Output | Limits |
 | --- | --- | --- | --- |
 | `open_document` (shared) | `blob` | `d1`, the summary: sheets, tables, size, problems at open | the zip limits; `.xls`/`.xlsb` refused |
-| `describe` (shared) | `doc` | the catalogue: sheets (id, name, visible, hidden or very hidden, protected, used range); tables, names and detected regions with their key columns; per column: header, inferred type, fill rate, min/max/mean or distinct values when 12 or fewer, text length median and max, formula share, data-validation list, flags (mixed types, numbers as text, no cached value, cut at 32,767); up to two sample rows per table; workbook flags (recalculation, external links, macros) | about 3,000 tokens by default; a workbook too big for that lists every table and the first columns, and says which were left for `xlsx_profile` |
+| `describe` (shared) | `doc` | the catalogue: sheets (id, name, visible, hidden or very hidden, protected, used range); tables, names and detected regions with their key columns; per column: header, inferred type, fill rate, min/max/mean or distinct values when 12 or fewer, text length median and max, formula share, data-validation list, flags (mixed types, numbers as text, no cached value, cut at 32,767); up to two sample rows per table; workbook flags (recalculation, external links, macros); the session's datasets (id, columns, types, rows, from; T11) | about 3,000 tokens by default; a workbook too big for that lists every table and the first columns, and says which were left for `xlsx_profile` |
 | `xlsx_profile` | `doc`, `target` (table or column), `columns`, `cursor` | the full per-column profile for one table, every column (a date column's range as dates; text lengths in characters and words with the longest cell's address; the range of dates stored as text) | one table per call; 50 columns a page, within 24,000 characters; paged |
 | `xlsx_read` | `doc` (not for a dataset), `target` (range, table, column, row, dataset), `formats`, `formulas`, `comments`, `hyperlinks`, `merges`, `sources` (a dataset's only), `key_column` (the column holding a by-key target's key, `SKU` for `t:Products/SKU-0042`), `limit`, `max_chars`, `cursor` | typed values by row, with addresses; optionally format codes, formula text, comments, links, merges; the array blocks over the rows always | default 50 rows, at most 500 or 24,000 characters; paged, a row too wide for a page split across pages |
 | `xlsx_query` | `doc`, `table`, `columns`, `where` (`eq`, `in`, `gte`, `lte`, `contains`, `words_gt`, `blank`, `not_blank`, combined with and), `sort`, `limit`, `cursor` | matching rows with their addresses, and the count of all matches | as `xlsx_read`; a filter on a column of the wrong type is refused naming the column's type |
@@ -894,6 +894,16 @@ re-recorded (no model call): its transcript keeps the result the model saw, and
 own `describe` results) to the recorded result before comparing it, key order included,
 with the replay; a new test checks that SKU-0005 is labelled "Spirit level 60 cm". g2's
 answer stays as recorded (it is for the reader, not replayed). No definition changes.
+
+*T11 as built* (production feedback, 2026-10-15): **`describe` lists the session's
+datasets.** A reviewer called a correct name unsupported because nothing in `describe`
+showed the dataset it came from. ooxml-edit 0.30.0 adds `datasets` to every kind's
+`describe`: per dataset its id, columns (at most 20 named), `types`, `rows` (a count) and
+`from`, and `stale`/`closed` when true; the latest 20 datasets. `xlsx_derive` from a
+workbook passes its table or region as the origin (`from: "d1/t:Sales"`); from a dataset,
+that dataset (`"d:by_rep"`). Withholding holds: a derive from a declared table refuses its
+hidden columns and `table_dataset` leaves them out, so a listed dataset never names one.
+No definition changes.
 
 ### 0.2 — edit
 
