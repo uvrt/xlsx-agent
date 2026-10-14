@@ -5,6 +5,14 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **Formulas over a hidden column** (T17's gaps): a visible cell's formula that reaches a
+  cell a declared table hides -- by reference (`=D2`, `=SUM(Log!D:D)`), structured
+  reference (`ChecksTable[Note]`, `[@Note]`, the whole table), a defined name over it or
+  reaching it, `INDIRECT` or `OFFSET` -- is read with its cached value and without its text:
+  `Value.formula_withheld`, and `"formula_withheld": true` in place of `f` in `xlsx_read`
+  with `formulas`. A hidden column is now hidden from its header row to the sheet's end,
+  below its table's rows too (cells above the header stay visible). `open_document`'s
+  `tables` counts the declared tables. No definition changes.
 - **A hidden column stays hidden, every way in** (T17): a declared table over an Excel
   table replaces it -- `describe` lists the declared table once, and `t:<the Excel table>`
   (with a column, row, key set or wildcard, in every tool) is refused as `declared` with

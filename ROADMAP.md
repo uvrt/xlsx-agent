@@ -774,6 +774,47 @@ the hidden column): `describe` 1,311 → 505. Definitions unchanged (no tool tex
 (`=D2`, `ChecksTable[Note]`) is given as written; cells of a hidden column outside its
 table's rows are not withheld (as before).
 
+*Withheld formulas as built* (T17's gaps, 2026-10-14): **a formula over a hidden column
+keeps its value, not its text.** A visible cell's formula that reaches a withheld cell is
+read with `formula_text` `None` and `Value.formula_withheld` set; `xlsx_read` with
+`formulas` gives `"formula_withheld": true` in place of `f` (only when `formulas` is asked
+for: a plain read is unchanged). `xlsx_read` is the one result that gives formula text
+(`find_text`, the profile, the catalogue and the rest never do), and every read of a
+sheet's cells goes through `Workbook._read`, so the rule sits there beside T17's blanking.
+**What reaches** (`Regions.formula_withheld`, over `xlsx_agent.read.reach`, a scan of the
+text for its references, not E2's lexer): a cell, range, whole column or row over a
+withheld cell, on the formula's sheet, another, or a run of sheets (`North:South!D2`); a
+structured reference to the hidden column, a run of columns over it, or the whole table
+(`ChecksTable[Note]`, `[@Note]`, `ChecksTable[[#This Row],[Note]]`,
+`ChecksTable[[Item]:[Note]]`, `ChecksTable`, `ChecksTable[#All]`), by the table's name or,
+for `[@...]`, the table the cell lies in; a defined name over a withheld cell, or whose
+formula reaches one (names in names followed); `INDIRECT` and `OFFSET`, whose reach the
+text does not say; a spill reference (`C2#`) is taken to run to the sheet's end. String
+literals, error literals and another workbook's references (`[1]Log!D2`) reach nothing; a
+name or table the workbook does not have reaches nothing (a `LET` or `LAMBDA` name). A
+shared formula's group is judged whole, its relative references moved over the range its
+first cell's `ref` fills, so every cell of a group gets one answer. *Why the text*: it says
+what the hidden column is -- its header in a structured reference, a name over it, a
+literal its cells are compared with. *Why the value stays*: a visible cell is what the
+owner shows, and a count, a sum or a flag computed from hidden cells is visible data; the
+reader cannot tell a copy (`=D2`) from a figure over many cells, so a column whose formulas
+copy hidden content is declared hidden too (documented in `declare`). **Below the table**:
+a hidden column is now hidden from its header row (the first data row, without one) to the
+sheet's last row (`Span.withheld`), on each of the table's sheets: a row added after
+`last_row`, a total or a note under the table is the column's, and nothing in a
+declaration says where its content ends; the cells above the header (a title, a run-details
+block beside the table) are not the table's and stay visible, so a key-value table above
+it may still show that column. A name, region or declared table over the column below the
+table is refused as one over its rows. **`open_document`'s `tables`** counts the declared
+tables as well as the Excel tables shown (a replaced one once, as its declared table), so
+a workbook whose every Excel table is declared over no longer says `0`. Definitions
+unchanged (no tool text changed; every definition 3,696, guard 3,700). **Not covered**:
+`Workbook.cells` (a program's view of the file as stored) gives every formula as written,
+as it gives hidden cells; the `arrays` an `xlsx_read` lists may name a block that crosses
+the hidden column (its address only); a formula over a hidden column whose text names it
+through a construct the scan does not know is given as written -- the scan errs towards
+withholding wherever it can place nothing, and E2's lexer is the place to replace it.
+
 ### 0.2 — edit
 
 | # | Item | Effort | Done when |
