@@ -137,7 +137,7 @@ def xlsx_derive(call: Any, id: str, doc: str | None = None, **arguments: Any) ->
     else:
         derived = workbook_of(call, doc).derive(source, id=id, **options)
         dataset = derived.dataset()
-        name = call.define_dataset(id, dataset)
+        name = call.define_dataset(id, dataset, origin=derived.address)
     return _derived_result(call, name, derived, DatasetTable(dataset, id))
 
 

@@ -260,3 +260,25 @@ def test_no_tool_shows_the_hidden_column_through_the_excel_table():
     every = "\n".join(texts)
     clean(every.replace('"withheld"', ""))
     assert "t:ChecksTable" not in texts[1]
+
+
+def test_describe_lists_a_dataset_of_the_declared_table_without_the_hidden_column():
+    """Round 5, T11: a derive from the declared table cannot take the hidden column, so
+    the datasets ``describe`` lists never name it."""
+    toolbox = Toolbox(TOOLS, formats=[xlsx_format(tables=[CHECKS])], groups=GROUPS)
+    session = toolbox.session()
+    blob = session.add_blob(book().to_bytes(), name="log.xlsx")
+    assert toolbox.dispatch(session, "open_document", {"blob": blob}).ok
+    refused = toolbox.dispatch(session, "xlsx_derive", {
+        "doc": "d1", "from": "t:checks", "id": "noted", "group_by": ["Note"]})
+    assert not refused.ok
+    kept = toolbox.dispatch(session, "xlsx_derive", {
+        "doc": "d1", "from": "t:checks", "id": "owners", "group_by": ["Owner"]})
+    assert kept.ok, kept.to_json()
+    described = toolbox.dispatch(session, "describe", {"doc": "d1"})
+    assert described.data["datasets"] == [
+        {"id": "d:owners", "columns": ["Owner", "count"],
+         "types": {"Owner": "text", "count": "number"}, "rows": 2, "from": "d1/t:checks"}]
+    assert table_dataset(session.entry("d1").document, "t:checks").columns == (
+        "Ref", "Item", "Owner")
+    clean(json.dumps(described.to_json(), ensure_ascii=False, default=str))
