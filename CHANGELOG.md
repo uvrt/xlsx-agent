@@ -5,6 +5,9 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **Golden g2 re-recorded** on the current `xlsx_compare` result (summary first, differences
+  by key): the test no longer converts the replay back to the pre-X10 shape.
+  `tools/record_goldens.py` writes the day it ran as the recording date.
 - **Formulas over a hidden column** (T17's gaps): a visible cell's formula that reaches a
   cell a declared table hides -- by reference (`=D2`, `=SUM(Log!D:D)`), structured
   reference (`ChecksTable[Note]`, `[@Note]`, the whole table), a defined name over it or

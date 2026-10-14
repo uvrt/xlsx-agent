@@ -3,7 +3,7 @@
  "recorded": {
   "how": "recorded",
   "model": "claude-haiku-5-5",
-  "date": "2026-10-13"
+  "date": "2026-10-14"
  },
  "prompt": "d1 is inventory-generated.xlsx, as a tool wrote it, and d2 is inventory-reviewed.xlsx, the copy a reviewer changed. Compare the Stock table of the two by SKU and report what the reviewer changed, with addresses.",
  "inputs": [
@@ -587,7 +587,23 @@
         "rows_added": 1,
         "rows_removed": 1,
         "cells_changed": 2
-       }
+       },
+       "columns": {
+        "Qty": {
+         "changed": 1
+        },
+        "Price": {
+         "changed": 1,
+         "up": 1,
+         "max_up": "t:Stock/SKU-0002/Price +0.01"
+        }
+       },
+       "added": [
+        "t:Stock/SKU-0009"
+       ],
+       "removed": [
+        "t:Stock/SKU-0006"
+       ]
       }
      ],
      "totals": {
@@ -597,10 +613,8 @@
      },
      "differences": [
       {
-       "table": "t:Stock",
        "row": "added",
-       "key": "SKU-0009",
-       "at": "t:Stock/#8",
+       "at": "t:Stock/SKU-0009",
        "cells": [
         {
          "a": "Stock!A9",
@@ -630,10 +644,8 @@
        ]
       },
       {
-       "table": "t:Stock",
        "row": "removed",
-       "key": "SKU-0006",
-       "at": "t:Stock/#6",
+       "at": "t:Stock/SKU-0006",
        "cells": [
         {
          "a": "Stock!A7",
@@ -663,10 +675,8 @@
        ]
       },
       {
-       "table": "t:Stock",
        "cell": "changed",
-       "key": "SKU-0002",
-       "column": "Price",
+       "at": "t:Stock/SKU-0002/Price",
        "a": {
         "a": "Stock!E3",
         "v": 0.08,
@@ -679,10 +689,8 @@
        }
       },
       {
-       "table": "t:Stock",
        "cell": "type",
-       "key": "SKU-0005",
-       "column": "Qty",
+       "at": "t:Stock/SKU-0005/Qty",
        "a": {
         "a": "Stock!D6",
         "v": 9,
@@ -702,5 +710,5 @@
    }
   }
  ],
- "answer": "The reviewer made four changes to the Stock table, matched by SKU:\n\n1. **Row removed: SKU-0006** (Masking tape 25 mm, Supplies, Qty 60, Price 2.75). It was at Stock!A7:E7 in inventory-generated.xlsx and no longer exists in inventory-reviewed.xlsx.\n\n2. **Row added: SKU-0009** (Paint brush 50 mm, Supplies, Qty 35, Price 3.20). It is at Stock!A9:E9 in inventory-reviewed.xlsx.\n\n3. **Price changed for SKU-0002** (Wood screw 4x40): Stock!E3 went from 0.08 to 0.09.\n\n4. **Qty type changed for SKU-0005** (Spirit level 60 cm): Stock!D6 went from the number 9 to the text \"9\". This is the only type problem flagged in the reviewed file (number_as_text at Stock!D6), so it will affect any numeric sums or lookups on Qty.\n\nEverything else in the table (5 rows) is unchanged. Note that SKU-0006 and SKU-0009 are not a rename of each other: they have different items, so the reviewer appears to have deleted one product and added another rather than editing a row in place."
+ "answer": "The reviewer made four changes to the Stock table (A1:E9), comparing rows by SKU across 8 rows in each file:\n\n1. **Row removed: SKU-0006** (Masking tape 25 mm, Supplies, Qty 60, Price 2.75). It was at Stock!A7:E7 in the generated file and is absent from the reviewed file.\n2. **Row added: SKU-0009** (Paint brush 50 mm, Supplies, Qty 35, Price 3.20). It is at Stock!A9:E9 in the reviewed file.\n3. **Price changed for SKU-0002** (Wood screw 4x40): Stock!E3 went from 0.08 to 0.09 (+0.01).\n4. **Qty type changed for SKU-0005** (Wall plug 6 mm... note: the Qty for SKU-0005 is 9 in both files): Stock!D6 went from the number 9 to the text \"9\". This is a type change only, and it is flagged as number_as_text in the reviewed file.\n\nThe other 5 rows (SKU-0001, 0003, 0004, 0007, 0008) are unchanged. Note that SKU-0007 and SKU-0008 are unchanged in value but shifted up one row in the reviewed file because SKU-0006 was removed."
 }
