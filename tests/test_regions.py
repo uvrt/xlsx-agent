@@ -339,6 +339,62 @@ def test_find_regions_leaves_tables_out():
     assert region.address.text == "t:Stock!A9" and region.area.ref == "A9:B10"
 
 
+def titled() -> WorkbookBuilder:
+    """A title, a blank row, then a table; further down, a caption with nothing under it,
+    a lone date, and a one-column list."""
+    book = WorkbookBuilder()
+    sheet = book.sheet("Report")
+    sheet.cell("A1", "Checks of the north side")
+    sheet.rows("A3", [["Ref", "Topic", "Score"], ["C-1", "door", 3], ["C-2", "lock", 4]])
+    sheet.cell("A8", "Prepared by the desk")
+    sheet.cell("A10", date(2026, 10, 1))
+    sheet.rows("A12", [["Bin"], ["B-1"], ["B-2"]])
+    return book
+
+
+def test_a_title_cell_is_no_region_and_titles_the_table_under_it():
+    wb = _open(titled())
+    found = wb.find_regions("Report")
+    assert [r.address.text for r in found] == ["t:Report!A3", "t:Report!A12"]
+    table, bins = found
+    assert table.title == "Checks of the north side" and table.rows == 2
+    assert wb.region("t:Report!A3").title == "Checks of the north side"
+    assert bins.title is None and bins.columns == ("Bin",) and bins.rows == 2   # real data
+    # the caption is still a cell: addressed by itself, it is a header with no rows
+    caption = wb.detect_region("t:Report!A8")
+    assert caption.caption and caption.rows == 0 and not table.caption and not bins.caption
+
+
+def test_a_title_right_above_a_header_or_two_rows_up_is_no_title():
+    book = WorkbookBuilder()
+    sheet = book.sheet("Far")
+    sheet.cell("A1", "Checks")
+    sheet.rows("A4", [["Ref", "Score"], ["C-1", 3]])      # two blank rows between
+    sheet = book.sheet("Near")
+    sheet.cell("A1", "Checks")
+    sheet.rows("A2", [["Ref", "Score"], ["C-1", 3]])      # no blank row: a two-row header
+    sheet = book.sheet("Wide")
+    sheet.rows("A1", [["Checks", None, "Draft"]])        # two cells over the table: no title
+    sheet.rows("A3", [["Ref", "Score", "Seen"], ["C-1", 3, "yes"]])
+    wb = _open(book)
+    (far,) = wb.find_regions("Far")
+    assert far.address.text == "t:Far!A4" and far.title is None
+    assert wb.find_regions("Near") == [UnclearRegion("t:Near!A1", "multi_row_header")]
+    (wide,) = wb.find_regions("Wide")
+    assert wide.address.text == "t:Wide!A3" and wide.title is None
+
+
+def test_a_title_over_a_declared_table_is_no_region():
+    book = WorkbookBuilder()
+    for name in ("Area 1", "Area 2"):
+        sheet = book.sheet(name)
+        sheet.cell("A1", f"Checks of {name}")
+        sheet.rows("A3", [["Ref", "Score"], [f"{name[-1]}-1", 3]])
+    wb = _open(book)
+    wb.declare_tables({"tables": [{"name": "checks", "sheets": "Area *", "header_row": 3}]})
+    assert wb.find_regions("Area 1") == [] and wb.find_regions("Area 2") == []
+
+
 def test_a_merged_header_is_flagged_never_detected():
     wb = _open(returns())
     for cell in ("A1", "B1", "B2"):

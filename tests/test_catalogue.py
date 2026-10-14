@@ -225,6 +225,23 @@ def test_sample_text_is_cut_and_a_region_without_data_rows_has_no_sample():
     assert regions["t:Empty"]["rows"] == 0 and "sample" not in regions["t:Empty"]
 
 
+def test_a_title_is_shown_as_its_tables_title_never_as_a_region():
+    book = WorkbookBuilder()
+    sheet = book.sheet("Report")
+    sheet.cell("A1", "T" * 100)
+    sheet.rows("A3", [["Ref", "Score"], ["C-1", 3]])
+    sheet.cell("A6", "A caption")
+    other = book.sheet("Area 1")
+    other.cell("A1", "Checks of Area 1")
+    other.rows("A3", [["Ref", "Score"], ["C-1", 3]])
+    wb = _open(book)
+    wb.declare_tables({"tables": [{"name": "checks", "sheets": "Area 1", "header_row": 3}]})
+    regions = wb.catalogue()["regions"]
+    assert [r["address"] for r in regions] == ["t:Report!A3", "t:checks"]
+    assert regions[0]["title"] == "T" * SAMPLE_TEXT + "…"
+    assert "title" not in regions[1]
+
+
 def test_describe_is_the_catalogue_as_text():
     wb = _open(shop())
     assert json.loads(wb.describe()) == wb.catalogue()

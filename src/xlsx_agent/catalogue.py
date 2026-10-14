@@ -27,7 +27,11 @@ workbook has (by code, address and count).
 **Declared tables** (:mod:`xlsx_agent.declare`) are listed as regions too, with the
 caller's description (``about``) and each column's id and description (``about``); a
 table over several sheets gives each sheet's range, joined by ``,``; a column hidden from
-the model is not there.  The blocks they cover are not detected again.  A key-value table
+the model is not there.  The blocks they cover are not detected again.
+
+**Titles and captions** are not regions: a lone cell with nothing under it is not listed
+(:mod:`xlsx_agent.read.regions`); one over a detected region's header, a blank row between,
+is that region's ``title`` (text cut at :data:`SAMPLE_TEXT` characters, with ``…``).  A key-value table
 (``shape`` ``"key_value"``) is shown compactly: its columns, then ``fields``, each field
 with its value (the first :data:`FIELDS_SHOWN`; ``more_fields`` counts the rest).
 
@@ -405,6 +409,8 @@ def _region(found: _Found, level: _Level, shown: int) -> dict:
     region = found.region
     out: dict = {"address": region.address.text, "kind": region.kind,
                  "range": region.where, "rows": region.rows}
+    if region.title is not None:
+        out["title"] = _shown(region.title)
     if region.about is not None:
         out["about"] = region.about
     if region.hidden:
