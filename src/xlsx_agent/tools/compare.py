@@ -14,7 +14,8 @@ only key column in both (none or several: refused, ``no_key_column``, the candid
 ``valid_options``); ``columns`` limits the cells compared.
 
 **The result.**  ``tables``, first: each pair compared, its addresses and ranges in both,
-its key column, its rows in each, how many were paired by key and of those unchanged, and
+its key column, its ``label`` column (the text that names a row for a reader:
+:mod:`xlsx_agent.compare`, "Labels"; none for a table without one), its rows in each, how many were paired by key and of those unchanged, and
 its ``totals``; on the first page, its **summary** (X10): ``columns``, each column with a
 cell changed and how many (``changed``), for numbers, percents, dates and times how many
 went ``up`` and ``down`` and the largest move each way by key (``max_up``:
@@ -31,10 +32,12 @@ tables in one workbook only (``table``), columns (``column``: added, removed, re
 keys two rows of one workbook share (``duplicate_key``: never paired, each workbook's rows
 by position, :data:`POSITIONS_SHOWN` at most, the rest counted in ``more``), rows without
 a key (``unkeyed``), rows added and removed (``row``, with ``at``, its address by key in
-its workbook, and its cells with their sheet addresses), and cells changed (``cell``:
-``changed``, ``type`` -- a number and the same number as text --, ``added``, ``removed``;
-with ``at``, its address by key in ``b``, ``t:Stock/SKU-0002/Price``, and the cell in
-``a`` and in ``b``, typed with their sheet addresses).  A key longer than
+its workbook, its ``label``, and its cells with their sheet addresses), and cells changed
+(``cell``: ``changed``, ``type`` -- a number and the same number as text --, ``added``,
+``removed``; with ``at``, its address by key in ``b``, ``t:Stock/SKU-0002/Price``, its
+row's ``label``, and the cell in ``a`` and in ``b``, typed with their sheet addresses).
+A row's ``label`` (T19b) is there only when the row has one: a model that names a row
+by its key alone misnames it.  A key longer than
 :data:`~.read.TEXT_SHOWN` characters is no address: the difference gives its ``table``,
 its ``key`` cut with ``key_length``, and a cell's ``column``.
 
@@ -188,8 +191,10 @@ def _table(table: Any) -> dict[str, Any]:
     out: dict[str, Any] = {"a": table.a}
     if table.b != table.a:
         out["b"] = table.b
-    out.update({"range_a": table.range_a, "range_b": table.range_b, "key": table.key,
-                "rows": [table.rows_a, table.rows_b], "paired": table.paired,
+    out.update({"range_a": table.range_a, "range_b": table.range_b, "key": table.key})
+    if table.label is not None:
+        out["label"] = table.label
+    out.update({"rows": [table.rows_a, table.rows_b], "paired": table.paired,
                 "unchanged": table.unchanged})
     totals = table.totals()
     if totals:
@@ -313,6 +318,8 @@ def _named(where: str, key: str, at: str, cap: int, column: str | None = None
 def _row(where: str, row: Any, cap: int, cells: int | None) -> tuple[dict, int]:
     named, cut = _named(where, row.key, row.at, cap)
     out: dict[str, Any] = {"row": row.change, **named}
+    if row.label is not None:
+        out["label"] = row.label
     shown = row.cells if cells is None else row.cells[:cells]
     values = []
     for value in shown:
@@ -328,6 +335,8 @@ def _row(where: str, row: Any, cap: int, cells: int | None) -> tuple[dict, int]:
 def _cell_change(where: str, change: Any, cap: int) -> tuple[dict, int]:
     named, cut = _named(where, change.key, change.at, cap, change.column)
     out: dict[str, Any] = {"cell": change.change, **named}
+    if change.label is not None:
+        out["label"] = change.label
     for side in ("a", "b"):
         shaped, n = _value(getattr(change, side), cap)
         out[side] = shaped
