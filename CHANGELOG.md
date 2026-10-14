@@ -5,6 +5,20 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **Each compared row named by its label** (T19b): `xlsx_compare`'s row and cell
+  differences carry the row's `label` -- its text in the table's first text column other
+  than the key (named in the table's entry as `label`), visible cells only, at most 60
+  characters -- so an answer names a row by what it is, not by its key alone. A column
+  hidden from the model is never the label. Golden g2 is not re-recorded: its replay adds
+  the labels to the recorded result. No definition changes.
+- **Clearer descriptions** (T19): `xlsx_read`'s `key_column` says it is the column holding
+  the key, `sources` that it is for `d:` only (its refusal on a `t:` or cell read says
+  where it works and what to do instead), and `xlsx_derive`'s `sort` that it names output
+  columns; a sort by another name is refused as "sort names an output column: one of
+  ...", with the measure's column for an input column it reads, else a did-you-mean.
+  Every definition 3,696 → 3,712 estimated (guard 3,700 → 3,716); the loaded core 3,474 →
+  3,490.
+
 - **A sheet's dates placed in the locale** (T18b): a date column's ISO text from `t:`, a
   derive's dates and a dataset labelled `date`/`datetime`/`time` are written in a deck or
   document in the session locale's day order, as a Python date is (`1/5/2026` en-US,

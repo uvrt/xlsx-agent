@@ -17,7 +17,7 @@ from ooxml_edit.tools import Limits, Toolbox
 from test_catalogue import MARKER
 
 from xlsx_agent import NameNotFound, RegionError, Workbook
-from xlsx_agent.compare import CELL_CHANGES
+from xlsx_agent.compare import CELL_CHANGES, LABEL_CHARS
 from xlsx_agent.tools import FORMAT, GROUPS, TOOLS, format as xlsx_format
 from xlsx_agent.tools.read import TEXT_SHOWN
 
@@ -233,6 +233,59 @@ def test_added_and_removed_columns_are_not_compared():
     assert [(c.column, c.a.v, c.b.v) for c in table.changed] == [("Same", 2, 3)]
 
 
+# -- labels (T19b) ------------------------------------------------------------------------------
+
+
+def test_each_row_is_labelled_by_the_first_text_column_other_than_the_key():
+    old = _open(_book([["K1", 7, "Alpha", "x"], ["K2", 8, "Beta", "y"]],
+                      columns=("Key", "Code", "Name", "Kind")))
+    new = _open(_book([["K1", 7, "Alpha", "z"], ["K3", 9, "Gamma", "y"]],
+                      columns=("Key", "Code", "Name", "Kind")))
+    (table,) = Workbook.compare(old, new, key="Key").tables
+    assert table.label == "Name"                     # Code holds numbers: not the label
+    assert [(c.at, c.label) for c in table.changed] == [("t:Products/K1/Kind", "Alpha")]
+    assert [(r.at, r.label) for r in (*table.added, *table.removed)] == [
+        ("t:Products/K3", "Gamma"), ("t:Products/K2", "Beta")]
+
+
+def test_the_label_column_is_read_when_columns_leaves_it_out():
+    old = _open(_book([["K1", "Alpha", 1]], columns=("Key", "Name", "V")))
+    new = _open(_book([["K1", "Alpha", 2]], columns=("Key", "Name", "V")))
+    (table,) = Workbook.compare(old, new, key="Key", columns=["V"]).tables
+    assert table.compared == ("V",) and table.label == "Name"
+    assert [(c.column, c.label) for c in table.changed] == [("V", "Alpha")]
+
+
+def test_a_mostly_text_column_labels_and_a_row_without_text_has_no_label():
+    rows = [["K1", "Alpha", 1], ["K2", 5, 1], ["K3", None, 1], ["K4", "Delta", 1]]
+    old = _open(_book(rows, columns=("Key", "Name", "V")))
+    new = _open(_book([r[:2] + [2] for r in rows], columns=("Key", "Name", "V")))
+    (table,) = Workbook.compare(old, new, key="Key").tables
+    assert table.label == "Name"
+    assert [c.label for c in table.changed] == ["Alpha", None, None, "Delta"]
+
+
+def test_a_table_without_text_has_no_label_and_long_text_is_cut():
+    (table,) = Workbook.compare(_open(_book([["K1", 1]], columns=("Key", "V"))),
+                                _open(_book([["K1", 2]], columns=("Key", "V"))), key="Key").tables
+    assert table.label is None and table.changed[0].label is None
+    long = "word " * 30
+    (table,) = Workbook.compare(_open(_book([["K1", long, 1]], columns=("Key", "Name", "V"))),
+                                _open(_book([["K1", long, 2]], columns=("Key", "Name", "V"))),
+                                key="Key").tables
+    label = table.changed[0].label
+    assert len(label) == LABEL_CHARS and label.endswith("…") and long.startswith(label[:-1])
+
+
+def test_a_label_on_a_hidden_row_is_left_out():
+    def book(value):
+        built = _book([["K1", "Alpha", value], ["K2", "Beta", value]], columns=("Key", "Name", "V"))
+        built.sheets[0].hide_row(3)
+        return built
+    (table,) = Workbook.compare(_open(book(1)), _open(book(2)), key="Key").tables
+    assert [(c.key, c.label) for c in table.changed] == [("K1", "Alpha"), ("K2", None)]
+
+
 # -- xlsx_compare through a Toolbox ------------------------------------------------------------
 
 
@@ -267,7 +320,8 @@ def test_xlsx_compare_end_to_end(box):
     assert result.ok, result.error
     data = result.data
     assert data["tables"] == [{"a": "t:Products", "range_a": "Stock!A1:D6",
-                               "range_b": "'Stock 2026'!A1:D6", "key": "SKU", "rows": [5, 5],
+                               "range_b": "'Stock 2026'!A1:D6", "key": "SKU", "label": "Name",
+                               "rows": [5, 5],
                                "paired": 4, "unchanged": 1,
                                "totals": {"columns": 1, "rows_added": 1, "rows_removed": 1,
                                           "cells_changed": 5},
@@ -288,14 +342,17 @@ def test_xlsx_compare_end_to_end(box):
         {"sheet": "added", "id": 4, "b": "Fresh"},
         {"table": "t:Products", "column": "renamed", "a": "Qty", "b": "Count"}]
     assert differences[4]["row"] == "added" and differences[4]["at"] == "t:Products/SKU-6"
-    assert set(differences[4]) == {"row", "at", "cells"} and len(differences[4]["cells"]) == 4
+    assert set(differences[4]) == {"row", "at", "label", "cells"}
+    assert differences[4]["label"] == "Clamp" and len(differences[4]["cells"]) == 4
     assert differences[4]["cells"][0]["a"] == "'Stock 2026'!A6"
     assert differences[5]["row"] == "removed" and differences[5]["at"] == "t:Products/SKU-3"
+    assert differences[5]["label"] == "Washer"          # a removed row's own
     assert differences[7] == {
-        "cell": "type", "at": "t:Products/SKU-2/Count",
+        "cell": "type", "at": "t:Products/SKU-2/Count", "label": "Nut",
         "a": {"a": "Stock!D3", "v": 40, "t": "number"},
         "b": {"a": "'Stock 2026'!D3", "v": "40", "t": "text", "issue": "number_as_text"}}
     assert differences[-1] == {"cell": "changed", "at": "t:Products/SKU-5/Name",
+                               "label": "bracket",       # the newer row's
                                "a": {"a": "Stock!B6", "v": "Bracket", "t": "text"},
                                "b": {"a": "'Stock 2026'!B5", "v": "bracket", "t": "text"}}
     assert "cut" not in data

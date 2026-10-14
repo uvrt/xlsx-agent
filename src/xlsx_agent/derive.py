@@ -168,7 +168,9 @@ value's name is its text, or a number as written (``number_text``), a date's ISO
 a blank group) come last either way; a key column of mixed types sorts by type first (in
 the order of :data:`~xlsx_agent.read.types.TYPES`), text by :meth:`str.casefold` then as
 written; a bin by its order; a date by its day.  Ties keep the groups' order.  The
-unrounded values are sorted.  ``top`` keeps the first that many rows after sorting;
+unrounded values are sorted.  A name that is no output column -- an input column a
+measure reads, most often -- is refused (``bad_sort``), listing the output columns and the
+one most likely meant: that measure's, else the nearest name.  ``top`` keeps the first that many rows after sorting;
 :attr:`Derived.groups` counts them all.
 
 **Bounded.**  Two streamed passes over the columns concerned (the first counts their
@@ -204,6 +206,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 from ooxml_common.locales import DATE_ORDERS
 from ooxml_edit.charts.workbook import Area, Cell, number_text
 from ooxml_edit.tools import Dataset
+from ooxml_edit.tools.schema import close_match
 
 from .address import DatasetAddress, RangeAddress, SheetRef, TableAddress, parse_address
 from .dataset import DatasetTable, as_dataset
@@ -1424,7 +1427,10 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
 
     groups = len(built)
     built = _sorted(built, sort, columns, keys + [m.name for m in plan.measures]
-                    if plan.pivot else columns)
+                    if plan.pivot else columns,
+                    {} if plan.pivot else {m.column.casefold(): m.name
+                                           for m in reversed(plan.measures) if m.column},
+                    pivot=plan.pivot is not None)
     if top is not None:
         if isinstance(top, bool) or not isinstance(top, int) or top < 1:
             raise DeriveError("bad_top", "top is a whole number of rows, 1 or more",
@@ -1567,9 +1573,26 @@ def _round(x: float, digits: int) -> float:
     return float(rounded) + 0.0
 
 
-def _sorted(built: list, sort: Any, columns: list[str], named: list[str]) -> list:
+def _not_output(name: Any, named: list[str], read: Mapping[str, str], pivot: bool) -> str:
+    """Why ``name`` sorts nothing: the output columns, and the one most likely meant."""
+    text = f"sort names an output column: one of {', '.join(named)}"
+    if pivot:
+        text += " or a pivot's (see pivot_columns)"
+    if not isinstance(name, str):
+        return text
+    meant = read.get(name.casefold())
+    if meant is not None and meant in named:
+        return f"{text}; {name!r} is an input column: did you mean {meant!r}, its measure?"
+    match = close_match(name, named)
+    return f"{text}; did you mean {match!r}?" if match is not None else text
+
+
+def _sorted(built: list, sort: Any, columns: list[str], named: list[str],
+            read: Mapping[str, str] | None = None, pivot: bool = False) -> list:
     """``built`` sorted by ``sort``; a refusal lists ``named`` (the columns not named by a
-    pivot's values, which are content) as the options."""
+    pivot's values, which are content) as the options, and suggests one: for an input
+    column a measure reads (``read``, by its name folded), that measure's column; else the
+    closest of ``named`` (:func:`ooxml_edit.tools.schema.close_match`)."""
     if not sort:
         return built
     if isinstance(sort, (str, tuple)):
@@ -1594,8 +1617,8 @@ def _sorted(built: list, sort: Any, columns: list[str], named: list[str]) -> lis
             raise DeriveError("bad_sort", "a sort order is asc or desc", field="sort",
                               valid_options=["asc", "desc"])
         if not isinstance(name, str) or name.casefold() not in folded:
-            raise DeriveError("bad_sort", "sort names output columns (a pivot's are named "
-                              "by its values: see pivot_columns)", field="sort",
+            raise DeriveError("bad_sort", _not_output(name, named, read or {}, pivot),
+                              field="sort",
                               valid_options=named)
         keys.append((folded[name.casefold()], order == "desc"))
     for name, desc in reversed(keys):

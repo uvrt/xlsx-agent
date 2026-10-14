@@ -62,6 +62,17 @@ each way, by key (:class:`ColumnSummary`): what a model reads before, or instead
 changes one by one.  A column hidden from the model (:mod:`xlsx_agent.declare`) is not a
 column of its table, so it is never compared, counted or named.
 
+**Labels.**  A key names a row exactly but tells a reader little (``SKU-0005``), so each
+row added or removed and each cell changed also carries the row's **label**: its text in
+the table's label column (:attr:`TableDiff.label`), the first column other than the key,
+in ``a``'s order and in both workbooks, whose visible cells are mostly text (more text
+than all other types together, over both workbooks; blanks and cells on a hidden row or
+column not counted) -- whether or not ``columns`` compares it.  A cell changed and a row
+added take the label from ``b``, a row removed from ``a``; at most :data:`LABEL_CHARS`
+characters, longer text cut with ``…``.  A row whose label cell is blank, not text or
+hidden (on a hidden row or column) has none, and a column hidden from the model is no
+column, so never the label column.  Declarations name no label column of their own.
+
 **Content** (ROADMAP.md, "Design rules", 7).  Keys and values are cell content: they are in
 the :class:`Diff`, a result, and never in a message; errors name tables, columns and
 codes only.
@@ -86,6 +97,9 @@ if TYPE_CHECKING:  # pragma: no cover
 
 #: The changes a cell of a paired row can show.
 CELL_CHANGES = ("changed", "type", "added", "removed")
+
+#: The most characters of a row's label (see the module's notes); longer text is cut with ``…``.
+LABEL_CHARS = 60
 
 
 @dataclass(frozen=True)
@@ -132,13 +146,15 @@ class RowChange:
     """A row ``added`` (its key in ``b`` only) or ``removed`` (in ``a`` only): ``key``,
     ``row`` its address by position in its workbook (``t:Products/#7``), ``cells`` its
     compared columns' cells, typed; ``at`` its address by key in its workbook
-    (``t:Products/SKU-7``)."""
+    (``t:Products/SKU-7``); ``label`` its text in the table's label column
+    (:attr:`TableDiff.label`), ``None`` where it has none."""
 
     change: str
     key: str
     row: str
     cells: tuple[Value, ...]
     at: str = ""
+    label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -146,7 +162,8 @@ class CellChange:
     """A cell of a paired row that differs: ``change`` one of :data:`CELL_CHANGES`;
     ``key`` the row's; ``column`` the column's name in ``b``; ``a`` and ``b`` the cell in
     each, typed with its address (``blank`` where it holds nothing); ``at`` the cell's
-    address by key in ``b`` (``t:Products/SKU-2/Price``)."""
+    address by key in ``b`` (``t:Products/SKU-2/Price``); ``label`` the row's text in the
+    table's label column in ``b`` (:attr:`TableDiff.label`), ``None`` where it has none."""
 
     change: str
     key: str
@@ -154,6 +171,7 @@ class CellChange:
     a: Value
     b: Value
     at: str = ""
+    label: str | None = None
 
     @property
     def delta(self) -> Decimal | None:
@@ -207,7 +225,9 @@ class TableDiff:
     renamed it), ``rows_a`` and ``rows_b`` its data rows, ``paired`` the rows matched by
     key and ``unchanged`` those of them with no cell changed; the changes, each in the
     order they are met (``changed`` and ``added`` in ``b``'s row order, ``removed`` in
-    ``a``'s); ``compared`` the columns whose cells were compared, as ``b`` names them."""
+    ``a``'s); ``compared`` the columns whose cells were compared, as ``b`` names them;
+    ``label`` the column whose text names a row for a reader, as ``b`` names it (``None``
+    for a table without one: see the module's notes)."""
 
     a: str
     b: str
@@ -226,6 +246,7 @@ class TableDiff:
     removed: tuple[RowChange, ...] = ()
     changed: tuple[CellChange, ...] = ()
     compared: tuple[str, ...] = ()
+    label: str | None = None
 
     def by_column(self) -> tuple[ColumnSummary, ...]:
         """Each compared column with a cell changed (:class:`ColumnSummary`), in ``b``'s
@@ -416,11 +437,16 @@ def _table(a: "Workbook", b: "Workbook", old: Region, new: Region, key: str | No
     else:
         compared = [i for i, _ in paired]
     compared = [i for i in compared if i != key_offset]
+    # The label column's candidates are read too: every paired column but the key.
+    width = 1 + len(compared)
+    read = [key_offset, *compared,
+            *[i for i, _ in paired if i != key_offset and i not in compared]]
 
-    rows_old = _rows(a, old, [key_offset, *compared])
-    rows_new = _rows(b, new, [by_old[key_offset], *[by_old[i] for i in compared]])
+    rows_old = _rows(a, old, read)
+    rows_new = _rows(b, new, [by_old[o] for o in read])
     keys_old, unkeyed_old = _keyed(rows_old, old)
     keys_new, unkeyed_new = _keyed(rows_new, new)
+    at_label = _label_column(read, keys_old, keys_new)
 
     duplicates = []
     for text in dict.fromkeys([*keys_old, *keys_new]):
@@ -442,12 +468,14 @@ def _table(a: "Workbook", b: "Workbook", old: Region, new: Region, key: str | No
         if earlier is None:
             added.append(RowChange("added", text, _at(new, position),
                                    _values(new, position, [by_old[o] for o in offsets],
-                                           cells), _by_key(new, text)))
+                                           cells[:width]), _by_key(new, text),
+                                   _label(cells, at_label)))
             continue
         paired_rows += 1
         old_position, old_cells = earlier[0]
         before = len(changed)
-        for index, (one, two) in enumerate(zip(old_cells[1:], cells[1:])):
+        label = _label(cells, at_label)
+        for index, (one, two) in enumerate(zip(old_cells[1:width], cells[1:width])):
             change = _cell_change(one, two)
             if change is None:
                 continue
@@ -456,18 +484,52 @@ def _table(a: "Workbook", b: "Workbook", old: Region, new: Region, key: str | No
                 change, text, titles[index],
                 _value(old, old_position, i, one),
                 _value(new, position, by_old[i], two),
-                _by_key(new, text, titles[index])))
+                _by_key(new, text, titles[index]), label))
         if len(changed) == before:
             unchanged += 1
     removed = [RowChange("removed", text, _at(old, found[0][0]),
-                         _values(old, found[0][0], offsets, found[0][1]), _by_key(old, text))
+                         _values(old, found[0][0], offsets, found[0][1][:width]),
+                         _by_key(old, text), _label(found[0][1], at_label))
                for text, found in keys_old.items() if text not in shared and text not in keys_new]
     return TableDiff(a=old.address.text, b=new.address.text, range_a=old.where,
                      range_b=new.where, key=old.columns[key_offset], rows_a=old.rows,
                      rows_b=new.rows, paired=paired_rows, unchanged=unchanged,
                      columns=tuple(column_changes), duplicates=tuple(duplicates),
                      unkeyed_a=unkeyed_old, unkeyed_b=unkeyed_new, added=tuple(added),
-                     removed=tuple(removed), changed=tuple(changed), compared=tuple(titles))
+                     removed=tuple(removed), changed=tuple(changed), compared=tuple(titles),
+                     label=None if at_label is None else new.columns[by_old[read[at_label]]])
+
+
+def _label_column(read: list[int], *keyed: dict[str, list]) -> int | None:
+    """Where the label column is among the cells ``read`` (the key's first): the first
+    other column, in the table's order, whose visible cells over both workbooks' keyed
+    rows are mostly text (see the module's notes); ``None`` without one."""
+    for index in sorted(range(1, len(read)), key=lambda i: read[i]):
+        text = other = 0
+        for rows in keyed:
+            for found in rows.values():
+                for _, cells in found:
+                    kept = cells[index]
+                    if kept[1] == "blank" or kept[4]:
+                        continue
+                    if kept[1] == "text":
+                        text += 1
+                    else:
+                        other += 1
+        if text > other:
+            return index
+    return None
+
+
+def _label(cells: tuple[_Kept, ...], index: int | None) -> str | None:
+    """A row's label: its text in the label column, visible and not empty, cut at
+    :data:`LABEL_CHARS` characters; ``None`` otherwise."""
+    if index is None:
+        return None
+    v, t, _, _, hidden, _ = cells[index]
+    if t != "text" or hidden or not isinstance(v, str) or not v.strip():
+        return None
+    return v if len(v) <= LABEL_CHARS else v[:LABEL_CHARS - 1] + "…"
 
 
 def _key_offset(a: "Workbook", b: "Workbook", old: Region, new: Region, key: str | None,

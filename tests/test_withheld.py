@@ -143,6 +143,24 @@ def test_compare_pairs_the_declared_table_only_and_never_the_hidden_column():
     assert "ChecksTable" not in text and diff.same
 
 
+def test_compare_never_labels_rows_by_a_hidden_column():
+    """The first text column after the key is hidden from the model: the label (T19b) is
+    the next one, and no hidden word is in the comparison."""
+    hide_item = {**CHECKS, "fields": [{"header": "Item", "hidden": True},
+                                      {"header": "Note", "hidden": True}]}
+    changed = book()
+    changed.sheets[0].cell("C3", "Ann")
+    old, new = Workbook.open(book().to_bytes()), Workbook.open(changed.to_bytes())
+    for wb in (old, new):
+        wb.declare_tables([hide_item])
+    (table,) = Workbook.compare(old, new).tables
+    assert table.label == "Owner"
+    assert [(c.at, c.label) for c in table.changed] == [("t:checks/R-2/Owner", "Ann")]
+    text = shown(table)
+    clean(text)
+    assert not any(word in text for word in ("pump", "valve", "hose"))
+
+
 # -- names, cells, find and problems -------------------------------------------------------------
 
 

@@ -110,10 +110,11 @@ CURSOR = string("next_cursor of the previous page, with the same target.", optio
        "comments": boolean("Add comment (author, text). Default false.", optional=True),
        "hyperlinks": boolean("Add link (url or location). Default false.", optional=True),
        "merges": boolean("List the merged areas over the rows. Default false.", optional=True),
-       "sources": boolean("Dataset: add each value's source cells (8, more counted); "
+       "sources": boolean("d: only: add each value's source cells (8, more counted); "
                           "for one value, all, paged.", optional=True),
-       "key_column": string("The key column of a row or value by key, when describe gives "
-                            "none or several.", optional=True),
+       "key_column": string("Column holding target's key (SKU for t:Products/SKU-0042); "
+                            "if describe gives no or several key_candidates.",
+                            optional=True),
        "limit": integer(f"Rows per page. Default 50, at most {READ_ROWS}.", minimum=1,
                         maximum=READ_ROWS, optional=True),
        "max_chars": integer("Characters per page. Default and at most 24000.",
@@ -134,8 +135,10 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
         return read_dataset(call, target, sources=bool(sources), limit=limit,
                             max_chars=max_chars, cursor=cursor)
     if sources:
-        raise ToolError("invalid_arguments", "sources is for a dataset (d:); a cell is its "
-                        "own source", field="sources")
+        raise ToolError("invalid_arguments", "sources works on a dataset (d:) only, where "
+                        "each value lists the cells it came from; a t: or cell read gives "
+                        "each cell its own address (a), its source: read it without sources",
+                        field="sources")
     workbook = workbook_of(call, doc)
     found = _cells(workbook, target, key_column)
     rows_limit = min(limit or call.limits.max_list_items, READ_ROWS)
