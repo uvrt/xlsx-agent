@@ -406,7 +406,9 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
     percent the stored number, a date, time or datetime its ISO 8601 text, text as text, a
     logical value a bool, an error its code, a blank ``None``.  Nothing is coerced: a
     number stored as text (``number_as_text``) stays text, a formula without a cached
-    value stays blank.  Each column's type label is its values' one type, else ``None``.
+    value stays blank.  Each column's type label is its values' one type, else ``None``:
+    a deck or document tool writes a ``date`` (``datetime``, ``time``) column's ISO text in
+    the session's locale, as a Python date (ooxml-edit's ``Rows.label``).
 
     A declared table's cleaned values (:mod:`xlsx_agent.clean`) are placed cleaned, a list
     as its items joined by :data:`LIST_JOIN` (a line break: deck and document tables show
