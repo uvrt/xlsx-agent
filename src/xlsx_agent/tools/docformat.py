@@ -250,13 +250,15 @@ def problem_key(problem: Any) -> Any:
 
 
 def summary(workbook: Workbook) -> dict[str, Any]:
-    """What ``open_document`` says of a workbook: cheap facts, no cell read."""
+    """What ``open_document`` says of a workbook: cheap facts, no cell read.  ``tables``
+    counts the Excel tables and the declared ones, an Excel table a declared one replaces
+    once, as the declared one (:mod:`xlsx_agent.declare`)."""
     sheets = workbook.sheets
     out: dict[str, Any] = {"kind": workbook.kind, "sheets": len(sheets)}
     hidden = sum(1 for sheet in sheets if not sheet.visible)
     if hidden:
         out["hidden_sheets"] = hidden
-    out["tables"] = len(workbook.tables)
+    out["tables"] = len(workbook.tables) + len(workbook.regions.configured)
     out["next"] = "call describe"
     return out
 

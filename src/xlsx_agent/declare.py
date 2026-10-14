@@ -92,6 +92,32 @@ may say what its cells hold.  Another declared table that shows one of them is r
 the sheet) stays a column like any other unless it is declared hidden; its values say
 ``hidden``, as always.
 
+*Below the table*: a hidden column is hidden from its header row (the first data row,
+without one) to the sheet's last row, on each of the table's sheets.  The cells under the
+table's rows are the column's too -- a row added after ``last_row``, a total, a note left
+under it -- and nothing in a declaration says where the column's content stops; the cells
+above its header are not the table's (a title, a block of run details beside it) and
+stay visible.  So another table, region or name over that column below the table is
+refused as one over its rows is.
+
+*Formulas*: a visible cell's formula that reaches a withheld cell is given without its
+text: its cached value as for any formula, ``formula_withheld`` set and no ``f``
+(``xlsx_read`` with ``formulas``; :attr:`Value.formula_text
+<xlsx_agent.read.types.Value.formula_text>` is ``None``).  It reaches one through a
+reference over it (``=D2``, ``=SUM(Log!D:D)``, ``=SUM(2:2)``, on its sheet or another), a
+structured reference to the hidden column or to the whole table (``ChecksTable[Note]``,
+``[@Note]``, ``ChecksTable[[Item]:[Note]]``, ``ROWS(ChecksTable)``), a defined name over
+one or whose formula reaches one, or ``INDIRECT`` or ``OFFSET``, whose reach its text does
+not say (:meth:`Regions.formula_withheld
+<xlsx_agent.read.regions.Regions.formula_withheld>`).  The text is withheld because it
+says what the hidden column is: its header's name in a structured reference, a name over
+it, a literal compared with its cells.  A shared formula's group is judged whole, its
+references moved over the range it fills.  **The value is kept**: a visible cell is data
+the workbook's owner shows, whatever it is computed from -- a count, a sum, a flag
+computed from the notes -- and the reader cannot tell a copy (``=D2``) from a figure
+computed from many cells.  A column whose formulas copy hidden content is to be declared
+hidden as well.
+
 **Over an Excel table**: a declared table that covers any cell of an Excel table (a
 ListObject) replaces it.  ``describe`` lists the declared table alone, and ``t:<the Excel
 table>`` -- with a column, a row, a key set or a wildcard, in every tool -- is refused

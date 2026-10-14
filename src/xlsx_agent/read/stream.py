@@ -310,6 +310,10 @@ class SheetReader:
         #: How many row elements the pass met.
         self.row_elements = 0
         self._shared: dict[str, tuple[str, bool]] = {}
+        #: Each shared formula group met, by its first cell's address: the group's text and
+        #: the range it fills (its ``ref``), for what its cells reach
+        #: (:meth:`Regions.formula_withheld <xlsx_agent.read.regions.Regions.formula_withheld>`).
+        self.shared_groups: dict[str, tuple[str, str | None]] = {}
         self._format_cache: dict[str | None, object] = {}
         # Each shared string's text and what it looks like, once per pass (as many as the
         # table, which is held already); dates by serial, at most _CACHE_LIMIT at a time.
@@ -590,8 +594,9 @@ class SheetReader:
         if f_node is not None and f_node.get("t") == "shared" and f_node.text:
             group = f_node.get("si")
             if group is not None:
-                self._shared[group] = (f"{self.sheet}!{_letters(column)}{row}",
-                                       is_volatile(f_node.text))
+                anchor = f"{self.sheet}!{_letters(column)}{row}"
+                self._shared[group] = (anchor, is_volatile(f_node.text))
+                self.shared_groups[anchor] = (f_node.text, f_node.get("ref"))
 
     def _formula(self, value: Value, f_node) -> None:
         value.formula = True
@@ -604,6 +609,7 @@ class SheetReader:
                 value.volatile = is_volatile(text)
                 if group is not None:
                     self._shared[group] = (value.a, value.volatile)
+                    self.shared_groups[value.a] = (text, f_node.get("ref"))
             elif group in self._shared:
                 value.shared_from, value.volatile = self._shared[group]
             return
