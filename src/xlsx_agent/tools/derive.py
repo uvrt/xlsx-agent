@@ -3,7 +3,8 @@ of ``xlsx_read`` (ROADMAP.md, "Tools"; "Design rules", 1 and 2).  Both in the lo
 
 **xlsx_derive** is :mod:`xlsx_agent.derive`'s engine on a table or region (``t:``) of the
 workbook ``doc``, or on a dataset (``d:``; no ``doc`` needed): ``where`` and ``sort`` as
-``xlsx_query`` writes them, ``group_by``, ``measures``, ``bins`` (edges as filter values
+``xlsx_query`` writes them (``sort`` by the result's columns: a ``group_by`` column, a
+bin's or a measure's ``as``; never an input column a measure reads), ``group_by``, ``measures``, ``bins`` (edges as filter values
 are written), ``pivot``, ``top``, ``round`` and ``coerce``.  The result is kept in the
 session as ``d:<id>`` (:meth:`Call.define_dataset <ooxml_edit.tools.Call.define_dataset>`:
 the :class:`~ooxml_edit.tools.Dataset` of :func:`xlsx_agent.dataset.as_dataset`, the
@@ -39,19 +40,24 @@ from __future__ import annotations
 
 from typing import Any, Iterator
 
-from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, integer, obj,
-                              string, tool)
+from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, boolean, integer,
+                              obj, string, tool)
 
 from ..address import DatasetAddress, parse_address
 from ..dataset import DatasetTable, cut_sources, join_units, source_units
 from ..derive import COERCIONS, FUNCTIONS, MAX_DIGITS, MAX_ROWS, derive
 from .docformat import KIND, handler
-from .query import SORT, WHERE
+from .query import WHERE
 from .read import _MARGIN, READ_ROWS, _Annotations, _cursor, _page, _read_cursor, _size
 
 #: The most source units (a range, or one key of a key set) a value shows in a result; the
 #: rest are counted (ROADMAP.md, "Design rules", 2).
 SOURCES_SHOWN = 8
+
+#: The sort keys as ``xlsx_derive`` takes them: ``xlsx_query``'s, by the result's columns.
+SORT = array(obj({"column": string(), "desc": boolean(optional=True)}),
+             "By output column (group_by, a measure's as), not input; first decides first. "
+             "Blanks last.", optional=True)
 
 #: How long a text value in a page of a dataset may be before it is cut.
 _TEXT = 2000

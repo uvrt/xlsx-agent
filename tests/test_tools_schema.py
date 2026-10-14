@@ -27,8 +27,11 @@ description: 3,452 estimated, about 5,109 counted.  X2 adds only ``xlsx_read``'s
 of ``*`` (``t:Products/*/Price``): 3,462 estimated, about 5,124 counted.  X10 describes
 ``xlsx_compare``'s summary per column (330 estimated): 3,474 estimated, about 5,142 counted.
 Every definition (``close_document`` and ``read_blob`` deferred in ``shared_misc``, and the
-tool-search tool) is 3,696 estimated (3,647 before X4 and X5); the guard is 3,700, a
-regression guard and not a budget, raised as the read tools arrive.
+tool-search tool) is 3,696 estimated (3,647 before X4 and X5); the guard was 3,700, a
+regression guard and not a budget, raised as the read tools arrive.  T19 says what
+``key_column`` names, where ``sources`` works and that ``xlsx_derive`` sorts by output
+columns (its own ``sort``): ``xlsx_read`` 492 -> 501, ``xlsx_derive`` 794 -> 801, the core
+3,490 estimated, about 5,165 counted; every definition 3,712, the guard 3,716.
 """
 
 from __future__ import annotations
@@ -47,7 +50,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6000
-ALL_GUARD = 3700
+ALL_GUARD = 3716
 
 
 @pytest.fixture(scope="module")

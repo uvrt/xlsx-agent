@@ -705,6 +705,30 @@ def test_bad_arguments_are_refused(wb, options, code, field):
     assert (caught.value.code, caught.value.field) == (code, field)
 
 
+def test_a_sort_by_an_input_column_names_the_output_columns_and_the_one_meant(wb):
+    measures = [{"fn": "sum", "column": "Amount", "as": "total"}]
+    with pytest.raises(DeriveError) as caught:
+        wb.derive("t:Sales", group_by=["Region"], measures=measures, sort=[("Amount", "desc")])
+    assert caught.value.valid_options == ["Region", "total"]
+    assert str(caught.value) == ("sort names an output column: one of Region, total; "
+                                 "'Amount' is an input column: did you mean 'total', its "
+                                 "measure?")
+    with pytest.raises(DeriveError) as caught:
+        wb.derive("t:Sales", group_by=["Region"], measures=measures, sort=["totl"])
+    assert str(caught.value).endswith("one of Region, total; did you mean 'total'?")
+    with pytest.raises(DeriveError) as caught:
+        wb.derive("t:Sales", group_by=["Region"], measures=measures, sort=["Opens"])
+    assert str(caught.value) == "sort names an output column: one of Region, total"
+
+
+def test_a_sort_refusal_under_a_pivot_points_to_its_columns(wb):
+    with pytest.raises(DeriveError) as caught:
+        wb.derive("t:Sales", pivot="Region", measures=[{"fn": "sum", "column": "Amount"}],
+                  sort=["Amount"])
+    assert "or a pivot's (see pivot_columns)" in str(caught.value)
+    assert "input column" not in str(caught.value)
+
+
 def test_sources_other_than_a_table_are_refused(wb):
     for source in ("d:by_region", "Sales!A1:C4", "t:Sales[Amount]", "t:Sales/#2", 42):
         with pytest.raises(DeriveError) as caught:

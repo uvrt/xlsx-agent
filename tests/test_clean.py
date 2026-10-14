@@ -338,14 +338,15 @@ def test_cleaning_changes_no_tool_definition():
                        groups=GROUPS).definitions("anthropic", defer=False)
     assert cleaning == plain
     # this repository's own tools, character for character as main had them before X6
-    # (X10's sentence on xlsx_compare's summary aside)
+    # (X10's sentence on xlsx_compare's summary and T19's wording aside)
     own = [d for d in plain if d["name"].startswith("xlsx_")]
     assert len(json.dumps(own, separators=(",", ":"), ensure_ascii=False)) == XLSX_CHARS
 
 
 #: The compact JSON length of the ``xlsx_*`` definitions before and after X6 (10,155),
-#: and since X10 described xlsx_compare's summary (+41).
-XLSX_CHARS = 10_196
+#: since X10 described xlsx_compare's summary (+41), and since T19 said what key_column,
+#: sources and xlsx_derive's sort name (+55).
+XLSX_CHARS = 10_251
 
 
 def test_a_deck_table_from_a_cleaned_table_warns_in_the_tools_result():

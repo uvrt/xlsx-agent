@@ -169,6 +169,12 @@ def test_a_row_by_key_takes_the_key_column(box):
     assert found.data["target"] == "t:Lines/A-2/Qty"
     stray = _read(box, session, target="t:Lines", key_column="SKU")
     assert stray.error.code == "invalid_arguments" and stray.error.field == "key_column"
+    sources = _read(box, session, target="t:Lines/A-2/Qty", sources=True)
+    assert (sources.error.code, sources.error.field) == ("invalid_arguments", "sources")
+    assert sources.error.message == (                 # where it works, what to do instead
+        "sources works on a dataset (d:) only, where each value lists the cells it came "
+        "from; a t: or cell read gives each cell its own address (a), its source: read it "
+        "without sources")
 
 
 def test_formats_formulas_comments_links_and_merges_on_request(box):
