@@ -507,3 +507,89 @@ def test_no_cell_content_in_summaries_warnings_or_errors(box):
         assert MARKER not in " ".join(result.warnings)
     for record in session.log:
         assert MARKER not in json.dumps(getattr(record, "summary", "") or "")
+
+
+# -- datasets made in Python: dates ------------------------------------------------------------
+
+from xlsx_agent.derive import derive  # noqa: E402
+
+#: Made-up days, one blank among them.
+OPENED = [{"site": "Ash", "opened": dt.date(2026, 3, 1), "at": dt.datetime(2026, 3, 1, 9, 30),
+           "shift": dt.time(7, 15)},
+          {"site": "Elm", "opened": None, "at": dt.datetime(2026, 4, 2, 17, 5, 30),
+           "shift": dt.time(22, 0)},
+          {"site": "Oak", "opened": dt.date(2026, 1, 20), "at": None, "shift": None}]
+
+
+def test_python_dates_are_dates_without_a_label():
+    data = Dataset.from_records(OPENED)
+    measures = [{"fn": "min", "column": "opened", "as": "first_opened"},
+                {"fn": "max", "column": "opened", "as": "last_opened"},
+                {"fn": "first", "column": "opened", "as": "first_row"},
+                {"fn": "max", "column": "at", "as": "latest"},
+                {"fn": "min", "column": "shift", "as": "early"}]
+    derived = derive(None, data, measures=measures)
+    assert derived.rows == [{"first_opened": "2026-01-20", "last_opened": "2026-03-01",
+                             "first_row": "2026-03-01", "latest": "2026-04-02T17:05:30",
+                             "early": "07:15:00"}]
+    assert derived.types == {"first_opened": "date", "last_opened": "date",
+                             "first_row": "date", "latest": "datetime", "early": "time"}
+
+
+def test_python_dates_read_back_as_iso_text_typed():
+    table = DatasetTable(Dataset.from_records(OPENED), "sites")
+    first = table.read("d:sites/#1")[0]
+    assert [(v.v, v.t) for v in first] == [("Ash", "text"), ("2026-03-01", "date"),
+                                           ("2026-03-01T09:30:00", "datetime"),
+                                           ("07:15:00", "time")]
+    assert json.dumps([v.as_dict() for v in first])            # plain JSON, no date objects
+    when = dt.datetime(2026, 3, 1, 9, 30, 0, 999700, tzinfo=dt.timezone.utc)
+    late = DatasetTable(Dataset.from_records([{"at": when}]), "late")
+    assert late.read("d:late/#1/at")[0][0].v == "2026-03-01T09:30:01"   # to the millisecond
+
+
+def test_dates_mixed_with_text_follow_the_majority():
+    mostly = Dataset.from_records([{"d": dt.date(2026, 3, 1)}, {"d": dt.date(2026, 3, 9)},
+                                   {"d": "soon"}])
+    result = derive(None, mostly, measures=[{"fn": "max", "column": "d"}])
+    assert result.rows == [{"max d": "2026-03-09"}]
+    assert sum(c.count for c in result.excluded["max d"].values()) == 1
+    few = Dataset.from_records([{"d": dt.date(2026, 3, 1)}, {"d": "soon"}, {"d": "later"}])
+    with pytest.raises(DeriveError) as caught:
+        derive(None, few, measures=[{"fn": "max", "column": "d"}])
+    assert caught.value.code == "wrong_type"
+
+
+def test_unlabelled_iso_text_is_text_and_the_refusal_says_how_to_read_it():
+    rows = [{"site": "Ash", "opened": "2026-03-01"}, {"site": "Oak", "opened": "2026-01-20"}]
+    measures = [{"fn": "min", "column": "opened"}]
+    with pytest.raises(DeriveError) as caught:
+        derive(None, Dataset.from_records(rows), measures=measures)
+    error = caught.value
+    assert error.code == "wrong_type" and error.issue == "date_as_text"
+    assert "coerce [\"date_as_text\"]" in str(error)
+    assert "types={'opened': \"date\"}" in str(error)
+    labelled = derive(None, Dataset.from_records(rows, types={"opened": "date"}),
+                      measures=measures)
+    coerced = derive(None, Dataset.from_records(rows), measures=measures,
+                     coerce=["date_as_text"])
+    assert labelled.rows == coerced.rows == [{"min opened": "2026-01-20"}]
+    # a column the caller says is text holds text: no flag, no way out offered
+    with pytest.raises(DeriveError) as caught:
+        derive(None, Dataset.from_records(rows, types={"opened": "text"}), measures=measures)
+    assert caught.value.issue is None and "types=" not in str(caught.value)
+
+
+def test_xlsx_derive_takes_a_python_dataset_of_dates(box):
+    from ooxml_edit.tools import DatasetEntry
+    session = _session(box)
+    session.keep_datasets([DatasetEntry("sites", Dataset.from_records(OPENED))])
+    result = call(box, session, "xlsx_derive", **{"from": "d:sites"}, id="span",
+                  measures=[{"fn": "min", "column": "opened", "as": "since"},
+                            {"fn": "max", "column": "opened", "as": "until"}])
+    assert result.ok, result.error
+    assert result.data["types"] == {"since": "date", "until": "date"}
+    assert [v["v"] for v in result.data["rows"][0]] == ["2026-01-20", "2026-03-01"]
+    read = call(box, session, "xlsx_read", target="d:sites/#1/opened")
+    assert read.ok and read.data["rows"] == [[{"a": "d:sites/#1/opened", "v": "2026-03-01",
+                                               "t": "date"}]]

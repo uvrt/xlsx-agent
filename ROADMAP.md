@@ -782,6 +782,23 @@ the hidden column): `describe` 1,311 → 505. Definitions unchanged (no tool tex
 (`=D2`, `ChecksTable[Note]`) is given as written; cells of a hidden column outside its
 table's rows are not withheld (as before).
 
+*T18 as built* (production feedback, 2026-10-14): **dates in a dataset made in Python.**
+A dataset built in Python with `datetime.date` values typed them `text`, so `xlsx_derive`'s
+`min` refused the column; the `date` label worked but was not documented. Now
+`DatasetTable` reads a Python `date`, `datetime` or `time` as that type without a label,
+its value ISO 8601 text as a cell's (to the millisecond; an aware datetime's wall-clock
+time), so derive, `xlsx_read` (plain JSON) and keys see what a sheet's date gives; a
+column mixing them with other values takes the majority type (`majority_type`), blanks
+aside. **ISO text is not inferred** -- decided: a column of codes that happen to be
+ISO-shaped would silently change type, and the reader's rule is that nothing is coerced
+silently. ISO text in an *unlabelled* column is flagged `date_as_text`, as a cell's is,
+so a refused `min` says so and offers both ways: the `date` label
+(`Dataset.from_records(..., types={"opened": "date"})`, ooxml-edit 0.28.0, which also
+gives `TYPE_LABELS`) or `coerce: ["date_as_text"]`; a column labelled `text` is left
+alone. Placing: ooxml-edit writes a Python date in the session locale's day order
+(`3/1/2026` en-US, `1/3/2026` nl-BE); a derive's dates are ISO text, as a sheet's are,
+and are placed as written. Definitions unchanged.
+
 *Withheld formulas as built* (T17's gaps, 2026-10-14): **a formula over a hidden column
 keeps its value, not its text.** A visible cell's formula that reaches a withheld cell is
 read with `formula_text` `None` and `Value.formula_withheld` set; `xlsx_read` with

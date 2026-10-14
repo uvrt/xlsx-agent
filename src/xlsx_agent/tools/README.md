@@ -135,7 +135,12 @@ Without one they are ranges, as before. `xlsx_read` takes `*` for every row
 (`t:Stock/*/Price`) and key sets (`t:Stock/{SKU-0001,SKU-0004}/Price`, read in that
 order); `Workbook.expand` turns either into one address per cell, for a check that every
 required cell was used. A dataset whose workbook has
-changed since is marked stale, never refreshed. Datasets are ooxml-edit's, so one session
+changed since is marked stale, never refreshed. An application's own figures are a dataset
+too: `Dataset.from_records(rows, types={"opened": "date"})` (ooxml-edit), kept with
+`session.keep_datasets`. A Python `date`, `datetime` or `time` in it needs no label; ISO
+text is a date only in a column labelled `date` (`datetime`, `time`), or with
+`coerce: ["date_as_text"]`. The labels are `number`, `percent`, `date`, `time`,
+`datetime`, `text`, `bool` and `error`. Datasets are ooxml-edit's, so one session
 can hold a workbook beside a deck or a document -- one toolbox with each library's tools
 and formats:
 
