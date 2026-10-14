@@ -27,7 +27,9 @@ workbook has (by code, address and count).
 **Declared tables** (:mod:`xlsx_agent.declare`) are listed as regions too, with the
 caller's description (``about``) and each column's id and description (``about``); a
 table over several sheets gives each sheet's range, joined by ``,``; a column hidden from
-the model is not there.  The blocks they cover are not detected again.
+the model is not there.  The blocks they cover are not detected again; an Excel table one
+covers is listed as the declared table alone, and a defined name over a hidden column's
+cells is not listed (:mod:`xlsx_agent.declare`).
 
 **Titles and captions** are not regions: a lone cell with nothing under it is not listed
 (:mod:`xlsx_agent.read.regions`); one over a detected region's header, a blank row between,
@@ -208,7 +210,10 @@ def _gather(workbook: "Workbook") -> _Gathered:
             continue
         try:
             regions.append(workbook.region(address))
-        except (RegionError, KeyError) as error:
+        except RegionError as error:
+            if error.code != "declared":     # over cells hidden from the model: not listed
+                names.append({"name": address.text, "not_a_range": error.code})
+        except KeyError as error:
             names.append({"name": address.text, "not_a_range": getattr(error, "code", "unknown")})
     regions.extend(workbook.regions.declared)
     found = [_found(workbook, workbook.regions.with_key(region)) for region in regions]

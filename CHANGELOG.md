@@ -5,6 +5,16 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **A hidden column stays hidden, every way in** (T17): a declared table over an Excel
+  table replaces it -- `describe` lists the declared table once, and `t:<the Excel table>`
+  (with a column, row, key set or wildcard, in every tool) is refused as `declared` with
+  the declared table as `valid_options` -- so a column the declaration hides is no longer
+  shown through the Excel table's entry (its name, values and sample rows) or address. A
+  defined name over hidden cells is refused and not listed or searched; a validation list
+  drawn from them is not read (`reason: "withheld"`); `Workbook.read` gives them blank;
+  another declared table that shows them is refused (`hidden_elsewhere`).
+  `Workbook.tables` leaves a replaced Excel table out (`Regions.excel_tables` has all).
+  No definition changes.
 - **A title is no region**: a lone cell with nothing under it (a title, a caption, a lone
   number or date) is no longer listed by `describe` as a detected region with no rows, over
   a declared table or not; it stays a cell for `find_text` and reads. Text two rows above a

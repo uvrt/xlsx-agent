@@ -82,7 +82,7 @@ from .package import OpenError, open_package, read_source, workbook_part
 from .profile import Column, ColumnStats, profile
 from .read.names import DefinedName, read_names
 from .schema import ValidationReport, validate
-from .read.regions import Region, Regions, Selection, UnclearRegion
+from .read.regions import Region, Regions, Selection, UnclearRegion, _overlaps
 from .read.comments import Comment, read_comments
 from .read.stream import Hyperlink, SheetReader, SheetScan, read_area, scan
 from .read.strings import SharedStrings
@@ -394,7 +394,8 @@ class Workbook:
     def tables(self) -> list[Region]:
         """The Excel tables (ListObjects), sheet by sheet in the workbook's order, each in
         the order its sheet relates to it; a table whose ``ref`` is not a range is left out
-        and reported in :attr:`problems` (``bad_ref``, ``bad_table``)."""
+        and reported in :attr:`problems` (``bad_ref``, ``bad_table``), and so is one a
+        declared table covers, which replaces it (:mod:`xlsx_agent.declare`)."""
         return self.regions.tables
 
     @property
@@ -762,7 +763,9 @@ class Workbook:
         Lazy: rows are read as they are asked for, and the pass stops after the range's
         last row.  The sheet is scanned once first (:meth:`scan`: the used range, and
         whether its rows are in order; a sheet whose rows are not has the range's cells
-        gathered before the first row is given).  A dataset or ref address is not a range:
+        gathered before the first row is given).  A cell of a column a declared table hides
+        from the model (:mod:`xlsx_agent.declare`) is given blank: every read of the
+        sheet's cells goes through here.  A dataset or ref address is not a range:
         ``ValueError``."""
         return self._read(address, formats=formats)
 
@@ -791,9 +794,12 @@ class Workbook:
         area = address.clipped(found.used)
         if area is None:
             return iter(())
-        return self._stream(sheet, lambda: read_area(self._reader(sheet, formats=formats),
+        rows = self._stream(sheet, lambda: read_area(self._reader(sheet, formats=formats),
                                                      area, found.ordered, found.index,
                                                      columns))
+        withheld = [a for a in self.regions.withheld(sheet.name) if _overlaps(area, a)] \
+            if sheet.name else []
+        return _withheld(rows, withheld) if withheld else rows
 
     def _read_rows(self, areas: "list[RangeAddress]", *, formats: bool = False,
                    columns: "set[int] | None" = None) -> Iterator[list[Value]]:
@@ -865,6 +871,17 @@ class Workbook:
 
 #: The sheet types that hold cells (a chart sheet and a dialog sheet hold none).
 _CELL_SHEETS = ("worksheet", "macrosheet")
+
+
+def _withheld(rows: Iterator[list[Value]], areas: list[Area]) -> Iterator[list[Value]]:
+    """``rows`` with each cell of ``areas`` (columns hidden from the model by a declared
+    table) given blank: its place, nothing of what it holds."""
+    for row in rows:
+        for n, value in enumerate(row):
+            if any(a.first.row <= value.row <= a.last.row
+                   and a.first.column <= value.column <= a.last.column for a in areas):
+                row[n] = Value(value.sheet, value.row, value.column)
+        yield row
 
 
 def _guarded(part: str, run) -> Iterator:

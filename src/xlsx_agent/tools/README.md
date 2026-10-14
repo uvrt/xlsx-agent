@@ -97,7 +97,10 @@ declare(session, tables)              # or per session, in place of the format's
 value with its own cell (`'Area South'!C5`); `t:checks/S-2/rating` finds the row's sheet;
 `describe` shows `rating` with its description, and never `Remark` -- no tool shows it, an
 address naming it is `not_found` without it among the options, and a read of the sheet's
-cells gives its cells as `{"a": "'Area North'!E4", "withheld": true}`. `t:run/author/value`
+cells gives its cells as `{"a": "'Area North'!E4", "withheld": true}`. A declared table
+over an Excel table replaces it: `describe` lists `t:checks` alone, and the Excel table's
+`t:` name is refused toward `t:checks`; a defined name over a hidden column is refused
+and not listed. `t:run/author/value`
 reads a key-value table. A workbook the declarations do not fit is refused at
 `open_document` (`refused`, with the declaration's `code` and `path` in `details`); one
 marked `optional` is skipped where its sheets are not there. Every rule is in

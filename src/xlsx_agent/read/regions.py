@@ -60,7 +60,10 @@ sheets, or with columns hidden from the model, is read as one rectangle of its o
 (:class:`Span`): a range on its own sheet (``t:<name>``) is read sheet by sheet, each
 value given in the table's place with its own cell kept, so every address a result gives
 is a real cell's.  Its blocks are not detected again (:meth:`Regions.find`), and a region
-detected or declared over a hidden column's cells is refused (``declared``).
+detected or declared over a hidden column's cells is refused (``declared``), as is a
+defined name over them.  An Excel table it covers any cell of is replaced by it
+(:meth:`Regions.replaced_by`): left out of :attr:`Regions.tables`, and ``t:<the Excel
+table>`` refused toward it (``declared``, the declared table as ``valid_options``).
 
 **Key-value blocks.**  A block of two columns whose first row holds something other than
 text (so no header is detected) and whose first column is a different text on each of
@@ -534,6 +537,9 @@ class Regions:
         #: by name folded; those read as one rectangle of their own by their sheet name.
         self._configured: dict[str, Region] = {}
         self._spans: dict[str, Span] = {}
+        #: The tables being declared again (by name folded): their hidden cells are read
+        #: while the new declaration is checked (:meth:`redeclaring`).
+        self._redeclaring: frozenset[str] = frozenset()
 
     def forget_cells(self) -> None:
         """Forget what was found from the cells (detected regions, key columns, key
@@ -547,10 +553,28 @@ class Regions:
 
     @property
     def tables(self) -> list[Region]:
+        """The Excel tables, less those a declared table covers (:meth:`replaced_by`): what
+        the workbook shows of its tables."""
+        return [t for t in self.excel_tables if self.replaced_by(t) is None]
+
+    @property
+    def excel_tables(self) -> list[Region]:
+        """Every Excel table the workbook can read, those a declared table covers too: their
+        names stay taken."""
         if self._tables is None:
             self._tables = [self._table_region(part) for part in self.workbook._table_parts()
                             if part.area is not None and not _broken(part)]
         return list(self._tables)
+
+    def replaced_by(self, table: Region) -> Region | None:
+        """The declared table that covers any cell of the Excel table ``table``, and so
+        replaces it: ``describe`` lists the declared table alone, and ``t:<table>`` is
+        refused toward it (``declared``), so a column the declared table hides from the
+        model is never reached through the Excel table's name."""
+        for region, area in self.table_areas(table.sheet):
+            if _overlaps(area, table.area):
+                return region
+        return None
 
     @property
     def names(self) -> list[DefinedName]:
@@ -613,10 +637,26 @@ class Regions:
 
     def withheld(self, sheet: str) -> list[Area]:
         """The cells of ``sheet`` in columns hidden from the model: never shown, never
-        searched."""
+        searched, read blank (:meth:`Workbook.read <xlsx_agent.workbook.Workbook.read>`)."""
+        return [area for _, area in self.withholding(sheet)]
+
+    def withholding(self, sheet: str) -> list[tuple[Region, Area]]:
+        """:meth:`withheld`, each area with the declared table that hides it."""
         folded = sheet.casefold()
-        return [a for region in self._configured.values() if region.span is not None
+        return [(region, a) for name, region in self._configured.items()
+                if region.span is not None and name not in self._redeclaring
                 for s, a in region.span.withheld() if s.casefold() == folded]
+
+    @contextmanager
+    def redeclaring(self, names: "Sequence[str]") -> Iterator[None]:
+        """Read the hidden cells of the tables named ``names`` while they are declared
+        again: a declaration finds a hidden column by its header's text."""
+        old = self._redeclaring
+        self._redeclaring = old | {name.casefold() for name in names}
+        try:
+            yield
+        finally:
+            self._redeclaring = old
 
     def problems(self) -> list[Problem]:
         """What is odd about the tables and names, by code: each table's flags, a table
@@ -625,14 +665,14 @@ class Regions:
         names with one name, case aside (``duplicate_name``, at the second's address)."""
         out: list[Problem] = []
         for part in self.workbook._table_parts():
-            out.extend(part.flags)
+            out.extend(f for f in part.flags if not self._in_withheld(f.address))
             if part.area is not None and _broken(part):
                 out.append(Problem("bad_table", quote_sheet(part.sheet) if part.sheet else None))
         for name in self.names:
             if name.bad_scope is not None:
                 out.append(Problem("bad_scope", None))
         seen: set[tuple[str | None, str]] = set()
-        for name, scope in [(t.name, None) for t in self.tables] + \
+        for name, scope in [(t.name, None) for t in self.excel_tables] + \
                 [(n.name, n.scope) for n in self.names]:
             key = (scope.casefold() if scope else None, name.casefold())
             if key in seen and is_address_name(name):
@@ -640,6 +680,19 @@ class Regions:
                 out.append(Problem("duplicate_name", written.text))
             seen.add(key)
         return list(dict.fromkeys(out))
+
+    def _in_withheld(self, address: str | None) -> bool:
+        """Whether ``address`` (a cell or range, as a problem gives it) holds a withheld
+        cell."""
+        if address is None or "!" not in address:
+            return False
+        try:
+            found = parse_address(address)
+        except ValueError:
+            return False
+        if not isinstance(found, RangeAddress) or found.sheet.name is None:
+            return False
+        return any(_overlaps(found.area, a) for a in self.withheld(found.sheet.name))
 
     def _table_region(self, part: TablePart) -> Region:
         sheet = self.workbook.sheet(part.sheet)
@@ -689,7 +742,7 @@ class Regions:
             return self._scoped(address)
         folded = address.name.casefold()
         found: list[tuple[str, object]] = []
-        found += [("table", t) for t in self.tables if t.name.casefold() == folded]
+        found += [("table", t) for t in self.excel_tables if t.name.casefold() == folded]
         found += [("name", n) for n in self.names
                   if n.scope is None and n.bad_scope is None and n.name.casefold() == folded]
         if folded in self._declared:
@@ -715,6 +768,13 @@ class Regions:
         kind, thing = found[0]
         if kind == "name":
             return self._name_region(thing)
+        if kind == "table":
+            declared = self.replaced_by(thing)
+            if declared is not None:
+                text = declared.address.text
+                raise RegionError("declared", f"t:{thing.name} lies in {text}, a declared "
+                                  f"table: address it as {text}", address=address.whole.text,
+                                  valid_options=[text])
         return thing
 
     def _scoped(self, address: TableAddress) -> Region:
@@ -759,6 +819,12 @@ class Regions:
             area = Area(name.range.area.first, Cell(1, name.range.area.last.column)) \
                 if name.range.span == "columns" else Area(name.range.area.first,
                                                           Cell(name.range.area.first.row, 1))
+        hiding = [r.address.text for r, a in self.withholding(sheet.name) if _overlaps(area, a)]
+        if hiding:
+            written = name.address.text if name.address is not None else "the name"
+            raise RegionError("declared", f"{written} holds cells of a column hidden from the "
+                              "model by a declared table", address=written,
+                              valid_options=list(dict.fromkeys(hiding)))
         columns = tuple(f"Column {column_letters(c)}"
                         for c in range(area.first.column, area.last.column + 1))
         return Region(kind="name", name=name.name, sheet=sheet.name, area=area, columns=columns,
@@ -780,7 +846,7 @@ class Regions:
                               "TRUE, FALSE or a cell reference; at most 255 characters",
                               valid_options=["Returns", "Stock_2026"])
         folded = name.casefold()
-        taken = [t.address.text for t in self.tables if t.name.casefold() == folded]
+        taken = [t.address.text for t in self.excel_tables if t.name.casefold() == folded]
         taken += [n.address.text for n in self.names if n.address is not None
                   and n.scope is None and n.name.casefold() == folded]
         if taken:
@@ -978,7 +1044,8 @@ class Regions:
         used = self.workbook.used_range(sheet)
         if used is None:
             return []
-        taken = [t.area for t in self.tables if t.sheet.casefold() == sheet.name.casefold()]
+        taken = [t.area for t in self.excel_tables
+                 if t.sheet.casefold() == sheet.name.casefold()]
         taken += [area for _, area in self.table_areas(sheet.name)]
         out: list[Region | UnclearRegion] = []
         written = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
