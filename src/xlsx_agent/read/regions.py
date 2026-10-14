@@ -68,6 +68,12 @@ two or more rows is detected as a key-value region (``shape`` ``"key_value"``): 
 row, its columns ``field`` and ``value``, its key ``field``
 (``t:Run!A1/report_date/value``).
 
+**Titles and captions.**  A block of one cell with nothing under it (a title, a caption)
+is no region: :meth:`Regions.find` leaves it out, so ``describe`` does not list it, and it
+stays a cell that ``find_text`` and a read reach.  When it is text and lies over a detected
+region's columns two rows above its header (one blank row between), it is that region's
+``title``.  A region of one column is a region whenever it has data rows.
+
 **Selectors and key sets** (:mod:`xlsx_agent.address`).  ``t:Products/*/Price`` resolves
 as ``t:Products[Price]``, ``t:Products/*`` and ``t:Products/*/*`` as the table, and
 ``t:Products/SKU-0042/*`` as the row, each keeping its own text.  A key set
@@ -169,6 +175,10 @@ class Region:
     cell's own address (:attr:`Value.origin <xlsx_agent.read.types.Value.origin>`);
     :attr:`where` gives its cells as ranges of the sheets.
 
+    A detected region with a title cell over it (one blank row between) has ``title``, its
+    text; :attr:`caption` is true of a region that is one cell and no data rows, a title or
+    caption that :meth:`Regions.find` leaves out.
+
     A region the workbook gave knows its workbook, so that its columns can be read:
     :meth:`column` and :meth:`profile`."""
 
@@ -194,6 +204,7 @@ class Region:
     notes: tuple[str | None, ...] = ()
     about: str | None = None
     shape: str = "rows"
+    title: str | None = None
     workbook: "Workbook | None" = field(default=None, repr=False, compare=False)
 
     @property
@@ -264,6 +275,13 @@ class Region:
         """How many data rows."""
         data = self.data
         return 0 if data is None else data.last.row - data.first.row + 1
+
+    @property
+    def caption(self) -> bool:
+        """Whether this is a lone cell, a title or a caption: one cell detected as a header,
+        with no data rows."""
+        return (self.kind == "detected" and self.shape == "rows" and self.rows == 0
+                and self.area.first == self.area.last)
 
     def column_index(self, name: str) -> int:
         """The position (from 0) of the column called ``name``, matched case aside;
@@ -904,10 +922,11 @@ class Regions:
                 raise unclear("header_not_text")
             names = KEY_VALUE_COLUMNS + tuple(f"Column {column_letters(c)}" for c in
                                               range(cell.column + 2, cell.column + width))
-            return Region(kind="detected", name=None, sheet=sheet.name,
-                          area=Area(cell, Cell(cell.row + pairs - 1, right)),
-                          columns=names[:width], header_rows=0, key=KEY_VALUE_COLUMNS[0],
-                          sheet_id=sheet.id, shape="key_value", workbook=self.workbook)
+            return self._titled(sheet, Region(
+                kind="detected", name=None, sheet=sheet.name,
+                area=Area(cell, Cell(cell.row + pairs - 1, right)), columns=names[:width],
+                header_rows=0, key=KEY_VALUE_COLUMNS[0], sheet_id=sheet.id,
+                shape="key_value", workbook=self.workbook))
         data: list[list[Value]] = []
         if below is not None and any(v.t != "blank" for v in below[:width]):
             data.append(below[:width])
@@ -920,10 +939,31 @@ class Regions:
         flags: list[Problem] = []
         columns = _header_names(header[:width], cell.column, flags, written)
         bottom = cell.row + len(data)
-        return Region(kind="detected", name=None, sheet=sheet.name,
-                      area=Area(cell, Cell(bottom, right)), columns=tuple(columns),
-                      header_rows=1, sheet_id=sheet.id, flags=tuple(flags),
-                      workbook=self.workbook)
+        return self._titled(sheet, Region(kind="detected", name=None, sheet=sheet.name,
+                                          area=Area(cell, Cell(bottom, right)),
+                                          columns=tuple(columns), header_rows=1,
+                                          sheet_id=sheet.id, flags=tuple(flags),
+                                          workbook=self.workbook))
+
+    def _titled(self, sheet: "Sheet", region: Region) -> Region:
+        """``region`` with its ``title``: the one text cell over its columns two rows above
+        its first row, the row between blank across them, when that cell is a caption
+        (:attr:`Region.caption`); else ``region`` as it is."""
+        first, last = region.area.first, region.area.last
+        if region.caption or first.row < 3:
+            return region
+        two, one = self.workbook.read(RangeAddress(SheetRef(name=sheet.name), Area(
+            Cell(first.row - 2, first.column), Cell(first.row - 1, last.column))))
+        held = [v for v in two if v.t != "blank"]
+        if any(v.t != "blank" for v in one) or len(held) != 1 or held[0].t != "text":
+            return region
+        try:
+            above = self.detect(RangeAddress(SheetRef(name=sheet.name),
+                                             Area(Cell(first.row - 2, held[0].column),
+                                                  Cell(first.row - 2, held[0].column))))
+        except RegionError:
+            return region
+        return replace(region, title=held[0].v) if above.caption else region
 
     def find(self, sheet: "Sheet | str | SheetRef") -> list["Region | UnclearRegion"]:
         """The blocks of a sheet outside its tables, each detected (a :class:`Region`) or
@@ -931,7 +971,8 @@ class Regions:
         row, from the top, holding something outside the tables and the blocks found
         above it, starting at its first such cell; further blocks in that row start after
         a blank column.  A block whose header is unclear is taken to run to the next row
-        blank across the used range."""
+        blank across the used range.  A title or caption (:attr:`Region.caption`), or a
+        lone cell holding a number or date, is no block and is left out."""
         sheet = self.workbook._cell_sheet(sheet if not isinstance(sheet, str)
                                           else self.workbook.sheet(sheet))
         used = self.workbook.used_range(sheet)
@@ -964,9 +1005,15 @@ class Regions:
                 except RegionError as error:
                     if error.code != "header_unclear":
                         raise
+                    if error.reason == "header_not_text" and self._lone(sheet, value):
+                        column = value.column   # a lone number or date: no region either
+                        continue
                     out.append(UnclearRegion(f"t:{written}!{_ref(value)}", error.reason))
                     column = _block_end(row, value.column)
                     bottom = max(bottom, self._blank_after(sheet, used, row_number))
+                    continue
+                if region.caption:   # a title or caption: a cell, never a region
+                    column = value.column
                     continue
                 out.append(region)
                 taken.append(region.area)
@@ -975,6 +1022,14 @@ class Regions:
             if bottom > row_number:
                 rows = self._open_rows(sheet, used, bottom + 1, taken)
         return out
+
+    def _lone(self, sheet: "Sheet", value: Value) -> bool:
+        """Whether the cell of ``value`` stands alone: the cells right of it and under it
+        blank (a cell a header is not detected at already has nothing above it)."""
+        cell = Cell(value.row, value.column)
+        near = list(self.workbook.read(RangeAddress(SheetRef(name=sheet.name), Area(
+            cell, Cell(cell.row + 1, cell.column + 1)))))
+        return near[0][1].t == "blank" and all(v.t == "blank" for v in near[1][:2])
 
     def _open_rows(self, sheet: "Sheet", used: Area, top: int,
                    taken: list[Area]) -> Iterator[list[Value]]:

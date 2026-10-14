@@ -5,6 +5,12 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **A title is no region**: a lone cell with nothing under it (a title, a caption, a lone
+  number or date) is no longer listed by `describe` as a detected region with no rows, over
+  a declared table or not; it stays a cell for `find_text` and reads. Text two rows above a
+  detected region's header (a blank row between) is that region's `title`
+  (`Region.title`, `Region.caption`). On the end-to-end workbook `describe` drops from 694
+  to 552 estimated tokens. No definition changes.
 - **Comparisons by key, summarised per column** (X10): `xlsx_compare` names every cell
   changed by key, `t:Products/SKU-2/Price` (in `at`, in place of `table`, `key` and
   `column`; the values keep their sheet addresses), and every row added or removed by key,

@@ -370,6 +370,7 @@ What the reader meets, and what it does. Each item has a made-up fixture (*Testi
 | Situation | Behaviour |
 | --- | --- |
 | merged header cells, two or more header rows | not detected; `describe` flags the region `header_unclear` and points to `declare_region` |
+| a title or caption: one cell with nothing under it | no region; left out of `describe`, still a cell for `find_text` and reads; text two rows above a detected region's header (a blank row between) is its `title` |
 | duplicate or blank header cells | in a table, Excel's names are used; in a detected region the column is named by its letter (`Column F`) and flagged |
 | hidden and very hidden sheets, hidden rows and columns | read like any other, and every value from them is marked `hidden` |
 | protected sheets and workbook | read; flagged; in 0.2 edits are refused on a protected sheet |
@@ -727,6 +728,23 @@ not re-recorded (recording calls a model): `tests/test_golden.py` converts the r
 to the recorded form (dropping the summary, reading `table`, `key`, `column` and the
 position back from `at` and the cells) and checks every recorded value, and a new test
 checks g2's summary. g1 and g3 are unchanged.
+
+*Title cells as built* (end-to-end check, 2026-10-14): **A title is no region.** A sheet
+with a title in A1, a blank row and a table from row 3 listed the title as a detected
+region of its own (`t:'Area North'!A1`, no rows, its one column the title), declared table
+or not. A region that is one cell and no data rows (`Region.caption`) is now left out by
+`Regions.find`, so `describe` does not list it; a lone number or date (unclear before,
+`header_not_text`) is left out too. The cell stays reachable by `find_text`, a read and
+its own `t:Sheet!A1`. Text two rows above a detected region's header, the only cell over
+its columns there and the row between blank, is that region's `title` (`Region.title`;
+`describe` shows it cut as a sample is). A title right above a header is still a two-row
+header (`header_unclear`, unchanged); a declared table or Excel table gets no title (its
+caller's `description` is its `about`; a title per sheet would cost a field per sheet). A
+one-column table with data rows is a region as before. **Tokens** (offline proxy, the
+end-to-end workbook: two sheets titled over the declared `checks`, a key-value sheet):
+`describe`'s data 694 → 552, the whole result 766 → 625. Definitions unchanged
+(43,415 / 42,739 for the three-format box), `strict_problems` clean. **Goldens** unchanged:
+none of g1-g3 has a lone cell.
 
 ### 0.2 — edit
 
