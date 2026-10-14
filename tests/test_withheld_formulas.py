@@ -132,12 +132,12 @@ def test_a_formula_in_the_table_naming_its_hidden_column_by_this_row():
     sheet.cell("F3", Formula("Copies[[#This Row],[Note]]", cached="private 3"))
     sheet.table("Copies", "A1:D3", ["Ref", "Note", "Copy", "Again"], write_header=False)
     wb = Workbook.open(built.to_bytes())
-    wb.declare_tables([{"name": "copies", "sheets": "Log", "key": "Ref",
+    wb.declare_tables([{"name": "copied", "sheets": "Log", "key": "Ref",
                         "fields": [{"header": "Note", "hidden": True}]}])
     cells = {v.ref: v for row in wb.read("Log!A2:F3") for v in row}
     assert [cells[r].formula_withheld for r in ("C2", "C3", "F2", "F3")] == [True] * 4
     assert [cells[r].formula_text for r in ("D2", "D3")] == ["Copies[@Ref]"] * 2
-    through = [v for row in wb.read("t:copies") for v in row]
+    through = [v for row in wb.read("t:copied") for v in row]
     assert [(v.ref, v.formula_withheld) for v in through if v.formula] == [
         ("C2", True), ("D2", False), ("C3", True), ("D3", False)]
 
