@@ -158,9 +158,11 @@ down and the largest move each way, named by key --
 `{"rating": {"changed": 4, "up": 2, "down": 2, "max_up": "t:checks/A3/rating +1.5", ...}}`
 -- and the rows added and removed by key. The differences that follow name each cell by
 key too (`"at": "t:checks/A3/rating"`, with its sheet address in each workbook), so an
-answer cites the same cell after rows are inserted or sorted. The summary is on the first
-page; the differences page as before. A column the application declared hidden is never
-compared or named.
+answer cites the same cell after rows are inserted or sorted, and carries its row's
+`label` -- the row's text in the table's first text column other than the key
+(`"label": "Hex bolt M6"`) -- so an answer names the row by what it is, not only by its
+key. The summary is on the first page; the differences page as before. A column the
+application declared hidden is never compared, named or used as the label.
 
 ### Workbook tables into slides and documents
 

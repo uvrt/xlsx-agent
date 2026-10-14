@@ -225,11 +225,11 @@ Every result is bounded by `Limits.max_result_chars` (24,000) and
 | `open_document` (shared) | `blob` | `d1`, the summary: sheets, tables, size, problems at open | the zip limits; `.xls`/`.xlsb` refused |
 | `describe` (shared) | `doc` | the catalogue: sheets (id, name, visible, hidden or very hidden, protected, used range); tables, names and detected regions with their key columns; per column: header, inferred type, fill rate, min/max/mean or distinct values when 12 or fewer, text length median and max, formula share, data-validation list, flags (mixed types, numbers as text, no cached value, cut at 32,767); up to two sample rows per table; workbook flags (recalculation, external links, macros) | about 3,000 tokens by default; a workbook too big for that lists every table and the first columns, and says which were left for `xlsx_profile` |
 | `xlsx_profile` | `doc`, `target` (table or column), `columns`, `cursor` | the full per-column profile for one table, every column (a date column's range as dates; text lengths in characters and words with the longest cell's address; the range of dates stored as text) | one table per call; 50 columns a page, within 24,000 characters; paged |
-| `xlsx_read` | `doc` (not for a dataset), `target` (range, table, column, row, dataset), `formats`, `formulas`, `comments`, `hyperlinks`, `merges`, `sources` (a dataset's), `key_column`, `limit`, `max_chars`, `cursor` | typed values by row, with addresses; optionally format codes, formula text, comments, links, merges; the array blocks over the rows always | default 50 rows, at most 500 or 24,000 characters; paged, a row too wide for a page split across pages |
+| `xlsx_read` | `doc` (not for a dataset), `target` (range, table, column, row, dataset), `formats`, `formulas`, `comments`, `hyperlinks`, `merges`, `sources` (a dataset's only), `key_column` (the column holding a by-key target's key, `SKU` for `t:Products/SKU-0042`), `limit`, `max_chars`, `cursor` | typed values by row, with addresses; optionally format codes, formula text, comments, links, merges; the array blocks over the rows always | default 50 rows, at most 500 or 24,000 characters; paged, a row too wide for a page split across pages |
 | `xlsx_query` | `doc`, `table`, `columns`, `where` (`eq`, `in`, `gte`, `lte`, `contains`, `words_gt`, `blank`, `not_blank`, combined with and), `sort`, `limit`, `cursor` | matching rows with their addresses, and the count of all matches | as `xlsx_read`; a filter on a column of the wrong type is refused naming the column's type |
 | `find_text` (shared) | `doc`, `text`, `regex`, `range` (a sheet, range or table), `cursor` | matches by address and kind: cell (text cells; numbers and dates are not searched, having no display string yet), table or region name, column header, comment, defined name; hidden ones marked; formula text not searched (the shared tool has no option for it) | 50 per page |
-| `xlsx_derive` | `doc`, `from` (table, region or dataset), `where`, `group_by`, `measures` (`count`, `sum`, `mean`, `median`, `min`, `max` (of dates, a date), `first`, `last` (row order, any column), `share`, `distinct`, each with `column` and `as`), `bins` (edges for a number or date column), `pivot` (a column whose values become columns), `sort`, `top`, `round`, `coerce` (`number_as_text`, `date_as_text`), `id` | `d:<id>`: columns, rows, the rounding applied, and for every value its sources (see *Provenance*); the rows left out and why, counted by reason | at most 1,000 result rows and 50 shown; a measure on a column whose type does not allow it is refused before anything is computed |
-| `xlsx_compare` | `a`, `b` (two open documents), `tables` (default every table and declared region; `table_b` when the one table's name differs in `b`), `key`, `columns`, `cursor` | first, each table's summary: per column the cells changed, and for numbers and dates up, down and the largest move each way by key (X10); sheets added, removed and renamed (by id); rows added and removed (by key, `t:Products/SKU-6`); cells changed (address by key, `t:Products/SKU-2/Price`, and in each sheet, old and new value, type: a number and the same number as text is a `type` change); columns added, removed and renamed; duplicate keys reported, not paired by guess | 50 differences per page, totals always, the summary on the first page |
+| `xlsx_derive` | `doc`, `from` (table, region or dataset), `where`, `group_by`, `measures` (`count`, `sum`, `mean`, `median`, `min`, `max` (of dates, a date), `first`, `last` (row order, any column), `share`, `distinct`, each with `column` and `as`), `bins` (edges for a number or date column), `pivot` (a column whose values become columns), `sort` (by output columns: a `group_by` column or a measure's `as`), `top`, `round`, `coerce` (`number_as_text`, `date_as_text`), `id` | `d:<id>`: columns, rows, the rounding applied, and for every value its sources (see *Provenance*); the rows left out and why, counted by reason | at most 1,000 result rows and 50 shown; a measure on a column whose type does not allow it is refused before anything is computed |
+| `xlsx_compare` | `a`, `b` (two open documents), `tables` (default every table and declared region; `table_b` when the one table's name differs in `b`), `key`, `columns`, `cursor` | first, each table's summary: per column the cells changed, and for numbers and dates up, down and the largest move each way by key (X10); sheets added, removed and renamed (by id); rows added and removed (by key, `t:Products/SKU-6`); cells changed (address by key, `t:Products/SKU-2/Price`, and in each sheet, old and new value, type: a number and the same number as text is a `type` change); each row and cell change with its row's `label` (the first text column other than the key, T19b); columns added, removed and renamed; duplicate keys reported, not paired by guess | 50 differences per page, totals always, the summary on the first page |
 | `xlsx_validate_data` | `doc`, `schema`: sheets and tables (or declared region specs) required; `key`; per column type, required, unique, enum (with `case`), the column's own drop-down list (`validation_list`), `min`/`max`, `step` (e.g. 1–5 in halves), pattern | problems by address and code (`missing_sheet`, `missing_table`, `missing_column`, `no_validation_list`, `no_cached_value`, `required_blank`, `wrong_type`, `out_of_range`, `off_step`, `not_in_enum`, `not_in_list`, `pattern_mismatch`, `duplicate_key`, `duplicate_value`), counted by code; never cell text | 50 problems per page, counts always |
 
 `xlsx_compare` and `xlsx_validate_data` are in the core if the budget holds; if the
@@ -853,6 +853,47 @@ as it gives hidden cells; the `arrays` an `xlsx_read` lists may name a block tha
 the hidden column (its address only); a formula over a hidden column whose text names it
 through a construct the scan does not know is given as written -- the scan errs towards
 withholding wherever it can place nothing, and E2's lexer is the place to replace it.
+
+*T19 as built* (production feedback, 2026-10-15): **descriptions that say what a parameter
+is.** `xlsx_read`'s `key_column` was read as "the key to look up"; it is the *column*
+holding the key, and now says so: "Column holding target's key (SKU for
+t:Products/SKU-0042); if describe gives no or several key_candidates." `sources` says it
+is for `d:` only, and its refusal on a cell or `t:` read says where it works and what to do
+instead ("sources works on a dataset (d:) only, where each value lists the cells it came
+from; a t: or cell read gives each cell its own address (a), its source: read it without
+sources"). `xlsx_derive` has its own `sort` description (`xlsx_query`'s sorts by input
+columns, which are its output): "By output column (group_by, a measure's as), not input".
+A sort by a name that is no output column is refused as "sort names an output column: one
+of Region, total", with the one meant: for an input column a measure reads, that measure's
+(`'Amount' is an input column: did you mean 'total', its measure?`), else the nearest
+name (ooxml-edit's `close_match`); under a pivot it points to `pivot_columns` and offers
+no measure. **Budget**: `xlsx_read` 492 → 501, `xlsx_derive` 794 → 801 estimated; the
+loaded core 3,474 → 3,490 estimated, about 5,142 → 5,165 by the offline proxy (5,024
+online before: about 5,048 expected, to be counted online); every definition 3,696 →
+3,712, the guard 3,700 → 3,716. `strict_problems` is clean; the strict set is unchanged
+(no schema shape changed, only descriptions).
+
+*T19b as built* (golden g2's answer, 2026-10-15): **each compared row with a label.** The
+re-recorded g2 named SKU-0005 by another row's item: `xlsx_compare` named rows added,
+removed and changed by key alone, and the model looked the item up in `describe`'s
+samples. Each row and cell difference now carries its row's `label` after `at` -- its
+text in the table's **label column** (`TableDiff.label`, in each table's entry after
+`key`): the first column other than the key, in `a`'s order, whose visible cells over
+both workbooks are mostly text (more text than all other types; blanks and cells on a
+hidden row or column not counted), read even when `columns` leaves it out of the cells
+compared. A changed cell and an added row take `b`'s label, a removed row its own; at most
+60 characters (`LABEL_CHARS`), cut with `…`; none for a blank, non-text or hidden label
+cell, and no `label` key at all then (a table without a text column gives none). A column
+hidden from the model is no column of its table, so it is never the label (tested: with
+the first text column hidden, the next labels and no hidden word appears). Declarations
+have no label or title field, so none is read from them. **Size**: g2's comparison +4
+labels and the column name: 434 → 470 estimated tokens (offline proxy). **Goldens**: g2 is *not*
+re-recorded (no model call): its transcript keeps the result the model saw, and
+`tests/test_golden.py` applies what tools have added since (`SINCE_RECORDED`: for g2's
+`xlsx_compare`, the label column `Item` and each difference's label, written out from g2's
+own `describe` results) to the recorded result before comparing it, key order included,
+with the replay; a new test checks that SKU-0005 is labelled "Spirit level 60 cm". g2's
+answer stays as recorded (it is for the reader, not replayed). No definition changes.
 
 ### 0.2 — edit
 
