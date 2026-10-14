@@ -746,6 +746,34 @@ end-to-end workbook: two sheets titled over the declared `checks`, a key-value s
 (43,415 / 42,739 for the three-format box), `strict_problems` clean. **Goldens** unchanged:
 none of g1-g3 has a lone cell.
 
+*T17 as built* (production feedback, 2026-10-14): **A hidden column stays hidden, every way
+in.** A declared table over an Excel table (a ListObject) left both in `describe`: the
+Excel table's entry gave the hidden column's name, its values (`min`/`max`, the few-values
+list) and its sample rows, and `t:<the Excel table>` reached it through `xlsx_read`,
+`xlsx_query`, `xlsx_profile`, `xlsx_derive`, `xlsx_compare`, `xlsx_validate_data`, a
+dataset's `from`, `expand` and `find_text` (its header, by name). A defined name over the
+hidden cells did the same, a validation list drawn from them showed them in the profile,
+and `Workbook.read` of the sheet's cells gave them (only `xlsx_read` withheld them). Two
+choke points now: **names** in `Regions` -- an Excel table a declared table covers any
+cell of is replaced by it (`Regions.replaced_by`; left out of `Regions.tables`, so out of
+`describe`, `find_text`, compare's pairing and `known()`; `t:<it>` in any form refused,
+`declared`, with the declared table as `valid_options`; `Regions.excel_tables` keeps every
+one, so its name stays taken and duplicate names are still flagged), and a defined name
+over a hidden column's cells is refused (`declared`) and neither listed nor searched;
+**cells** in `Workbook._read` -- every read of a sheet's cells gives a withheld cell blank
+(the read tool still marks it `withheld`), so profile, catalogue samples, detection and
+anything later that reads a range never see it. A validation list drawn from withheld
+cells is not read (`reason: "withheld"`), a table's flags at a withheld cell are dropped
+from the problems, and a second declared table that shows a column another hides is
+refused (`hidden_elsewhere`, the column letter as `valid_options`; declaring a table again
+under its own name still finds its hidden header). The Excel table's name is not listed
+as an alias: it would name the same cells two ways with different columns. **Tokens**
+(offline proxy, the test workbook: one Excel table under the declaration, two names over
+the hidden column): `describe` 1,311 → 505. Definitions unchanged (no tool text changed).
+**Not covered**: formula text of visible cells that names a hidden cell or column
+(`=D2`, `ChecksTable[Note]`) is given as written; cells of a hidden column outside its
+table's rows are not withheld (as before).
+
 ### 0.2 — edit
 
 | # | Item | Effort | Done when |
