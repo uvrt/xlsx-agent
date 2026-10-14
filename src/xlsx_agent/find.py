@@ -37,7 +37,8 @@ a constant, an unknown sheet) come last.  Each occurrence is a match; one of no 
 defined names are found like any other, and say ``hidden``.
 
 **Withheld**: the cells of a column a declared table hides from the model
-(:mod:`xlsx_agent.declare`), and their comments, are never searched.
+(:mod:`xlsx_agent.declare`), their comments and the defined names over them are never
+searched; nor is an Excel table a declared table replaces (its name and headers).
 
 **within**: a sheet (``Stock!``), a cell or range (``Stock!A1:H40``, ``Stock!A:C``), a
 table, name or region (``t:Products``: all of it, header and totals rows too) or a part of
@@ -269,16 +270,19 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
                 Found("header", replace(r.address, column=c).text, c, start, end,
                       hidden=hidden, cell=w)
                 for start, end in _occurrences(pattern, c)])
+    # The cells of columns a declared table hides from the model: never searched, nor a
+    # name over them.
+    withheld = workbook.regions.withheld(sheet.name) if sheet.name else []
     for name in workbook.names:
         if name.range is None or (area is not None and not _overlaps(name.range.area, area)):
             continue
         found = _cell_sheet_of(workbook, name.range)
         if found is None or found != sheet:
             continue
+        if withheld and any(_overlaps(name.range.area, w) for w in withheld):
+            continue
         add(name.range.area.first, "name",
             lambda hidden, n=name: list(_name(n, pattern, sheet_hidden=hidden_sheet)))
-    # The cells of columns a declared table hides from the model: never searched.
-    withheld = workbook.regions.withheld(sheet.name) if sheet.name else []
     for comment in workbook.comments(sheet):
         if area is not None and not _inside(comment.cell, area):
             continue

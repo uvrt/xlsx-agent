@@ -51,8 +51,10 @@ column of dates alike.
 covers some of the column's cells: an inline list's values, or the values of the range
 (or the defined name over one) it takes them from, up to :data:`ALLOWED_CAP`; a source that
 is not a range is given its reason (:data:`~xlsx_agent.read.names.NOT_A_RANGE`), never
-evaluated.  Excel writes an inline list as one quoted, comma-separated literal; how Excel
-treats space around the commas is not measured here, and it is kept as written.
+evaluated, and one over cells a declared table hides from the model
+(:mod:`xlsx_agent.declare`) is not read: its reason is ``withheld``.  Excel writes an
+inline list as one quoted, comma-separated literal; how Excel treats space around the
+commas is not measured here, and it is kept as written.
 
 **Flags** (facts, not verdicts: ROADMAP.md, "Design rules", 9), each a count with the
 first addresses: every value issue the reader met (``number_as_text``, ``date_as_text``,
@@ -149,7 +151,8 @@ class AllowedList:
 
     ``values`` what it allows (an inline list's text, or the values of its source range
     in order, blanks aside), ``None`` when its source is not a range and ``reason`` says
-    why (:data:`~xlsx_agent.read.names.NOT_A_RANGE`, or ``"unknown_name"``); ``source``
+    why (:data:`~xlsx_agent.read.names.NOT_A_RANGE`, or ``"unknown_name"``), or is not
+    read (``"withheld"``: it holds cells hidden from the model); ``source``
     the range the values come from, as an address (``None`` for an inline list); ``cut``
     the source held more than :data:`ALLOWED_CAP` values; ``cells`` how many of the
     column's data cells the rule covers.  ``formula`` is the rule's text, for a program
@@ -666,6 +669,9 @@ def _allowed(workbook: "Workbook", sheet: str, rule: Validation,
         target, reason = _named_range(workbook, sheet, text)
     if target is None:
         return AllowedList(None, cells, reason=reason, formula=rule.formula1)
+    if _withheld(workbook, target):
+        return AllowedList(None, cells, source=target.text, reason="withheld",
+                           formula=rule.formula1)
     values: list = []
     cut = False
     for row in workbook.read(target):
@@ -680,6 +686,19 @@ def _allowed(workbook: "Workbook", sheet: str, rule: Validation,
             break
     return AllowedList(tuple(values), cells, source=target.text, cut=cut,
                        formula=rule.formula1)
+
+
+def _withheld(workbook: "Workbook", target: RangeAddress) -> bool:
+    """Whether a list's source holds cells of a column hidden from the model
+    (:mod:`xlsx_agent.declare`)."""
+    try:
+        sheet = workbook.sheet_of(target)
+    except KeyError:
+        return False
+    area = target.area
+    return any(not (a.last.row < area.first.row or area.last.row < a.first.row
+                    or a.last.column < area.first.column or area.last.column < a.first.column)
+               for a in workbook.regions.withheld(sheet.name))
 
 
 def _literal(text: str) -> str | None:

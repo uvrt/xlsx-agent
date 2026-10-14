@@ -82,9 +82,25 @@ North", ...}``).
 ``xlsx_validate_data`` and a deck's or document's ``from`` never show it, and an address
 that names it is refused as naming no column (its name is never offered).  Its cells are
 withheld from a read of the sheet's cells (``xlsx_read`` of ``Area 1!A1:H40`` gives them as
-``withheld``), from ``find_text``, and from a region detected or declared over them.  A
-column Excel hides (a hidden column of the sheet) stays a column like any other unless
-it is declared hidden; its values say ``hidden``, as always.
+``withheld``; :meth:`Workbook.read <xlsx_agent.workbook.Workbook.read>` gives them blank),
+from ``find_text``, from a validation list drawn from them (its ``reason`` is
+``withheld``), from the problems, and from a region detected or declared over them.  A
+defined name over any of them is refused (``declared``, with the table as
+``valid_options``) and neither listed by ``describe`` nor found by ``find_text``: a name
+may say what its cells hold.  Another declared table that shows one of them is refused
+(``hidden_elsewhere``): it hides the column too.  A column Excel hides (a hidden column of
+the sheet) stays a column like any other unless it is declared hidden; its values say
+``hidden``, as always.
+
+**Over an Excel table**: a declared table that covers any cell of an Excel table (a
+ListObject) replaces it.  ``describe`` lists the declared table alone, and ``t:<the Excel
+table>`` -- with a column, a row, a key set or a wildcard, in every tool -- is refused
+(``declared``, ``t:<the Excel table> lies in t:checks``, with ``t:checks`` as
+``valid_options``), so a column the declared table hides is never reached by the Excel
+table's name.  The Excel table's name is not listed as an alias: it would name the same
+cells two ways, with different columns, and a table over several sheets is more than the
+Excel table.  It stays taken (a declared table takes a name of its own).  The workbook's
+``tables`` and ``open_document``'s count leave it out.
 
 **A key-value table** (``"type": "key_value"``) is a field column and a value column, and
 any more (a confidence, a source...): ``t:run/report_date/value`` is the value of the row
@@ -145,7 +161,7 @@ class DeclarationError(ValueError):
     ``duplicate_name``, ``header_mismatch``, ``no_header``, ``bad_columns``, ``bad_rows``,
     ``no_rows``, ``unknown_column``, ``duplicate_field``, ``bad_id``, ``id_taken``,
     ``no_columns``, ``hidden_key``, ``no_key``, ``duplicate_key``, ``bad_pattern``,
-    ``clean_key``), ``path`` where in the
+    ``clean_key``, ``hidden_elsewhere``), ``path`` where in the
     declarations (``tables[0].fields[2].header``), ``valid_options`` what would do instead.
     The message names sheets, cells, paths and what the declaration gave, never a cell's
     content."""
@@ -376,8 +392,54 @@ def declare_tables(workbook: "Workbook", declarations: Any) -> list[Region]:
     every one checked against the workbook first, then all kept; the tables declared, in
     order (an optional one whose sheets are not there left out)."""
     specs = declarations if _specs(declarations) else parse_declarations(declarations)
-    built = [build(workbook, spec) for spec in specs]
+    with workbook.regions.redeclaring([spec.name for spec in specs]):
+        built = [build(workbook, spec) for spec in specs]
+    _check_withheld(workbook, specs, built)
     return [workbook.regions.keep_table(region) for region in built if region is not None]
+
+
+def _check_withheld(workbook: "Workbook", specs: "Sequence[TableSpec]",
+                    built: "list[Region | None]") -> None:
+    """No table shows a cell another hides from the model: refused (``hidden_elsewhere``),
+    naming the column, its sheet and the table that hides it, so the declaration hides it
+    too."""
+    names = {spec.name.casefold() for spec in specs}
+    hiding: list[tuple[str, str, Area]] = [
+        (region.address.text, sheet, area) for name, region in
+        ((r.name.casefold(), r) for r in workbook.regions.configured)
+        if name not in names and region.span is not None
+        for sheet, area in region.span.withheld()]
+    hiding += [(region.address.text, sheet, area) for region in built
+               if region is not None and region.span is not None
+               for sheet, area in region.span.withheld()]
+    for spec, region in zip(specs, built):
+        if region is None:
+            continue
+        for sheet, area in _shown(region):
+            for other, hidden_sheet, hidden in hiding:
+                if other != region.address.text and hidden_sheet.casefold() == sheet.casefold() \
+                        and _meet(area, hidden):
+                    column = column_letters(hidden.first.column)
+                    raise DeclarationError("hidden_elsewhere", f"{spec.path}.fields",
+                                           f"column {column} of sheet {quote_sheet(sheet)} is "
+                                           f"hidden from the model by {other}; hide it here "
+                                           "too", valid_options=[column])
+
+
+def _shown(region: Region) -> list[tuple[str, Area]]:
+    """The cells a declared table shows, sheet by sheet, a rectangle per column run."""
+    if region.span is None:
+        return [(region.sheet, region.area)]
+    out = []
+    for sheet, area in region.span.areas():
+        out += [(sheet, Area(Cell(area.first.row, column), Cell(area.last.row, column)))
+                for column in region.span.columns]
+    return out
+
+
+def _meet(one: Area, two: Area) -> bool:
+    return not (one.last.row < two.first.row or two.last.row < one.first.row
+                or one.last.column < two.first.column or two.last.column < one.first.column)
 
 
 def _specs(value: Any) -> bool:
@@ -391,7 +453,7 @@ def build(workbook: "Workbook", spec: TableSpec) -> Region | None:
     regions = workbook.regions
     path = spec.path
     folded = spec.name.casefold()
-    taken = [t.address.text for t in regions.tables if t.name.casefold() == folded]
+    taken = [t.address.text for t in regions.excel_tables if t.name.casefold() == folded]
     taken += [n.address.text for n in regions.names if n.address is not None
               and n.scope is None and n.name.casefold() == folded]
     if taken:
