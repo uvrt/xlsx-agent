@@ -318,6 +318,29 @@ wb.derive(ds, measures=[{"fn": "max", "column": "revenue", "as": "best"}]).rows
 # [{'best': 509.9}]
 ```
 
+A dataset made in Python is derived from the same way. Its Python `date`, `datetime` and
+`time` values are dates without a label; ISO 8601 text is text until its column is labelled
+(the labels: `number`, `percent`, `date`, `time`, `datetime`, `text`, `bool`, `error`,
+ooxml-edit's `TYPE_LABELS`):
+
+```python
+from datetime import date
+from ooxml_edit.tools import Dataset
+from xlsx_agent.derive import derive
+
+sites = Dataset.from_records([{"site": "Ash", "opened": date(2026, 3, 1), "due": "2026-05-01"},
+                              {"site": "Oak", "opened": date(2026, 1, 20), "due": "2026-04-15"}],
+                             types={"due": "date"})
+derive(None, sites, measures=[{"fn": "min", "column": "opened"},
+                              {"fn": "max", "column": "due"}]).rows
+# [{'min opened': '2026-01-20', 'max due': '2026-05-01'}]
+```
+
+Without `types`, `max due` is refused (`wrong_type`, `issue="date_as_text"`), naming the
+label and `coerce=["date_as_text"]`. In a session the application keeps it with
+`session.keep_datasets([DatasetEntry("sites", sites)])`: `xlsx_derive` and `xlsx_read` take
+`d:sites`, and a deck or document tool writes its dates in the session's locale.
+
 In the tool layer `xlsx_derive` keeps the dataset in the session as `d:by_region`, which
 `xlsx_read` reads (with `sources: true`) after its workbook is closed too.
 

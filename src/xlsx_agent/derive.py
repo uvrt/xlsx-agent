@@ -782,7 +782,8 @@ class _Plan:
                     reason = "has no measured order (text collation is not measured)"
                 else:
                     reason = f"is not what {m.fn} takes ({', '.join(allowed)})"
-                hint, issue, cells = self._stored_as_text(m.fn, t, (issues or {}).get(m.offset))
+                hint, issue, cells = self._stored_as_text(m.fn, t, (issues or {}).get(m.offset),
+                                                          m.column)
                 raise DeriveError("wrong_type", f"{m.column} is a {t} column and {reason}; "
                                   f"it takes {', '.join(takes)}{hint}", field="measures",
                                   column=m.column, column_type=t, valid_options=takes,
@@ -811,10 +812,11 @@ class _Plan:
             b.labels = [f"[{lo}, {hi})" for lo, hi in zip(texts, texts[1:])]
             b.labels[-1] = b.labels[-1][:-1] + "]"
 
-    def _stored_as_text(self, fn: str, t: str, found: "dict[str, Count] | None"
-                        ) -> tuple[str, str | None, Count | None]:
+    def _stored_as_text(self, fn: str, t: str, found: "dict[str, Count] | None",
+                        column: str | None = None) -> tuple[str, str | None, Count | None]:
         """What a refusal of ``fn`` on a ``t`` column adds when the column's text holds
-        dates or numbers: the words, the issue and its cells; nothing otherwise."""
+        dates or numbers: the words, the issue and its cells; nothing otherwise.  A
+        dataset's ISO dates may be labelled instead, and the words say how."""
         if t != "text" or not found:
             return "", None, None
         wants = {"date_as_text": _MOMENTS, "local_date_text": _MOMENTS,
@@ -834,6 +836,10 @@ class _Plan:
                 words += f", too few to make it a {what[:-1]} column"
             else:
                 words += f": coerce [\"{issue}\"] reads them as {what}"
+            if self.via is not None and issue == "date_as_text" and column is not None \
+                    and issue not in self.coerce:
+                words += f", as labelling the dataset's column does (Dataset.from_records(" \
+                         f"..., types={{{column!r}: \"date\"}}))"
             return words, issue, cells
         return "", None, None
 

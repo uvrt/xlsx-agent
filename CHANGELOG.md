@@ -5,6 +5,18 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **Dates in a dataset made in Python** (T18): a Python `date`, `datetime` or `time` in a
+  dataset is that type with no label (it was `text`, so `min` and `max` refused it), read
+  as ISO 8601 text as a cell's date is; mixed with other values, the column takes the
+  majority type as before. ISO text in an unlabelled column stays text (a column of codes
+  that look like dates is not read as dates on its own) and is flagged `date_as_text`, so
+  a refused `min` names the way out: the `date` label or `coerce: ["date_as_text"]`. Build
+  one with ooxml-edit 0.28's `Dataset.from_records(rows, types={"opened": "date"})`; the
+  labels are its `TYPE_LABELS` (`number`, `percent`, `date`, `time`, `datetime`, `text`,
+  `bool`, `error`), now in the docs. In a deck or document a Python date is written in the
+  session locale's day order (ooxml-edit); a derived date stays ISO text. Needs ooxml-edit
+  0.28.0. No definition changes.
+
 - **Golden g2 re-recorded** on the current `xlsx_compare` result (summary first, differences
   by key): the test no longer converts the replay back to the pre-X10 shape.
   `tools/record_goldens.py` writes the day it ran as the recording date.

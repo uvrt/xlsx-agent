@@ -14,7 +14,8 @@ import datetime as dt
 import json
 
 import pytest
-from ooxml_edit.tools import Limits, Toolbox, strict_problems
+from ooxml_common.locales import Locale
+from ooxml_edit.tools import Dataset, DatasetEntry, Limits, Toolbox, strict_problems
 from test_sources import book
 
 pptx_agent = pytest.importorskip("pptx_agent")
@@ -137,6 +138,44 @@ def test_a_table_over_the_sessions_limit_is_refused(toolbox):
     assert "15 values" in error.message
     ok(call(toolbox, session, "ppt_add_table", doc="d1", slide="s:256", box=BOX,
             **{"from": "t:checks/*/rating"}))                # one column: 3 values
+
+
+#: A dataset made in Python, its dates Python's (made up).
+SITES = [{"site": "Ash", "opened": dt.date(2026, 3, 1), "at": dt.datetime(2026, 4, 15, 9, 30),
+          "visits": 4},
+         {"site": "Oak", "opened": dt.date(2026, 1, 20), "at": None, "visits": 7}]
+DUTCH = Locale(decimal_separator=",", thousands_separator=".", date_order="dmy",
+               language="nl-BE", list_separator=";")
+
+
+def _keep_sites(session):
+    session.keep_datasets([DatasetEntry("sites", Dataset.from_records(SITES))])
+
+
+@pytest.mark.parametrize("locale, cells", [
+    (None, [["Ash", "3/1/2026", "4/15/2026 09:30", "4"], ["Oak", "1/20/2026", "", "7"]]),
+    (DUTCH, [["Ash", "1/3/2026", "15/4/2026 09:30", "4"], ["Oak", "20/1/2026", "", "7"]]),
+])
+def test_python_dates_are_placed_in_the_sessions_locale(toolbox, locale, cells):
+    session = _session(toolbox, locale=locale)
+    _keep_sites(session)
+    table = ok(call(toolbox, session, "ppt_add_table", doc="d1", slide="s:256", box=BOX,
+                    **{"from": "d:sites"})).data
+    assert table["cells"] == [["site", "opened", "at", "visits"], *cells]
+    drawn = ok(chart(toolbox, session, **{"from": "d:sites",
+                                          "columns": ["opened", "visits"]})).data
+    assert drawn["categories"] == [row[1] for row in cells]   # a category, not a blank
+
+
+def test_a_derive_of_python_dates_places_its_iso_text(toolbox):
+    session = _session(toolbox, locale=DUTCH)
+    _keep_sites(session)
+    ok(call(toolbox, session, "xlsx_derive", **{"from": "d:sites"}, id="span",
+            measures=[{"fn": "min", "column": "opened", "as": "since"},
+                      {"fn": "first", "column": "opened", "as": "first"}]))
+    table = ok(call(toolbox, session, "ppt_add_table", doc="d1", slide="s:256", box=BOX,
+                    **{"from": "d:span"})).data
+    assert table["cells"] == [["since", "first"], ["2026-01-20", "2026-03-01"]]
 
 
 def test_the_workbook_definitions_are_unchanged_and_strict_clean():

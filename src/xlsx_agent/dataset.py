@@ -35,7 +35,13 @@ dataset never does.
 :class:`Dataset` or a :class:`DatasetTable` as ``from_``).  The dataset is a table like any
 other: its columns are typed by their values (a column's label first, so a date column's
 ISO text is a date), and filters, groups, measures, bins, pivots and sorts work as on a
-sheet.  A :class:`Derived`'s **unrounded** values are measured, so rounding happens once,
+sheet.  A Python ``date``, ``datetime`` or ``time`` is that type with no label, read as
+ISO 8601 text as a cell's date is; ISO text in an unlabelled column is text, flagged
+``date_as_text`` as a cell's would be, so a ``min`` on it is refused with the way out --
+the ``date`` label (:meth:`Dataset.from_records <ooxml_edit.tools.Dataset.from_records>`
+``types=``) or ``coerce=["date_as_text"]``.  The labels a dataset's columns take are
+ooxml-edit's ``TYPE_LABELS``: ``number``, ``percent``, ``date``, ``time``, ``datetime``,
+``text``, ``bool``, ``error``.  A :class:`Derived`'s **unrounded** values are measured, so rounding happens once,
 at the end.  **Provenance carries through**: a value derived from a dataset has as its
 sources the cells the dataset's values came from -- the original cells, merged into
 compact ranges again, or the keys of one table's column gathered into one key set, in the
@@ -50,6 +56,7 @@ through them by unit, a page's keys of one column gathered into one key set agai
 
 from __future__ import annotations
 
+import datetime as _dt
 import warnings
 from dataclasses import dataclass, replace
 from typing import Any, Iterable, Iterator, Sequence
@@ -62,7 +69,7 @@ from .address import (AddressError, DatasetAddress, NameNotFound, RangeAddress, 
 from .clean import CleanedWarning
 from .profile import FIRST_ADDRESSES, Count
 from .read.regions import RegionError, key_text
-from .read.types import TYPES, Value
+from .read.types import _MS_PER_DAY, TYPES, Value, _clock, looks_like_date
 
 #: What a dataset without an id (a script's :class:`Derived` made without ``id=``) is called
 #: in the addresses of its values.
@@ -196,10 +203,9 @@ class DatasetTable:
         reported, or ``measured`` (unrounded); with its first ``sources`` cells when
         given."""
         rows = self.measured if measured else self.dataset.rows
-        v = rows[position - 1][offset]
-        out = DatasetValue(sheet="", row=position, column=offset + 1,
-                           v=v, t=_type(v, self.labels[offset]), dataset=self.id,
-                           name=self.columns[offset])
+        v, t, issue = _typed(rows[position - 1][offset], self.labels[offset])
+        out = DatasetValue(sheet="", row=position, column=offset + 1, v=v, t=t,
+                           issue=issue, dataset=self.id, name=self.columns[offset])
         if sources is not None:
             out.sources, out.more = cut_sources(self.cell_sources(position, offset), sources)
         return out
@@ -503,6 +509,31 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
             "line each"), stacklevel=2)
     return Dataset(columns, rows, sources=sources, keys=1 if first_is_key else 0,
                    types=types, detail=detail)
+
+
+def _typed(v: Any, label: str | None) -> tuple[Any, str, str | None]:
+    """A dataset value as a cell's would be read: its value, its type and its issue
+    (:func:`_type`).  A Python ``datetime``, ``date`` or ``time`` is that type without a
+    label, its value ISO 8601 text as a cell's (``2026-03-01``, ``14:05:00``,
+    ``2026-03-01T14:05:00``; to the millisecond, the wall-clock time of an aware one).
+    ISO 8601 text in an unlabelled column stays text, flagged ``date_as_text`` as a cell's
+    would be: ``coerce=["date_as_text"]`` reads it as a date, as a ``date`` label does."""
+    if isinstance(v, _dt.datetime):
+        ms = round(v.microsecond / 1000)
+        day = v.replace(tzinfo=None, microsecond=0) + _dt.timedelta(milliseconds=ms)
+        clock = ((day.hour * 60 + day.minute) * 60 + day.second) * 1000 \
+            + day.microsecond // 1000
+        return f"{day.date().isoformat()}T{_clock(clock)}", "datetime", None
+    if isinstance(v, _dt.date):
+        return v.isoformat(), "date", None
+    if isinstance(v, _dt.time):
+        clock = ((v.hour * 60 + v.minute) * 60 + v.second) * 1000 + round(v.microsecond / 1000)
+        return _clock(min(clock, _MS_PER_DAY - 1)), "time", None
+    t = _type(v, label)
+    issue = None
+    if t == "text" and label is None and isinstance(v, str) and looks_like_date(v):
+        issue = "date_as_text"
+    return v, t, issue
 
 
 def _type(v: Any, label: str | None) -> str:
