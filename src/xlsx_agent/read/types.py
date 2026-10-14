@@ -155,7 +155,10 @@ class Value:
     first cell), ``shared_from`` (a shared group's other cells: the address of the cell
     that holds the text), ``array`` (the range an array formula or a spill fills),
     ``volatile`` (the formula calls ``NOW``, ``TODAY``, ``RAND``, ``OFFSET`` or
-    ``INDIRECT``: its value is as of the last save).  ``origin``: the cell's own sheet (as
+    ``INDIRECT``: its value is as of the last save).  ``formula_withheld``: the formula
+    reaches a cell hidden from the model by a declared table, so its text is not given
+    (``formula_text`` is ``None``; ``v`` is its cached value, as for any formula:
+    :mod:`xlsx_agent.declare`).  ``origin``: the cell's own sheet (as
     an address writes it), row and column, when ``sheet``, ``row`` and ``column`` are its
     place in a declared table read as one (a table over several sheets, or with columns
     hidden from the model: :mod:`xlsx_agent.declare`); :attr:`a` is then the cell's own
@@ -175,6 +178,7 @@ class Value:
     serial: float | None = None
     format: str | None = None
     formula_text: str | None = field(default=None, repr=False)
+    formula_withheld: bool = False
     shared_from: str | None = None
     array: str | None = None
     volatile: bool = False

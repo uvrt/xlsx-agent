@@ -20,7 +20,10 @@ and ``sources`` adds each value's source cells (R11).  Every other target needs 
 **Declared tables** (:mod:`xlsx_agent.declare`): a table over several sheets is read as one,
 each cell with its own address; the result's ``range`` is each sheet's, joined by ``,``,
 and it names no one ``sheet``.  A cell of a column hidden from the model is never given:
-a read of the sheet's cells gives it as ``{"a": ..., "withheld": true}``.  A declared
+a read of the sheet's cells gives it as ``{"a": ..., "withheld": true}``, and a visible formula that reaches one
+gives its cached value, but with ``formulas`` no ``f``: ``"formula_withheld": true``
+instead (:meth:`Regions.formula_withheld
+<xlsx_agent.read.regions.Regions.formula_withheld>`).  A declared
 column's cleaning rules (:mod:`xlsx_agent.clean`) apply to a read through its table: a
 value a rule changed says ``"cleaned": true``, a split one is a ``list``, and the page
 counts them (``cleaned``: how many, the first addresses); a read of the sheet's cells
@@ -462,6 +465,8 @@ def _cell(value: Value, annotate: _Annotations, formulas: bool,
             left = max(left - len(item), 0)
         out["v"] = items
         cut = True
+    if formulas and value.formula_withheld:
+        out["formula_withheld"] = True
     if formulas and value.formula_text is not None:
         text = value.formula_text
         if cap is not None and len(text) > cap:

@@ -92,7 +92,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Iterator, Sequence
 
-from ooxml_edit.charts.workbook import Area, Cell, column_letters
+from ooxml_edit.charts.workbook import MAX_COLUMN, MAX_ROW, Area, Cell, column_letters
 
 from ..address import (NameNotFound, RangeAddress, SheetRef, TableAddress,
                        is_address_name, is_name, nearest, parse_address, quote_sheet)
@@ -470,8 +470,12 @@ class Span:
                 for sheet, area in self.areas()]
 
     def withheld(self) -> list[tuple[str, Area]]:
-        """The cells of the columns hidden from the model, sheet by sheet: never shown."""
-        return [(sheet, Area(Cell(area.first.row, column), Cell(area.last.row, column)))
+        """The cells of the columns hidden from the model, sheet by sheet: never shown.  A
+        hidden column is hidden from its header row (the first data row, without one) to
+        the sheet's last row: the cells below the table's rows are the column's too (a
+        row added later, a total, a stray note); those above its header are not the
+        table's (a title, a block of run details beside it)."""
+        return [(sheet, Area(Cell(area.first.row, column), Cell(MAX_ROW, column)))
                 for sheet, area in self.areas() for column in self.hidden]
 
     def read(self, workbook: "Workbook", area: Area, *, formats: bool = False,
@@ -540,6 +544,9 @@ class Regions:
         #: The tables being declared again (by name folded): their hidden cells are read
         #: while the new declaration is checked (:meth:`redeclaring`).
         self._redeclaring: frozenset[str] = frozenset()
+        #: Whether a formula reaches a withheld cell, by sheet, text, fill and cell
+        #: (:meth:`formula_withheld`); forgotten when what is withheld changes.
+        self._reach: dict[tuple, bool] = {}
 
     def forget_cells(self) -> None:
         """Forget what was found from the cells (detected regions, key columns, key
@@ -598,6 +605,7 @@ class Regions:
         self._configured.pop(folded, None)
         self._declared[folded] = region
         self._configured[folded] = region
+        self._reach.clear()
         if region.span is not None:
             self._spans[region.span.name] = region.span
         return region
@@ -653,10 +661,121 @@ class Regions:
         again: a declaration finds a hidden column by its header's text."""
         old = self._redeclaring
         self._redeclaring = old | {name.casefold() for name in names}
+        self._reach.clear()
         try:
             yield
         finally:
             self._redeclaring = old
+            self._reach.clear()
+
+    @property
+    def withholds(self) -> bool:
+        """Whether any declared table hides a column from the model."""
+        return any(region.span is not None and region.span.hidden
+                   and name not in self._redeclaring
+                   for name, region in self._configured.items())
+
+    def formula_withheld(self, text: str, sheet: str, cell: Cell,
+                         fill: Area | None = None) -> bool:
+        """Whether the formula ``text`` of ``cell`` on ``sheet`` (its name) reaches a cell
+        hidden from the model (:meth:`withheld`), so that its text is not given: a reference
+        over one, on its sheet or another; a structured reference to a table's hidden
+        column, or to the whole table; a defined name over one, or whose formula reaches
+        one; ``INDIRECT`` or ``OFFSET`` (whose reach the text does not say); a reference it
+        cannot place (:mod:`xlsx_agent.read.reach`).  ``fill`` is the range a shared
+        formula's group fills from ``cell``: its references move with it."""
+        if not self.withholds:
+            return False
+        rows = fill.last.row - fill.first.row if fill is not None else 0
+        columns = fill.last.column - fill.first.column if fill is not None else 0
+        key = (sheet.casefold(), text, rows, columns, cell if "[" in text else None)
+        found = self._reach.get(key)
+        if found is None:
+            found = self._reach[key] = self._reaches(text, sheet, cell, rows, columns, set())
+        return found
+
+    def _reaches(self, text: str, sheet: str, cell: Cell, rows: int, columns: int,
+                 seen: set) -> bool:
+        from .reach import references
+
+        for ref in references(text):
+            if ref.kind == "anywhere":
+                return True
+            if ref.kind == "cells":
+                area = _filled(ref.first, ref.last, rows, columns)
+                if any(_overlaps(area, hidden) for name in self._formula_sheets(ref.sheets, sheet)
+                       for hidden in self.withheld(name)):
+                    return True
+            elif ref.kind == "table":
+                table = self._formula_table(ref.name, sheet, cell)
+                if table is None:
+                    if ref.name is None:
+                        return True      # [@Note] outside every table: cannot be placed
+                    continue
+                area = _table_columns(table, ref)
+                if area is None or any(_overlaps(area, hidden)
+                                       for hidden in self.withheld(table.sheet)):
+                    return True
+            else:
+                name = self._formula_name(ref.name, ref.sheets, sheet)
+                if name is not None:
+                    if name.range is not None and name.range.sheet.name is not None:
+                        if any(_overlaps(name.range.area, hidden)
+                               for hidden in self.withheld(name.range.sheet.name)):
+                            return True
+                    elif name.reason == "formula" and id(name) not in seen and len(seen) < 16:
+                        seen.add(id(name))
+                        if self._reaches(name.formula, name.scope or sheet, cell, 0, 0, seen):
+                            return True
+                    continue
+                table = self._formula_table(ref.name, sheet, cell) if ref.sheets is None \
+                    else None
+                if table is not None and any(_overlaps(table.area, hidden)
+                                             for hidden in self.withheld(table.sheet)):
+                    return True
+        return False
+
+    def _formula_sheets(self, sheets: "tuple[str, ...] | None", own: str) -> list[str]:
+        """The sheets a reference's prefix names: the formula's own, one, or every sheet
+        from one to another in the tabs' order (all of them, when either is no sheet)."""
+        if sheets is None:
+            return [own]
+        if len(sheets) == 1:
+            return [sheets[0]]
+        names = [s.name for s in self.workbook.sheets]
+        folded = [n.casefold() for n in names]
+        try:
+            one, two = folded.index(sheets[0].casefold()), folded.index(sheets[1].casefold())
+        except ValueError:
+            return names
+        return names[min(one, two):max(one, two) + 1]
+
+    def _formula_table(self, name: str | None, sheet: str, cell: Cell) -> "Region | None":
+        """The Excel table a structured reference names (``None``: the one ``cell`` lies
+        in)."""
+        for table in self.excel_tables:
+            if name is None:
+                if table.sheet.casefold() == sheet.casefold() and table.area.first.row \
+                        <= cell.row <= table.area.last.row and table.area.first.column \
+                        <= cell.column <= table.area.last.column:
+                    return table
+            elif table.name.casefold() == name.casefold():
+                return table
+        return None
+
+    def _formula_name(self, name: str, sheets: "tuple[str, ...] | None",
+                      sheet: str) -> DefinedName | None:
+        """The defined name a formula on ``sheet`` means by ``name``: the one local to the
+        sheet its prefix names, else to ``sheet``, else the workbook-wide one."""
+        folded = name.casefold()
+        scope = sheets[0] if sheets is not None and len(sheets) == 1 else sheet
+        found = [n for n in self.names if n.name.casefold() == folded]
+        for candidate in found:
+            if candidate.scope is not None and candidate.scope.casefold() == scope.casefold():
+                return candidate
+        if sheets is not None:
+            return None
+        return next((n for n in found if n.scope is None), None)
 
     def problems(self) -> list[Problem]:
         """What is odd about the tables and names, by code: each table's flags, a table
@@ -1470,6 +1589,42 @@ def _block_end(row: Sequence[Value], start: int) -> int:
             break
         end = value.column
     return end
+
+
+def _filled(first, last, rows: int, columns: int) -> Area:
+    """The cells a reference (:class:`~xlsx_agent.read.reach.Bound` ends; ``None`` a whole
+    column or row) reaches from every cell of a fill ``rows`` and ``columns`` beyond its
+    first: an end that moves reaches that much further."""
+    def span(a, b, a_moves, b_moves, shift, top):
+        if a is None and b is None:
+            return 1, top
+        a = 1 if a is None else a
+        b = top if b is None else b
+        low = min(a, b)
+        high = max(a + (shift if a_moves else 0), b + (shift if b_moves else 0))
+        return max(low, 1), min(high, top)
+
+    top_row, bottom_row = span(first.row, last.row, first.row_moves, last.row_moves, rows,
+                               MAX_ROW)
+    left, right = span(first.column, last.column, first.column_moves, last.column_moves,
+                       columns, MAX_COLUMN)
+    return Area(Cell(top_row, left), Cell(bottom_row, right))
+
+
+def _table_columns(table: Region, ref) -> Area | None:
+    """The cells of ``table`` a structured reference names: every row (header and totals
+    too), the columns from the first given to the last, every column for none; ``None``
+    when a column is not the table's."""
+    if not ref.columns:
+        return table.area
+    folded = [c.casefold() for c in table.columns]
+    try:
+        at = [folded.index(c.casefold()) for c in ref.columns]
+    except ValueError:
+        return None
+    low, high = min(at), max(at)    # two columns apart: the run between them, at worst
+    left = table.area.first.column
+    return Area(Cell(table.area.first.row, left + low), Cell(table.area.last.row, left + high))
 
 
 def _broken(part: TablePart) -> bool:

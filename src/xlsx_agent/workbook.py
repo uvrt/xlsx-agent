@@ -84,7 +84,7 @@ from .read.names import DefinedName, read_names
 from .schema import ValidationReport, validate
 from .read.regions import Region, Regions, Selection, UnclearRegion, _overlaps
 from .read.comments import Comment, read_comments
-from .read.stream import Hyperlink, SheetReader, SheetScan, read_area, scan
+from .read.stream import Hyperlink, SheetReader, SheetScan, _area, read_area, scan
 from .read.strings import SharedStrings
 from .read.styles import NumberFormat, Styles
 from .read.tables import TablePart, read_table
@@ -794,12 +794,49 @@ class Workbook:
         area = address.clipped(found.used)
         if area is None:
             return iter(())
-        rows = self._stream(sheet, lambda: read_area(self._reader(sheet, formats=formats),
-                                                     area, found.ordered, found.index,
-                                                     columns))
+        readers: list[SheetReader] = []
+
+        def run() -> Iterator[list[Value]]:
+            readers.append(self._reader(sheet, formats=formats))
+            return read_area(readers[0], area, found.ordered, found.index, columns)
+
+        rows = self._stream(sheet, run)
         withheld = [a for a in self.regions.withheld(sheet.name) if _overlaps(area, a)] \
             if sheet.name else []
-        return _withheld(rows, withheld) if withheld else rows
+        if withheld:
+            rows = _withheld(rows, withheld)
+        if sheet.name and self.regions.withholds:
+            rows = self._formulas_withheld(rows, sheet.name, readers)
+        return rows
+
+    def _formulas_withheld(self, rows: Iterator[list[Value]], sheet: str,
+                           readers: "list[SheetReader]") -> Iterator[list[Value]]:
+        """``rows`` with the text of each formula that reaches a cell hidden from the
+        model left out (:attr:`Value.formula_withheld
+        <xlsx_agent.read.types.Value.formula_withheld>`; :meth:`Regions.formula_withheld
+        <xlsx_agent.read.regions.Regions.formula_withheld>`).  A shared group is judged
+        whole, by its first cell's text and the range it fills."""
+        regions = self.regions
+        for row in rows:
+            groups = readers[0].shared_groups if readers else {}
+            for value in row:
+                if not value.formula:
+                    continue
+                anchor = value.shared_from or value.a
+                text, fill = groups.get(anchor, (value.formula_text, None))
+                if not text:
+                    continue
+                fill = _area(fill)
+                if fill is None and value.shared_from:   # a group without its range
+                    first = _area(anchor.rpartition("!")[2])
+                    if first is not None:
+                        fill = Area(first.first, Cell(max(first.first.row, value.row),
+                                                      max(first.first.column, value.column)))
+                origin = fill.first if fill is not None else Cell(value.row, value.column)
+                if regions.formula_withheld(text, sheet, origin, fill):
+                    value.formula_text = None
+                    value.formula_withheld = True
+            yield row
 
     def _read_rows(self, areas: "list[RangeAddress]", *, formats: bool = False,
                    columns: "set[int] | None" = None) -> Iterator[list[Value]]:
