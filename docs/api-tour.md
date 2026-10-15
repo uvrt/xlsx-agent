@@ -179,6 +179,25 @@ What a declaration says:
   and a sheet named that is not there is refused by its path only, never its name.
   `wb.withheld_sheets` lists them for the program (no tool gives it). Use this, not a
   table with every column hidden (refused: `no_columns`).
+- **A hidden column ends at the next section.** Hidden from its header row down, a
+  column is hidden to just above the header (or first row) of the next table declared
+  below it on the same sheet -- in the same declarations, or kept already -- so a later
+  section may show that column; the cells between the sections stay hidden. Only declared
+  tables bound it: an Excel table or a detected block below does not.
+- **Terms redacted** (`xlsx_agent.redact`): `{"redact": ["Acme Corp", "re:Project\\s+\\w+"],
+  "with": "[redacted]"}` in the same list replaces every match in every text the
+  workbook gives -- cells however stored, headers, comments, links, drop-down lists,
+  number formats, an Excel table's column names, sheet names -- so every read, search,
+  profile, derive, comparison, check and deck or document `from` sees the replacement. A
+  literal term is found case aside, any white space for a space (`whole_words: true`: not
+  inside a word); `re:` takes a regular expression, checked for its cost. A formula holding
+  a match keeps its value, not its text (`formula_withheld`); a table or defined name whose
+  name holds one is not listed; a sheet is shown and addressed by its name redacted
+  (`wb.sheets[1].stored_name` keeps the file's), while your declarations still name it as
+  stored and find headers by their stored text. Declare it first: it is refused once a
+  table is kept (`redact_late`), and so is a table name, column id or description of your
+  own holding a term (`redacted_term`). `find_text` never finds a term, nor says it was
+  there; no result counts the matches (`wb.redaction.redacted` does, for the program).
 - **The sheet is not a column.** A value is a cell, and the sheet's name is no cell's, so
   there is no `_sheet` to group by; every address names its sheet. For one sheet's
   figures, declare its own table too (`"sheets": "Area North"`).
