@@ -5,6 +5,20 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **Whole sheets hidden from the model** (T14): `{"sheets": "Notes", "hidden": true}` in
+  the declarations withholds a sheet entirely -- it is no sheet of the workbook for
+  `describe`, `open_document`'s count, reads by name or id, its Excel tables, the defined
+  names on it, local to it or whose formula names it, `find_text`, the problems, a
+  comparison, a drop-down drawn from it, a link to it and a declared table's glob; each
+  refused exactly as a sheet, table or name the workbook does not have, the name never
+  offered or listed. A formula elsewhere that reaches it keeps its value, not its text.
+  `Workbook.withhold_sheets` and `withheld_sheets` for a program. No definition changes.
+- **A declared table's header found by its text** (T16): `"header_row": {"match": ["Ref",
+  "Item"], "rows": "8:40"}` finds the one row holding every text given (case and spaces
+  aside), on each sheet, within `rows` or below the tables declared before it there; its
+  rows run to the first blank row or the next match. None or several rows are refused
+  (`no_header`, `ambiguous_header`) by row number. No definition changes.
+
 - **`describe` lists the session's datasets** (T11; ooxml-edit 0.30.0, which it now
   needs): every `describe` -- of a workbook, a deck or a document -- gives `datasets`, each
   with id, columns, `types`, `rows` (a count) and `from`: `d1/t:Sales` for an

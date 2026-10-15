@@ -17,6 +17,10 @@ queried and derived from like any other (``t:checks``)::
     wb.read("t:checks/C-07/rating")      # the value, with its own cell: 'Area 2'!D5
     wb.read("t:run/report_date/value")
 
+Sheets the model must never see are declared alongside, ``{"sheets": "Notes", "hidden":
+true}`` (see below), and a section's header can be found by its text, ``"header_row":
+{"match": ["Ref", "Item"]}``.
+
 Declarations are the application's configuration, never a model's: no tool takes them.
 The tool layer takes them when it opens a workbook (``xlsx_agent.tools.format(tables=...)``
 for every workbook the format opens, or ``xlsx_agent.tools.declare(session, ...)`` for one
@@ -38,7 +42,8 @@ session's), and :meth:`Workbook.declare_tables
 * ``header_row``: the header's row on every sheet (1 by default; 0 for none, the default
   of a key-value table).  The header is one row; its text names the columns.  Every sheet's
   header must be the same text, column by column, as the first sheet's: one that differs
-  is refused, naming both cells.
+  is refused, naming both cells.  Or the header found by its text (see below):
+  ``{"match": ["Ref", "Item"], "rows": "8:40"}``.
 * ``first_row``: the first data row (the row under the header; without a header, the first
   row of the sheet's used range).
 * ``last_row``: the last data row on every sheet.  Without it, the data rows run down to the
@@ -64,6 +69,20 @@ session's), and :meth:`Workbook.declare_tables
   Columns not listed keep their header's name.
 * ``optional``: ``true`` when a workbook without the sheets is no error: the table is then
   not declared.
+
+**A header found by its text** (``"header_row": {"match": [...], "rows": "8:40"}``), for a
+sheet of several sections: on each sheet, the one row whose text cells, in the table's
+``columns`` (else the used range's), hold every text of ``match`` -- each a cell's whole
+text, case and runs of white space aside, in any order, other cells besides -- within
+``rows`` (first to last), or without it below the last row of the tables declared before it
+in the same declarations on that sheet.  The data rows run from under it to the first blank
+row or to the row before the next row that matches, whichever comes first (so ``first_row``
+and ``last_row`` are not taken with it), and nothing past that next match is flagged
+``rows_below``.  No row matching is refused (``no_header``); more than one in the rows
+looked in too (``ambiguous_header``), the rows by number only (``valid_options``), with
+what to do: give ``rows``, or more of the header's texts.  Decided: one row, not the
+first, so a section never silently takes another's header; and whole texts, not parts of
+them, so ``Ref`` does not find ``Reference``.
 
 **A table over several sheets** reads as one: its data rows are each sheet's, sheet by
 sheet in the workbook's order, its header the first sheet's.  It is one rectangle of its
@@ -128,6 +147,29 @@ cells two ways, with different columns, and a table over several sheets is more 
 Excel table.  It stays taken (a declared table takes a name of its own).  The workbook's
 ``tables`` and ``open_document``'s count leave it out.
 
+**Sheets hidden from the model**: ``{"sheets": "Notes", "hidden": true}`` in the same
+declarations (``sheets`` a name, a glob or a list, as a table's; ``optional`` as a
+table's; no other key) withholds whole sheets -- a table with every column hidden is
+refused (``no_columns``), so this is the way to keep a sheet from a model.  The workbook
+then has no such sheet (:meth:`Workbook.withhold_sheets
+<xlsx_agent.workbook.Workbook.withhold_sheets>`): it is not among ``Workbook.sheets``, in
+``describe``, ``open_document``'s count, ``find_text``, the problems or a comparison; an
+address by its name or id, a ``t:`` address of an Excel table on it, of a defined name on
+it, local to it or whose formula names it, and a declared table naming it are refused
+exactly as for a sheet, table or name the workbook does not have -- its name is never
+offered, and a glob of a table never matches it.  A drop-down drawn from it reads as one
+from no sheet (``unknown_sheet``), and a link to a place on it is left out.  A formula on
+another sheet that reaches it -- a reference, a run of sheets over it, its table, a name
+over it, ``INDIRECT``/``OFFSET``, or its name anywhere in the text (a string an
+``INDIRECT`` or ``HYPERLINK`` takes) -- keeps its value, not its text
+(``formula_withheld``), as for a hidden column.  Decided: **the name is not listed** --
+not even as "withheld": a sheet's name may itself say what it holds -- and a sheet named
+that is not there is refused by its path only, without the name, since the error reaches
+the model; a sheet's ``sheetId`` is not renumbered, so the ids shown may have a gap, as
+after a sheet is deleted.  A sheet withheld stays withheld; a table or region kept already
+that reads it is refused (``on_hidden_sheet``, naming the table, not the sheet).  Charts and
+pivot tables are not listed by the catalogue, so none reveals it.
+
 **A key-value table** (``"type": "key_value"``) is a field column and a value column, and
 any more (a confidence, a source...): ``t:run/report_date/value`` is the value of the row
 whose field is ``report_date``.  Its first two columns are called ``field`` and ``value``
@@ -168,6 +210,15 @@ TYPES = ("rows", "key_value")
 TABLE_KEYS = ("name", "sheets", "type", "header_row", "first_row", "last_row", "columns",
               "key", "description", "fields", "optional")
 
+#: The keys a declaration of sheets withheld from the model takes.
+SHEET_KEYS = ("sheets", "hidden", "optional")
+
+#: The keys a header found by its text takes (``header_row: {"match": [...]}``).
+MATCH_KEYS = ("match", "rows")
+
+#: The most texts a header is found by.
+MAX_MATCH = 50
+
 #: The keys a field takes.
 FIELD_KEYS = ("header", "column", "id", "description", "hidden", "clean")
 
@@ -176,6 +227,9 @@ MAX_DESCRIPTION = 300
 
 #: The longest column id (characters).
 MAX_ID = 64
+
+#: A sheet's last row (ECMA-376 Part 1, §18.3.1.73: rows 1 to 1,048,576).
+MAX_SHEET_ROW = 1048576
 
 #: The characters that make a sheet name a glob: no sheet name holds them.
 GLOB = "*?["
@@ -187,7 +241,7 @@ class DeclarationError(ValueError):
     ``duplicate_name``, ``header_mismatch``, ``no_header``, ``bad_columns``, ``bad_rows``,
     ``no_rows``, ``unknown_column``, ``duplicate_field``, ``bad_id``, ``id_taken``,
     ``no_columns``, ``hidden_key``, ``no_key``, ``duplicate_key``, ``bad_pattern``,
-    ``clean_key``, ``hidden_elsewhere``), ``path`` where in the
+    ``clean_key``, ``hidden_elsewhere``, ``ambiguous_header``, ``on_hidden_sheet``), ``path`` where in the
     declarations (``tables[0].fields[2].header``), ``valid_options`` what would do instead.
     The message names sheets, cells, paths and what the declaration gave, never a cell's
     content."""
@@ -215,8 +269,21 @@ class FieldSpec:
 
 
 @dataclass(frozen=True)
+class HiddenSheets:
+    """Sheets withheld from the model (``{"sheets": "Notes", "hidden": true}``), checked
+    for their form."""
+
+    path: str
+    sheets: tuple[str, ...]
+    optional: bool = False
+
+
+@dataclass(frozen=True)
 class TableSpec:
-    """One table's declaration, checked for its form (not yet against a workbook)."""
+    """One table's declaration, checked for its form (not yet against a workbook).
+    ``header_match`` the texts its header row is found by on each sheet (empty: the
+    header is on ``header_row``), within the rows ``header_within`` (``None``: below the
+    tables declared before it on that sheet)."""
 
     path: str
     name: str
@@ -230,6 +297,8 @@ class TableSpec:
     description: str | None = None
     fields: tuple[FieldSpec, ...] = ()
     optional: bool = False
+    header_match: tuple[str, ...] = ()
+    header_within: tuple[int, int] | None = None
 
 
 # ------------------------------------------------------------------------------------------
@@ -237,9 +306,10 @@ class TableSpec:
 # ------------------------------------------------------------------------------------------
 
 
-def parse_declarations(declarations: Any) -> list[TableSpec]:
+def parse_declarations(declarations: Any) -> "list[TableSpec | HiddenSheets]":
     """``declarations`` (a mapping, a list of them, or ``{"tables": [...]}``) as
-    :class:`TableSpec`, checked for their form; :class:`DeclarationError` otherwise."""
+    :class:`TableSpec` and :class:`HiddenSheets`, checked for their form;
+    :class:`DeclarationError` otherwise."""
     if isinstance(declarations, Mapping) and "tables" in declarations:
         extra = sorted(set(declarations) - {"tables"})
         if extra:
@@ -256,6 +326,8 @@ def parse_declarations(declarations: Any) -> list[TableSpec]:
     specs = [_table(item, f"{base}[{n}]") for n, item in enumerate(items)]
     seen: dict[str, str] = {}
     for spec in specs:
+        if isinstance(spec, HiddenSheets):
+            continue
         folded = spec.name.casefold()
         if folded in seen:
             raise DeclarationError("duplicate_name", f"{spec.path}.name", f"t:{spec.name} is "
@@ -264,10 +336,12 @@ def parse_declarations(declarations: Any) -> list[TableSpec]:
     return specs
 
 
-def _table(item: Any, path: str) -> TableSpec:
+def _table(item: Any, path: str) -> "TableSpec | HiddenSheets":
     if not isinstance(item, Mapping):
         raise DeclarationError("bad_declaration", path, "a table's declaration is a mapping "
                                "with name, sheets and more", valid_options=list(TABLE_KEYS))
+    if "hidden" in item:
+        return _hidden_sheets(item, path)
     for key in item:
         if key not in TABLE_KEYS:
             raise DeclarationError("bad_declaration", f"{path}.{key}", "unknown key",
@@ -292,8 +366,20 @@ def _table(item: Any, path: str) -> TableSpec:
     if kind not in TYPES:
         raise DeclarationError("bad_declaration", f"{path}.type", "unknown table type",
                                valid_options=list(TYPES))
-    header_row = _row(item, "header_row", path, minimum=0,
-                      default=1 if kind == "rows" else 0)
+    match: tuple[str, ...] = ()
+    within = None
+    if isinstance(item.get("header_row"), Mapping):
+        match, within = _header_match(item["header_row"], f"{path}.header_row")
+        for key in ("first_row", "last_row"):
+            if key in item:
+                raise DeclarationError("bad_rows", f"{path}.{key}", "a header found by its "
+                                       "text has its data rows under it, to the first blank "
+                                       "row or the next row it matches: no first_row or "
+                                       "last_row; give header_row.rows to look in fewer rows")
+        header_row = 1
+    else:
+        header_row = _row(item, "header_row", path, minimum=0,
+                          default=1 if kind == "rows" else 0)
     first_row = _row(item, "first_row", path)
     last_row = _row(item, "last_row", path)
     if first_row is not None and header_row and first_row <= header_row:
@@ -320,7 +406,64 @@ def _table(item: Any, path: str) -> TableSpec:
                      header_row=header_row, first_row=first_row, last_row=last_row,
                      columns=columns, key=key, description=description,
                      fields=tuple(_field(f, f"{path}.fields[{n}]") for n, f in enumerate(fields)),
-                     optional=optional)
+                     optional=optional, header_match=match, header_within=within)
+
+
+def _hidden_sheets(item: Mapping, path: str) -> HiddenSheets:
+    """``{"sheets": ..., "hidden": true}``: sheets withheld from the model."""
+    for key in item:
+        if key not in SHEET_KEYS:
+            raise DeclarationError("bad_declaration", f"{path}.{key}", "a declaration of "
+                                   "sheets hidden from the model takes sheets, hidden and "
+                                   "optional only (hide a table's column with a field's "
+                                   "hidden)", valid_options=list(SHEET_KEYS))
+    if item["hidden"] is not True:
+        raise DeclarationError("bad_declaration", f"{path}.hidden", "true: the sheets are "
+                               "hidden from the model (leave a sheet out to show it)")
+    sheets = item.get("sheets")
+    if isinstance(sheets, str):
+        sheets = [sheets]
+    if isinstance(sheets, (bytes, Mapping)) or not isinstance(sheets, Sequence) or not sheets \
+            or not all(isinstance(s, str) and s for s in sheets):
+        raise DeclarationError("bad_declaration", f"{path}.sheets", "a sheet name or glob "
+                               "(Notes *), or a list of them")
+    optional = item.get("optional", False)
+    if not isinstance(optional, bool):
+        raise DeclarationError("bad_declaration", f"{path}.optional", "true or false")
+    return HiddenSheets(path=path, sheets=tuple(sheets), optional=optional)
+
+
+def _header_match(value: Mapping, path: str) -> tuple[tuple[str, ...], tuple[int, int] | None]:
+    """``header_row: {"match": [...], "rows": "5:40"}``: the texts, and the rows."""
+    for key in value:
+        if key not in MATCH_KEYS:
+            raise DeclarationError("bad_declaration", f"{path}.{key}", "unknown key",
+                                   valid_options=nearest(str(key), MATCH_KEYS))
+    match = value.get("match")
+    if isinstance(match, str):
+        match = [match]
+    if isinstance(match, (bytes, Mapping)) or not isinstance(match, Sequence) or not match \
+            or len(match) > MAX_MATCH \
+            or not all(isinstance(t, str) and _folded(t) for t in match):
+        raise DeclarationError("bad_declaration", f"{path}.match", f"1 to {MAX_MATCH} of the "
+                               "header's texts, each a cell's whole text (case and spaces "
+                               "aside)", valid_options=["Ref", "Item"])
+    within = None
+    if "rows" in value:
+        rows = value["rows"]
+        parts = rows.split(":") if isinstance(rows, str) else []
+        if len(parts) != 2 or not all(p.strip().isdigit() for p in parts) \
+                or not 1 <= int(parts[0]) <= int(parts[1]) <= 1048576:
+            raise DeclarationError("bad_rows", f"{path}.rows", "the rows to look in, first "
+                                   "to last, as 5:40", valid_options=["5:40"])
+        within = (int(parts[0]), int(parts[1]))
+    return tuple(match), within
+
+
+def _folded(text: str) -> str:
+    """A header's text as it is matched: white space runs as one space, none at the ends,
+    case aside."""
+    return " ".join(text.split()).casefold()
 
 
 def _field(item: Any, path: str) -> FieldSpec:
@@ -418,10 +561,85 @@ def declare_tables(workbook: "Workbook", declarations: Any) -> list[Region]:
     every one checked against the workbook first, then all kept; the tables declared, in
     order (an optional one whose sheets are not there left out)."""
     specs = declarations if _specs(declarations) else parse_declarations(declarations)
-    with workbook.regions.redeclaring([spec.name for spec in specs]):
-        built = [build(workbook, spec) for spec in specs]
-    _check_withheld(workbook, specs, built)
+    hiding = [spec for spec in specs if isinstance(spec, HiddenSheets)]
+    specs = [spec for spec in specs if isinstance(spec, TableSpec)]
+    before = workbook._withheld_sheets
+    withheld = {spec.path: _withheld_names(workbook, spec) for spec in hiding}
+    workbook._set_withheld_sheets(before.union(*withheld.values()))
+    try:
+        _check_hidden_sheets(workbook, specs, withheld)
+        with workbook.regions.redeclaring([spec.name for spec in specs]):
+            built: list[Region | None] = []
+            for spec in specs:
+                built.append(build(workbook, spec, after=_below(built)))
+        _check_withheld(workbook, specs, built)
+    except BaseException:
+        workbook._set_withheld_sheets(before)   # kept whole or not at all
+        raise
     return [workbook.regions.keep_table(region) for region in built if region is not None]
+
+
+def _withheld_names(workbook: "Workbook", spec: HiddenSheets) -> set[str]:
+    """The sheets ``spec`` withholds from the model, by name folded.  A sheet's name is
+    never in a message: one that is no sheet is refused by its path only."""
+    every = workbook._every_sheet
+    shown = [s.name for s in workbook.sheets]
+    out: set[str] = set()
+    for n, wanted in enumerate(spec.sheets):
+        where = f"{spec.path}.sheets" if len(spec.sheets) == 1 else f"{spec.path}.sheets[{n}]"
+        if any(ch in wanted for ch in GLOB):
+            pattern = wanted.casefold()
+            found = {s.name.casefold() for s in every
+                     if s.name and fnmatch.fnmatchcase(s.name.casefold(), pattern)}
+            if not found and not spec.optional:
+                raise DeclarationError("no_sheets", where, "the glob matches no sheet",
+                                       valid_options=shown[:50])
+            out |= found
+            continue
+        folded = wanted.casefold()
+        if any(s.name.casefold() == folded for s in every):
+            out.add(folded)
+        elif not spec.optional:
+            raise DeclarationError("unknown_sheet", where, "no sheet has that name",
+                                   valid_options=nearest(wanted, shown))
+    return out
+
+
+def _check_hidden_sheets(workbook: "Workbook", specs: "Sequence[TableSpec]",
+                         withheld: "dict[str, set[str]]") -> None:
+    """No table or region kept already (and not declared again now) reads a sheet now
+    withheld from the model: refused (``on_hidden_sheet``), naming the table and the
+    declaration, never the sheet."""
+    names = {spec.name.casefold() for spec in specs}
+    regions = workbook.regions
+    kept = {id(r): r for r in [*regions.configured, *regions.declared]
+            if r.name.casefold() not in names}
+    for region in kept.values():
+        sheets = [p.sheet for p in region.span.parts] if region.span is not None \
+            else [region.sheet]
+        for path, hidden in withheld.items():
+            if any(sheet.casefold() in hidden for sheet in sheets):
+                raise DeclarationError("on_hidden_sheet", f"{path}.sheets",
+                                       f"{region.address.text} reads a sheet this hides from "
+                                       "the model: declare it again without that sheet, or "
+                                       "show the sheet")
+
+
+def _below(built: "list[Region | None]") -> dict[str, int]:
+    """The last row of the tables declared so far, by sheet (folded): a header found by
+    its text is looked for below them."""
+    out: dict[str, int] = {}
+    for region in built:
+        if region is None:
+            continue
+        if region.span is not None:
+            parts = [(p.sheet, max(p.last, p.header or 0)) for p in region.span.parts]
+        else:
+            parts = [(region.sheet, region.area.last.row)]
+        for sheet, last in parts:
+            folded = sheet.casefold()
+            out[folded] = max(out.get(folded, 0), last)
+    return out
 
 
 def _check_withheld(workbook: "Workbook", specs: "Sequence[TableSpec]",
@@ -470,12 +688,14 @@ def _meet(one: Area, two: Area) -> bool:
 
 def _specs(value: Any) -> bool:
     return isinstance(value, (list, tuple)) and bool(value) \
-        and all(isinstance(v, TableSpec) for v in value)
+        and all(isinstance(v, (TableSpec, HiddenSheets)) for v in value)
 
 
-def build(workbook: "Workbook", spec: TableSpec) -> Region | None:
+def build(workbook: "Workbook", spec: TableSpec,
+          after: "Mapping[str, int] | None" = None) -> Region | None:
     """The table ``spec`` declares, checked against ``workbook``; ``None`` for an optional
-    one whose sheets are not there."""
+    one whose sheets are not there.  ``after``: the last row of the tables declared before
+    it, by sheet (folded), below which a header found by its text is looked for."""
     regions = workbook.regions
     path = spec.path
     folded = spec.name.casefold()
@@ -490,7 +710,12 @@ def build(workbook: "Workbook", spec: TableSpec) -> Region | None:
         return None
     first_sheet = sheets[0]
     used = workbook.used_range(first_sheet)
-    left, right = _extent(workbook, spec, first_sheet, used)
+    found = None
+    if spec.header_match and used is not None:
+        across = spec.columns or (used.first.column, used.last.column)
+        found = _find_header(workbook, spec, first_sheet, used, *across, after or {})
+    left, right = _extent(workbook, spec, first_sheet, used,
+                          found[0] if found is not None else spec.header_row)
     parts: list[Part] = []
     flags: list[Problem] = []
     belows: list[dict[int, tuple[int, str]]] = []
@@ -503,6 +728,10 @@ def build(workbook: "Workbook", spec: TableSpec) -> Region | None:
                                    f"{quote_sheet(sheet.name)} holds no cells")
         header = spec.header_row or None
         written = quote_sheet(sheet.name)
+        stop = None
+        if spec.header_match:
+            header, stop = found if sheet is first_sheet and found is not None \
+                else _find_header(workbook, spec, sheet, used, left, right, after or {})
         if header is not None:
             if header > used.last.row:
                 raise DeclarationError("no_header", f"{path}.header_row", f"row {header} of "
@@ -522,7 +751,7 @@ def build(workbook: "Workbook", spec: TableSpec) -> Region | None:
                                        valid_options=[f"{written}!{cell}",
                                                       f"{quote_sheet(first_sheet.name)}!{cell}"])
         first = spec.first_row or (header + 1 if header is not None else used.first.row)
-        last, below = _last_row(workbook, spec, sheet, used, first, left, right)
+        last, below = _last_row(workbook, spec, sheet, used, first, left, right, stop)
         belows.append(below)
         parts.append(Part(sheet.name, sheet.id, header, first, last))
     if names is None:
@@ -569,7 +798,7 @@ def _sheets(workbook: "Workbook", spec: TableSpec) -> "list[Sheet]":
 
 
 def _extent(workbook: "Workbook", spec: TableSpec, sheet: "Sheet",
-            used: Area | None) -> tuple[int, int]:
+            used: Area | None, header_row: int) -> tuple[int, int]:
     """The table's sheet columns: declared, or the first sheet's header's (its first cell
     holding something to its last), or its used range's."""
     if used is None:
@@ -577,15 +806,60 @@ def _extent(workbook: "Workbook", spec: TableSpec, sheet: "Sheet",
                                f"{quote_sheet(sheet.name)} holds no cells")
     if spec.columns is not None:
         return spec.columns
-    if spec.header_row and spec.header_row <= used.last.row:
-        row = _row_values(workbook, sheet, spec.header_row, used.first.column, used.last.column)
+    if header_row and header_row <= used.last.row:
+        row = _row_values(workbook, sheet, header_row, used.first.column, used.last.column)
         filled = [v.column for v in row if v.t != "blank"]
         if not filled:
             raise DeclarationError("no_header", f"{spec.path}.header_row", f"row "
-                                   f"{spec.header_row} of sheet {quote_sheet(sheet.name)} is "
+                                   f"{header_row} of sheet {quote_sheet(sheet.name)} is "
                                    "blank; give the row of the header, or columns")
         return min(filled), max(filled)
     return used.first.column, used.last.column
+
+
+def _find_header(workbook: "Workbook", spec: TableSpec, sheet: "Sheet", used: Area | None,
+                 left: int, right: int, after: "Mapping[str, int]") -> tuple[int, int | None]:
+    """The header row ``spec.header_match`` finds on ``sheet``: the one row, within
+    ``header_within`` (else below the tables declared before it on the sheet), whose text
+    cells in columns ``left`` to ``right`` hold every text of the match (each a cell's
+    whole text, case and runs of white space aside; in any order, other cells besides).
+    With it, the next row below that matches too, where the data rows stop (``None``:
+    none).  None or several rows in the window: refused, the rows by number only."""
+    path = f"{spec.path}.header_row"
+    written = quote_sheet(sheet.name)
+    if used is None:
+        raise DeclarationError("empty_sheet", f"{spec.path}.sheets", f"sheet {written} holds "
+                               "no cells")
+    if spec.header_within is not None:
+        top, bottom = spec.header_within
+        where = f"rows {top}:{bottom}"
+    else:
+        top, bottom = after.get(sheet.name.casefold(), 0) + 1, MAX_SHEET_ROW
+        where = f"rows {top}:{used.last.row}" if top > 1 else "any row"
+    wanted = {_folded(text) for text in spec.header_match}
+    matches: list[int] = []
+    start = max(top, used.first.row)
+    if start <= used.last.row:
+        rows = workbook.read(RangeAddress(SheetRef(name=sheet.name),
+                                          Area(Cell(start, left), Cell(used.last.row, right))))
+        for values in rows:
+            held = {_folded(v.v) for v in values if v.t == "text" and isinstance(v.v, str)}
+            if wanted <= held:
+                matches.append(values[0].row)
+    inside = [row for row in matches if row <= bottom]
+    if not inside:
+        raise DeclarationError("no_header", path, f"no row of sheet {written} ({where}) holds "
+                               "every text of header_row.match, each a cell's whole text; "
+                               "check the texts, or header_row.rows")
+    if len(inside) > 1:
+        shown = ", ".join(str(row) for row in inside[:10])
+        raise DeclarationError("ambiguous_header", path, f"{len(inside)} rows of sheet "
+                               f"{written} ({where}) hold every text of header_row.match: "
+                               f"{shown}; give header_row.rows, or more of the header's texts",
+                               valid_options=[str(row) for row in inside[:50]])
+    header = inside[0]
+    stop = next((row for row in matches if row > header), None)
+    return header, stop
 
 
 def _row_values(workbook: "Workbook", sheet: "Sheet", row: int, left: int, right: int) -> list:
@@ -594,17 +868,20 @@ def _row_values(workbook: "Workbook", sheet: "Sheet", row: int, left: int, right
 
 
 def _last_row(workbook: "Workbook", spec: TableSpec, sheet: "Sheet", used: Area, first: int,
-              left: int, right: int) -> tuple[int, dict[int, tuple[int, str]]]:
+              left: int, right: int, stop: int | None = None
+              ) -> tuple[int, dict[int, tuple[int, str]]]:
     """The last data row of ``sheet``, and in each column the first cell holding something
     below the blank row that ended the rows, by sheet column: its row and address (none:
-    nothing there, or ``last_row`` declared)."""
+    nothing there, or ``last_row`` declared).  ``stop``: a row the rows end before (the
+    next header a header found by its text matches), and what is below it not looked at."""
     if spec.last_row is not None:
         return min(spec.last_row, max(used.last.row, first - 1)), {}
-    if first > used.last.row:
+    end = used.last.row if stop is None else min(used.last.row, stop - 1)
+    if first > end:
         return first - 1, {}
     last = first - 1
     rows = workbook.read(RangeAddress(SheetRef(name=sheet.name),
-                                      Area(Cell(first, left), Cell(used.last.row, right))))
+                                      Area(Cell(first, left), Cell(end, right))))
     for values in rows:
         if all(v.t == "blank" for v in values):
             break
@@ -786,5 +1063,5 @@ def _check_keys(workbook: "Workbook", region: Region, path: str) -> None:
                                valid_options=[cell(p) for p in rows[:50]])
 
 
-__all__ = ["DeclarationError", "FieldSpec", "MAX_DESCRIPTION", "MAX_ID", "TableSpec", "TYPES",
-           "build", "declare_tables", "parse_declarations"]
+__all__ = ["DeclarationError", "FieldSpec", "HiddenSheets", "MAX_DESCRIPTION", "MAX_ID",
+           "TableSpec", "TYPES", "build", "declare_tables", "parse_declarations"]
