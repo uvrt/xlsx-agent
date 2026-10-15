@@ -153,6 +153,8 @@ class Workbook:
         self.local_dates = bool(local_dates)
         self._data = data
         self._sheets: list[Sheet] | None = None
+        #: The sheets withheld from the model (:meth:`withhold_sheets`), by name folded.
+        self._withheld_sheets: frozenset[str] = frozenset()
         self._strings: SharedStrings | None = None
         self._styles: Styles | None = None
         self._scans: dict[str, SheetScan] = {}
@@ -257,10 +259,57 @@ class Workbook:
 
     @property
     def sheets(self) -> list[Sheet]:
-        """Every sheet, in the workbook's order (the order of its tabs)."""
+        """Every sheet, in the workbook's order (the order of its tabs); a sheet withheld
+        from the model (:meth:`withhold_sheets`) is not one of them."""
+        withheld = self._withheld_sheets
+        return [s for s in self._every_sheet if s.name.casefold() not in withheld]
+
+    @property
+    def _every_sheet(self) -> list[Sheet]:
+        """Every sheet the workbook part lists, withheld ones too: for what reads the file
+        as stored (a defined name's ``localSheetId``, a formula's run of sheets), never
+        for what a result shows."""
         if self._sheets is None:
             self._sheets = self._read_sheets()
         return list(self._sheets)
+
+    @property
+    def withheld_sheets(self) -> list[str]:
+        """The names of the sheets withheld from the model (:meth:`withhold_sheets`), in
+        the workbook's order: for the program that withheld them; no tool gives them."""
+        withheld = self._withheld_sheets
+        return [s.name for s in self._every_sheet if s.name.casefold() in withheld]
+
+    def withhold_sheets(self, names: "Sequence[str]") -> None:
+        """Withhold the sheets called ``names`` (exact names, case aside; more are added to
+        those withheld already, and none is ever given back) from everything this
+        workbook shows: they are no :attr:`sheets`, no address reaches their cells, and
+        their tables and the defined names on them or local to them are not the
+        workbook's; a formula elsewhere that reaches them keeps its value, not its text.
+        The caller's setting, declared with the tables (``{"sheets": "Notes", "hidden":
+        true}``, :mod:`xlsx_agent.declare`), which checks it; ``KeyError`` here for a name
+        that is no sheet."""
+        every = {s.name.casefold() for s in self._every_sheet if s.name}
+        wanted = {name.casefold() for name in names}
+        if not wanted <= every:
+            raise KeyError("no such sheet")
+        self._set_withheld_sheets(self._withheld_sheets | wanted)
+
+    def _set_withheld_sheets(self, withheld: "frozenset[str]") -> None:
+        """Set the sheets withheld (by name folded), forgetting what was gathered with
+        another set: the catalogue, finds, queries and the regions' names and tables."""
+        if withheld == self._withheld_sheets:
+            return
+        self._withheld_sheets = frozenset(withheld)
+        self._catalogue = None
+        self._queries.clear()
+        self._finds.clear()
+        self._withheld_problems.clear()
+        self.regions.forget_withheld()
+
+    def _sheet_withheld(self, name: str | None) -> bool:
+        """Whether the sheet called ``name`` is withheld from the model."""
+        return bool(name) and name.casefold() in self._withheld_sheets
 
     def sheet(self, name: str) -> Sheet:
         """The sheet called ``name``, matched as Excel matches names (case aside);
@@ -470,9 +519,11 @@ class Workbook:
     def declare_tables(self, declarations: Any) -> list[Region]:
         """Declare tables from the caller's configuration (plain data: a mapping, a list of
         them, or ``{"tables": [...]}``), usable as ``t:<name>`` from then on: sheets by
-        name or glob, a table over several sheets read as one, the header row, the data
-        rows' end, the key column, column ids and descriptions, columns hidden from the
-        model, key-value tables.  Every declaration is checked against the workbook before
+        name or glob, a table over several sheets read as one, the header row (or the
+        row found by its text, ``{"match": [...]}``), the data rows' end, the key column,
+        column ids and descriptions, columns hidden from the model, key-value tables; and
+        whole sheets hidden from the model (``{"sheets": "Notes", "hidden": true}``,
+        :meth:`withhold_sheets`).  Every declaration is checked against the workbook before
         any is kept (:class:`~xlsx_agent.declare.DeclarationError`, naming the entry and
         what is wrong); see :mod:`xlsx_agent.declare`.  The tables declared, in order."""
         from .declare import declare_tables
@@ -608,7 +659,7 @@ class Workbook:
     def _table_parts(self) -> list[TablePart]:
         if self._table_parts_read is None:
             out = []
-            for sheet in self.sheets:
+            for sheet in self._every_sheet:     # withheld ones too: a formula may name them
                 if sheet.part is None or sheet.type != "worksheet":
                     continue
                 written = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
@@ -626,7 +677,7 @@ class Workbook:
         return list(self._table_parts_read)
 
     def _defined_names(self) -> list[DefinedName]:
-        return read_names(self._child("definedNames"), self.sheets)
+        return read_names(self._child("definedNames"), self._every_sheet)
 
     # -- cells -----------------------------------------------------------------------------
 
@@ -663,6 +714,8 @@ class Workbook:
     def _cell_sheet(self, sheet: "Sheet | str | SheetRef") -> Sheet:
         if isinstance(sheet, Sheet):
             found = sheet
+            if self._sheet_withheld(found.name):
+                found = self.sheet(found.name)   # refused as a sheet the workbook has not
         elif isinstance(sheet, SheetRef):
             found = self.sheet_of(sheet)
         else:
@@ -713,9 +766,15 @@ class Workbook:
     def hyperlinks(self, sheet: "Sheet | str | SheetRef") -> list[Hyperlink]:
         """The sheet's hyperlinks, in the file's order, each with the cells it covers and
         its ``url`` (an external target, from the sheet's relationships) or ``location`` (a
-        place in the workbook).  Content: never followed, never in a message."""
+        place in the workbook).  Content: never followed, never in a message.  A link to a
+        place on a sheet withheld from the model (its ``location`` names the sheet, or a
+        defined name of it) is left out: it would say the sheet's name."""
         sheet = self._cell_sheet(sheet)
         links = self.scan(sheet).hyperlinks
+        if links and self._withheld_sheets:
+            links = [link for link in links if link.location is None
+                     or not self.regions._text_names_withheld_sheet(link.location, sheet.name,
+                                                                    set())]
         if not links:
             return []
         rels = self.package.relationships(sheet.part)

@@ -547,6 +547,9 @@ class Regions:
         #: Whether a formula reaches a withheld cell, by sheet, text, fill and cell
         #: (:meth:`formula_withheld`); forgotten when what is withheld changes.
         self._reach: dict[tuple, bool] = {}
+        #: The defined names the workbook shows (none on a withheld sheet), while the
+        #: sheets withheld stay as they are.
+        self._shown_names: list[DefinedName] | None = None
 
     def forget_cells(self) -> None:
         """Forget what was found from the cells (detected regions, key columns, key
@@ -555,6 +558,14 @@ class Regions:
         self._detected.clear()
         self._keys.clear()
         self._indexes.clear()
+
+    def forget_withheld(self) -> None:
+        """Forget what depends on the sheets withheld from the model (the workbook's
+        :meth:`~xlsx_agent.workbook.Workbook.withhold_sheets`): the names shown, what a
+        formula reaches, and what was found from the cells."""
+        self._shown_names = None
+        self._reach.clear()
+        self.forget_cells()
 
     # -- what the workbook holds -----------------------------------------------------------
 
@@ -567,7 +578,13 @@ class Regions:
     @property
     def excel_tables(self) -> list[Region]:
         """Every Excel table the workbook can read, those a declared table covers too: their
-        names stay taken."""
+        names stay taken.  A table on a sheet withheld from the model is not one: the
+        workbook shows nothing of that sheet."""
+        return [t for t in self._every_table if not self.workbook._sheet_withheld(t.sheet)]
+
+    @property
+    def _every_table(self) -> list[Region]:
+        """Every Excel table, those on withheld sheets too: what a formula may name."""
         if self._tables is None:
             self._tables = [self._table_region(part) for part in self.workbook._table_parts()
                             if part.area is not None and not _broken(part)]
@@ -585,9 +602,66 @@ class Regions:
 
     @property
     def names(self) -> list[DefinedName]:
+        """The defined names the workbook shows: every one but those of a sheet withheld
+        from the model -- local to it, over its cells, or whose formula names it
+        (:meth:`_names_withheld_sheet`): a name may say what the sheet is."""
+        if not self.workbook._withheld_sheets:
+            return self._every_name
+        if self._shown_names is None:
+            self._shown_names = [n for n in self._every_name
+                                 if not self._names_withheld_sheet(n, set())]
+        return list(self._shown_names)
+
+    @property
+    def _every_name(self) -> list[DefinedName]:
+        """Every defined name, those of withheld sheets too: what a formula may name."""
         if self._names is None:
             self._names = self.workbook._defined_names()
         return list(self._names)
+
+    def _names_withheld_sheet(self, name: DefinedName, seen: set) -> bool:
+        """Whether the defined name ``name`` belongs to a sheet withheld from the model:
+        local to one, over its cells, or with a formula that names one, a table on one
+        or such a name (:meth:`_text_names_withheld_sheet`)."""
+        workbook = self.workbook
+        if workbook._sheet_withheld(name.scope):
+            return True
+        if name.range is not None:
+            return workbook._sheet_withheld(name.range.sheet.name)
+        return self._text_names_withheld_sheet(name.formula, name.scope, seen)
+
+    def _text_names_withheld_sheet(self, text: str, sheet: str | None, seen: set) -> bool:
+        """Whether formula ``text`` (of a cell or name on ``sheet``) names a sheet withheld
+        from the model: its name anywhere in the text (a reference, a run of sheets that
+        ends at it, a string an ``INDIRECT`` or ``HYPERLINK`` takes -- the text would say
+        the name), a run of sheets over it, a table on it, or a defined name that does."""
+        from .reach import references
+
+        withheld = self.workbook._withheld_sheets
+        if not withheld or not text:
+            return False
+        if _mentions(text, withheld):
+            return True
+        for ref in references(text):
+            if ref.kind == "cells" and ref.sheets is not None and len(ref.sheets) > 1:
+                if any(self.workbook._sheet_withheld(s)
+                       for s in self._formula_sheets(ref.sheets, sheet or "")):
+                    return True
+            elif ref.kind == "table" and ref.name is not None:
+                table = self._formula_table(ref.name, sheet or "", Cell(1, 1))
+                if table is not None and self.workbook._sheet_withheld(table.sheet):
+                    return True
+            elif ref.kind == "name":
+                if ref.sheets is None:
+                    table = self._formula_table(ref.name, sheet or "", Cell(1, 1))
+                    if table is not None and self.workbook._sheet_withheld(table.sheet):
+                        return True
+                found = self._formula_name(ref.name, ref.sheets, sheet or "")
+                if found is not None and id(found) not in seen and len(seen) < 16:
+                    seen.add(id(found))
+                    if self._names_withheld_sheet(found, seen):
+                        return True
+        return False
 
     @property
     def declared(self) -> list[Region]:
@@ -645,7 +719,11 @@ class Regions:
 
     def withheld(self, sheet: str) -> list[Area]:
         """The cells of ``sheet`` in columns hidden from the model: never shown, never
-        searched, read blank (:meth:`Workbook.read <xlsx_agent.workbook.Workbook.read>`)."""
+        searched, read blank (:meth:`Workbook.read <xlsx_agent.workbook.Workbook.read>`).
+        Every cell of a sheet withheld from the model (what a formula elsewhere may
+        reach)."""
+        if self.workbook._sheet_withheld(sheet):
+            return [Area(Cell(1, 1), Cell(MAX_ROW, MAX_COLUMN))]
         return [area for _, area in self.withholding(sheet)]
 
     def withholding(self, sheet: str) -> list[tuple[Region, Area]]:
@@ -670,7 +748,10 @@ class Regions:
 
     @property
     def withholds(self) -> bool:
-        """Whether any declared table hides a column from the model."""
+        """Whether any declared table hides a column from the model, or any sheet is
+        withheld from it."""
+        if self.workbook._withheld_sheets:
+            return True
         return any(region.span is not None and region.span.hidden
                    and name not in self._redeclaring
                    for name, region in self._configured.items())
@@ -691,7 +772,8 @@ class Regions:
         key = (sheet.casefold(), text, rows, columns, cell if "[" in text else None)
         found = self._reach.get(key)
         if found is None:
-            found = self._reach[key] = self._reaches(text, sheet, cell, rows, columns, set())
+            found = self._reach[key] = _mentions(text, self.workbook._withheld_sheets) \
+                or self._reaches(text, sheet, cell, rows, columns, set())
         return found
 
     def _reaches(self, text: str, sheet: str, cell: Cell, rows: int, columns: int,
@@ -742,7 +824,7 @@ class Regions:
             return [own]
         if len(sheets) == 1:
             return [sheets[0]]
-        names = [s.name for s in self.workbook.sheets]
+        names = [s.name for s in self.workbook._every_sheet]
         folded = [n.casefold() for n in names]
         try:
             one, two = folded.index(sheets[0].casefold()), folded.index(sheets[1].casefold())
@@ -753,7 +835,7 @@ class Regions:
     def _formula_table(self, name: str | None, sheet: str, cell: Cell) -> "Region | None":
         """The Excel table a structured reference names (``None``: the one ``cell`` lies
         in)."""
-        for table in self.excel_tables:
+        for table in self._every_table:
             if name is None:
                 if table.sheet.casefold() == sheet.casefold() and table.area.first.row \
                         <= cell.row <= table.area.last.row and table.area.first.column \
@@ -769,7 +851,7 @@ class Regions:
         sheet its prefix names, else to ``sheet``, else the workbook-wide one."""
         folded = name.casefold()
         scope = sheets[0] if sheets is not None and len(sheets) == 1 else sheet
-        found = [n for n in self.names if n.name.casefold() == folded]
+        found = [n for n in self._every_name if n.name.casefold() == folded]
         for candidate in found:
             if candidate.scope is not None and candidate.scope.casefold() == scope.casefold():
                 return candidate
@@ -784,6 +866,8 @@ class Regions:
         names with one name, case aside (``duplicate_name``, at the second's address)."""
         out: list[Problem] = []
         for part in self.workbook._table_parts():
+            if self.workbook._sheet_withheld(part.sheet):
+                continue
             out.extend(f for f in part.flags if not self._in_withheld(f.address))
             if part.area is not None and _broken(part):
                 out.append(Problem("bad_table", quote_sheet(part.sheet) if part.sheet else None))
@@ -814,7 +898,7 @@ class Regions:
         return any(_overlaps(found.area, a) for a in self.withheld(found.sheet.name))
 
     def _table_region(self, part: TablePart) -> Region:
-        sheet = self.workbook.sheet(part.sheet)
+        sheet = next(s for s in self.workbook._every_sheet if s.name == part.sheet)
         return Region(kind="table", name=part.name, sheet=part.sheet, area=part.area,
                       columns=part.columns, header_rows=part.header_rows,
                       totals_rows=part.totals_rows, sheet_id=sheet.id, flags=part.flags,
@@ -1572,6 +1656,16 @@ def _covered(row: int, used: Area, taken: list[Area]) -> bool:
             return False
         reach = max(reach, last + 1)
     return reach > used.last.column
+
+
+def _mentions(text: str, sheets: "frozenset[str]") -> bool:
+    """Whether formula ``text`` holds the name of any of ``sheets`` (folded), anywhere --
+    in a reference or a string: its text would say the name of a sheet withheld from the
+    model."""
+    if not sheets:
+        return False
+    folded = text.casefold()
+    return any(name in folded for name in sheets)
 
 
 def _overlaps(one: Area, two: Area) -> bool:
