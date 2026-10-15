@@ -89,6 +89,7 @@ from .read.strings import SharedStrings
 from .read.styles import NumberFormat, Styles
 from .read.tables import TablePart, read_table
 from .read.types import Problem, Value, format_language, reading_locale
+from .redact import Redaction
 from .xml import iterparse_xml
 
 #: SpreadsheetML's main namespace, transitional and strict.
@@ -119,7 +120,9 @@ class Sheet:
     sheet's ``sheetProtection`` turns protection on (``sheet="1"``; a chart sheet's
     ``content="1"``).  ``type`` is ``"worksheet"``, ``"chartsheet"``, ``"dialogsheet"`` or
     ``"macrosheet"``, from its relationship; ``part`` the package part, ``None`` when the
-    relationship leads nowhere."""
+    relationship leads nowhere.  Under a redaction (:meth:`Workbook.redact`) whose rules
+    match its name, ``name`` is the name redacted -- what results show and addresses
+    take -- and :attr:`stored_name` the name as the file stores it."""
 
     name: str
     id: int | None
@@ -127,10 +130,17 @@ class Sheet:
     protected: bool = False
     type: str | None = "worksheet"
     part: str | None = field(default=None, repr=False)
+    stored: str | None = field(default=None, repr=False, compare=False)
 
     @property
     def visible(self) -> bool:
         return self.state == "visible"
+
+    @property
+    def stored_name(self) -> str:
+        """The name as the file stores it (``name`` unless a redaction changed it): for
+        the program, and for the caller's declarations, which name sheets as stored."""
+        return self.stored if self.stored is not None else self.name
 
 
 class Workbook:
@@ -153,8 +163,11 @@ class Workbook:
         self.local_dates = bool(local_dates)
         self._data = data
         self._sheets: list[Sheet] | None = None
-        #: The sheets withheld from the model (:meth:`withhold_sheets`), by name folded.
+        #: The sheets withheld from the model (:meth:`withhold_sheets`), by name folded
+        #: (as shown and as stored).
         self._withheld_sheets: frozenset[str] = frozenset()
+        #: The terms redacted from every text read (:meth:`redact`), or ``None``.
+        self._redaction: Redaction | None = None
         self._strings: SharedStrings | None = None
         self._styles: Styles | None = None
         self._scans: dict[str, SheetScan] = {}
@@ -280,6 +293,53 @@ class Workbook:
         withheld = self._withheld_sheets
         return [s.name for s in self._every_sheet if s.name.casefold() in withheld]
 
+    @property
+    def redaction(self) -> "Redaction | None":
+        """The terms redacted from every text this workbook gives (:meth:`redact`), or
+        ``None``; its :attr:`~xlsx_agent.redact.Redaction.redacted` counts the texts
+        changed so far, for the program."""
+        return self._redaction
+
+    def redact(self, redaction: "Redaction | Sequence[Mapping]") -> None:
+        """Redact terms from every text this workbook gives from now on (see
+        :mod:`xlsx_agent.redact`): ``redaction`` a :class:`~xlsx_agent.redact.Redaction`
+        or its declarations (``[{"redact": ["Acme Corp"], "with": "[redacted]"}]``).  The
+        caller's setting, declared with the tables (:mod:`xlsx_agent.declare`), and set
+        before anything is declared or kept: ``ValueError`` once a table, region, key or
+        hidden sheet is, unless the rules are the ones set already.  Everything read
+        before is forgotten."""
+        from .redact import parse_rules
+        if not isinstance(redaction, Redaction):
+            redaction = parse_rules(redaction)
+        if self._redaction is not None and self._redaction.spec == redaction.spec:
+            return
+        regions = self.regions
+        if regions.declared or regions.configured or regions.declared_keys \
+                or self._withheld_sheets or (self._redaction is not None):
+            raise ValueError("a redaction is set before tables, regions, keys or hidden "
+                             "sheets are declared, and once")
+        self._set_redaction(redaction if redaction.rules else None)
+
+    def _set_redaction(self, redaction: "Redaction | None") -> None:
+        """Set the redaction, forgetting everything read with another."""
+        self._redaction = redaction
+        self._sheets = None
+        self._strings = None
+        self._styles = None
+        self._scans.clear()
+        self._comments.clear()
+        self._table_parts_read = None
+        self._catalogue = None
+        self._queries.clear()
+        self._finds.clear()
+        self._withheld_problems.clear()
+        self.regions = Regions(self)
+        self._sheets = self._read_sheets()
+
+    def _redacted(self, text: str) -> str:
+        """``text`` as this workbook gives it: redacted (:meth:`redact`), or as it is."""
+        return self._redaction.text(text) if self._redaction is not None and text else text
+
     def withhold_sheets(self, names: "Sequence[str]") -> None:
         """Withhold the sheets called ``names`` (exact names, case aside; more are added to
         those withheld already, and none is ever given back) from everything this
@@ -289,11 +349,16 @@ class Workbook:
         The caller's setting, declared with the tables (``{"sheets": "Notes", "hidden":
         true}``, :mod:`xlsx_agent.declare`), which checks it; ``KeyError`` here for a name
         that is no sheet."""
-        every = {s.name.casefold() for s in self._every_sheet if s.name}
         wanted = {name.casefold() for name in names}
-        if not wanted <= every:
+        found = set()
+        for sheet in self._every_sheet:
+            folded = {sheet.name.casefold(), sheet.stored_name.casefold()}
+            if sheet.name and folded & wanted:
+                found |= folded
+                wanted -= folded
+        if wanted:
             raise KeyError("no such sheet")
-        self._set_withheld_sheets(self._withheld_sheets | wanted)
+        self._set_withheld_sheets(self._withheld_sheets | found)
 
     def _set_withheld_sheets(self, withheld: "frozenset[str]") -> None:
         """Set the sheets withheld (by name folded), forgetting what was gathered with
@@ -670,7 +735,9 @@ class Workbook:
                         continue
                     part = rel.target_part
                     root = _parsed(part, lambda: self.package.tree(part))
-                    table = read_table(root, sheet=sheet.name, written_sheet=written, part=part)
+                    table = read_table(root, sheet=sheet.name, written_sheet=written, part=part,
+                                       redact=self._redaction.text
+                                       if self._redaction is not None else None)
                     if table is not None:
                         out.append(table)
             self._table_parts_read = out
@@ -692,10 +759,13 @@ class Workbook:
 
     @property
     def strings(self) -> SharedStrings:
-        """The shared-string table, read (streamed) the first time a cell needs it."""
+        """The shared-string table, read (streamed) the first time a cell needs it; each
+        item redacted (:meth:`redact`)."""
         if self._strings is None:
             part = self._related("sharedStrings")
-            self._strings = SharedStrings(self.package.read(part) if part else None)
+            self._strings = SharedStrings(self.package.read(part) if part else None,
+                                          redact=self._redaction.text
+                                          if self._redaction is not None else None)
         return self._strings
 
     @property
@@ -731,7 +801,7 @@ class Workbook:
         return SheetReader(data or b"", sheet=name, hidden=not sheet.visible,
                            strings=self.strings, styles=self.styles, date1904=self.date1904,
                            locale=self.locale, formats=formats, grouping=self.grouping,
-                           local_dates=self.local_dates)
+                           local_dates=self.local_dates, redaction=self._redaction)
 
     def _stream(self, sheet: Sheet, run):
         """``run()`` over a sheet's part, with the parser's refusal turned into
@@ -781,7 +851,12 @@ class Workbook:
         out = []
         for link in links:
             rel = rels.get(link.rel_id) if link.rel_id is not None else None
-            out.append(replace(link, url=rel.target) if rel is not None else link)
+            link = replace(link, url=rel.target) if rel is not None else link
+            if self._redaction is not None:
+                link = replace(link, url=self._redacted(link.url) if link.url else link.url,
+                               location=self._redacted(link.location) if link.location
+                               else link.location)
+            out.append(link)
         return out
 
     def comments(self, sheet: "Sheet | str | SheetRef") -> list[Comment]:
@@ -799,6 +874,10 @@ class Workbook:
                         continue
                     part = rel.target_part
                     found = read_comments(_parsed(part, lambda: self.package.tree(part)))
+                    if self._redaction is not None:
+                        found = [replace(c, text=self._redacted(c.text),
+                                         author=self._redacted(c.author) if c.author
+                                         else c.author) for c in found]
                     break
             self._comments[key] = found
         return list(self._comments[key])
@@ -824,7 +903,8 @@ class Workbook:
         whether its rows are in order; a sheet whose rows are not has the range's cells
         gathered before the first row is given).  A cell of a column a declared table hides
         from the model (:mod:`xlsx_agent.declare`) is given blank: every read of the
-        sheet's cells goes through here.  A dataset or ref address is not a range:
+        sheet's cells goes through here.  Text comes with the workbook's redacted terms
+        replaced (:meth:`redact`), as from :meth:`cells`.  A dataset or ref address is not a range:
         ``ValueError``."""
         return self._read(address, formats=formats)
 
@@ -952,6 +1032,8 @@ class Workbook:
             out.append(Sheet(name=node.get("name") or "", id=_int(node.get("sheetId")),
                              state=node.get("state") or "visible",
                              protected=part is not None and self._protected(part, kind), type=kind, part=part))
+        if self._redaction is not None:
+            out = _shown_names(out, self._redaction)
         return out
 
     def _protected(self, part: str, kind: str | None) -> bool:
@@ -967,6 +1049,25 @@ class Workbook:
 
 #: The sheet types that hold cells (a chart sheet and a dialog sheet hold none).
 _CELL_SHEETS = ("worksheet", "macrosheet")
+
+
+def _shown_names(sheets: list[Sheet], redaction: "Redaction") -> list[Sheet]:
+    """``sheets`` with each name a redaction changes shown redacted, made unique (case
+    aside) among every sheet's name, shown or stored, by `` (2)``, `` (3)``..."""
+    taken = {s.name.casefold() for s in sheets}
+    out = []
+    for sheet in sheets:
+        shown = redaction.text(sheet.name) if sheet.name else sheet.name
+        if shown == sheet.name:
+            out.append(sheet)
+            continue
+        name, n = shown, 1
+        while name.casefold() in taken:
+            n += 1
+            name = f"{shown} ({n})"
+        taken.add(name.casefold())
+        out.append(replace(sheet, name=name, stored=sheet.name))
+    return out
 
 
 def _withheld(rows: Iterator[list[Value]], areas: list[Area]) -> Iterator[list[Value]]:

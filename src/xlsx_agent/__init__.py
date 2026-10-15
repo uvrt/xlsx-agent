@@ -68,6 +68,7 @@ from .package import REFUSALS, KindMismatchWarning, OpenError
 from .profile import AllowedList, Column, ColumnStats, Count, Distinct
 from .query import QueryError, QueryResult
 from .schema import CheckedTable, DataProblem, SchemaError, ValidationReport
+from .redact import RedactError, Redaction
 from .read import (Comment, DefinedName, Hyperlink, Locale, NumberFormat, Problem, Region,
                    RegionError, Selection, SheetScan, UnclearRegion, Value)
 from .workbook import Sheet, Workbook
@@ -82,7 +83,7 @@ __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellC
            "Derived", "Distinct",
            "Found", "Hyperlink", "KindMismatchWarning", "Locale", "NameNotFound", "NumberFormat",
            "OpenError", "Problem", "QueryError", "QueryResult", "RangeAddress", "RefAddress",
-           "Provenance", "Region", "RegionError", "Selection", "Sheet", "SheetRef", "SheetScan",
+           "Provenance", "RedactError", "Redaction", "Region", "RegionError", "Selection", "Sheet", "SheetRef", "SheetScan",
            "TableAddress", "Total", "UnclearRegion", "Value", "Workbook", "__version__",
            "as_dataset", "format_address", "is_name", "merge_sources", "needs_quotes",
            "parse_address", "quote_sheet", "table_dataset"]

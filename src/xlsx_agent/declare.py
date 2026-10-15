@@ -18,8 +18,8 @@ queried and derived from like any other (``t:checks``)::
     wb.read("t:run/report_date/value")
 
 Sheets the model must never see are declared alongside, ``{"sheets": "Notes", "hidden":
-true}`` (see below), and a section's header can be found by its text, ``"header_row":
-{"match": ["Ref", "Item"]}``.
+true}`` (see below), and so are terms it must never read, ``{"redact": ["Acme Corp"]}``;
+a section's header can be found by its text, ``"header_row": {"match": ["Ref", "Item"]}``.
 
 Declarations are the application's configuration, never a model's: no tool takes them.
 The tool layer takes them when it opens a workbook (``xlsx_agent.tools.format(tables=...)``
@@ -112,12 +112,18 @@ the sheet) stays a column like any other unless it is declared hidden; its value
 ``hidden``, as always.
 
 *Below the table*: a hidden column is hidden from its header row (the first data row,
-without one) to the sheet's last row, on each of the table's sheets.  The cells under the
-table's rows are the column's too -- a row added after ``last_row``, a total, a note left
-under it -- and nothing in a declaration says where the column's content stops; the cells
-above its header are not the table's (a title, a block of run details beside it) and
-stay visible.  So another table, region or name over that column below the table is
-refused as one over its rows is.
+without one) to the sheet's last row, on each of the table's sheets -- or, when another
+table is declared below it on that sheet (in the same declarations, or kept already), to
+just above that table's header row (its first row, without one): the next section
+(:attr:`Part.end <xlsx_agent.read.regions.Part.end>`).  The cells under the table's rows
+are the column's too -- a row added after ``last_row``, a total, a note left under it,
+everything between it and the next section -- and nothing else in a declaration says
+where the column's content stops; only a declared table does (an Excel table or a
+detected block below does not).  The cells above its header are not the table's (a
+title, a block of run details beside it) and stay visible.  So another table, region or
+name over that column within those rows is refused as one over the table's rows is,
+while a section declared below may show it.  A table kept already is not bounded again
+by one declared after it: declare the sections together.
 
 *Formulas*: a visible cell's formula that reaches a withheld cell is given without its
 text: its cached value as for any formula, ``formula_withheld`` set and no ``f``
@@ -170,6 +176,23 @@ after a sheet is deleted.  A sheet withheld stays withheld; a table or region ke
 that reads it is refused (``on_hidden_sheet``, naming the table, not the sheet).  Charts and
 pivot tables are not listed by the catalogue, so none reveals it.
 
+**Terms redacted from the model**: ``{"redact": ["Acme Corp", "re:Project\\s+\\w+"],
+"with": "[redacted]"}`` in the same declarations (:mod:`xlsx_agent.redact`, where the
+rules and their cost are) replaces each match in every text the workbook gives
+(:meth:`Workbook.redact <xlsx_agent.workbook.Workbook.redact>`).  It is set first, before
+any table of the same declarations: declared after a table, region, key or hidden sheet
+is kept it is refused (``redact_late``), unless the rules are the ones set already.  The
+caller's declarations still name sheets as the file stores them (a name, a glob) and find
+headers, keys and a header's ``match`` by their stored text: each is redacted as the
+workbook's text is before it is compared.  A table name, column id or description of the
+caller's own that holds a match is refused (``redacted_term``, by path only), since the
+model would read it; so is a refusal never given with a term (a sheet named that is not
+there is named redacted).  Decided: names are shown redacted where an address can still
+hold them -- a sheet (quoted), an Excel table's column (escaped) -- and left out where a
+redacted name would be no name: an Excel table or defined name whose name holds a match
+is not listed, its cells still read by address (an Excel table's as a block of its
+sheet).  Several redactions apply in order.
+
 **A key-value table** (``"type": "key_value"``) is a field column and a value column, and
 any more (a confidence, a source...): ``t:run/report_date/value`` is the value of the row
 whose field is ``report_date``.  Its first two columns are called ``field`` and ``value``
@@ -190,13 +213,14 @@ cell's content in the message.
 from __future__ import annotations
 
 import fnmatch
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from ooxml_edit.charts.workbook import Area, Cell, column_index, column_letters
 
 from .address import NameNotFound, RangeAddress, SheetRef, is_name, nearest, quote_sheet
 from .clean import CLEAN_KEYS, Clean, RuleError, parse_clean
+from .redact import REDACT_KEYS, RedactError, Redaction, Rule, parse_rule
 from .read.regions import KEY_VALUE_COLUMNS, Part, Region, Span, _header_names
 from .read.types import Problem
 
@@ -241,7 +265,8 @@ class DeclarationError(ValueError):
     ``duplicate_name``, ``header_mismatch``, ``no_header``, ``bad_columns``, ``bad_rows``,
     ``no_rows``, ``unknown_column``, ``duplicate_field``, ``bad_id``, ``id_taken``,
     ``no_columns``, ``hidden_key``, ``no_key``, ``duplicate_key``, ``bad_pattern``,
-    ``clean_key``, ``hidden_elsewhere``, ``ambiguous_header``, ``on_hidden_sheet``), ``path`` where in the
+    ``clean_key``, ``hidden_elsewhere``, ``ambiguous_header``, ``on_hidden_sheet``,
+    ``redacted_term``, ``redact_late``), ``path`` where in the
     declarations (``tables[0].fields[2].header``), ``valid_options`` what would do instead.
     The message names sheets, cells, paths and what the declaration gave, never a cell's
     content."""
@@ -279,6 +304,15 @@ class HiddenSheets:
 
 
 @dataclass(frozen=True)
+class RedactTerms:
+    """Terms redacted from every text of the workbook (``{"redact": [...], "with":
+    "[redacted]"}``, :mod:`xlsx_agent.redact`), checked and compiled."""
+
+    path: str
+    rule: Rule
+
+
+@dataclass(frozen=True)
 class TableSpec:
     """One table's declaration, checked for its form (not yet against a workbook).
     ``header_match`` the texts its header row is found by on each sheet (empty: the
@@ -306,9 +340,9 @@ class TableSpec:
 # ------------------------------------------------------------------------------------------
 
 
-def parse_declarations(declarations: Any) -> "list[TableSpec | HiddenSheets]":
+def parse_declarations(declarations: Any) -> "list[TableSpec | HiddenSheets | RedactTerms]":
     """``declarations`` (a mapping, a list of them, or ``{"tables": [...]}``) as
-    :class:`TableSpec` and :class:`HiddenSheets`, checked for their form;
+    :class:`TableSpec`, :class:`HiddenSheets` and :class:`RedactTerms`, checked for their form;
     :class:`DeclarationError` otherwise."""
     if isinstance(declarations, Mapping) and "tables" in declarations:
         extra = sorted(set(declarations) - {"tables"})
@@ -326,7 +360,7 @@ def parse_declarations(declarations: Any) -> "list[TableSpec | HiddenSheets]":
     specs = [_table(item, f"{base}[{n}]") for n, item in enumerate(items)]
     seen: dict[str, str] = {}
     for spec in specs:
-        if isinstance(spec, HiddenSheets):
+        if not isinstance(spec, TableSpec):
             continue
         folded = spec.name.casefold()
         if folded in seen:
@@ -336,10 +370,17 @@ def parse_declarations(declarations: Any) -> "list[TableSpec | HiddenSheets]":
     return specs
 
 
-def _table(item: Any, path: str) -> "TableSpec | HiddenSheets":
+def _table(item: Any, path: str) -> "TableSpec | HiddenSheets | RedactTerms":
     if not isinstance(item, Mapping):
         raise DeclarationError("bad_declaration", path, "a table's declaration is a mapping "
                                "with name, sheets and more", valid_options=list(TABLE_KEYS))
+    if "redact" in item:
+        try:
+            return RedactTerms(path=path, rule=parse_rule(item))
+        except RedactError as error:
+            raise DeclarationError(error.code, f"{path}.{error.key}", error.message,
+                                   valid_options=list(REDACT_KEYS)
+                                   if error.code == "bad_declaration" else ()) from None
     if "hidden" in item:
         return _hidden_sheets(item, path)
     for key in item:
@@ -561,22 +602,106 @@ def declare_tables(workbook: "Workbook", declarations: Any) -> list[Region]:
     every one checked against the workbook first, then all kept; the tables declared, in
     order (an optional one whose sheets are not there left out)."""
     specs = declarations if _specs(declarations) else parse_declarations(declarations)
+    redacting = [spec for spec in specs if isinstance(spec, RedactTerms)]
     hiding = [spec for spec in specs if isinstance(spec, HiddenSheets)]
     specs = [spec for spec in specs if isinstance(spec, TableSpec)]
-    before = workbook._withheld_sheets
-    withheld = {spec.path: _withheld_names(workbook, spec) for spec in hiding}
-    workbook._set_withheld_sheets(before.union(*withheld.values()))
+    redaction_before = workbook._redaction
+    if redacting:
+        _redact(workbook, redacting)
     try:
-        _check_hidden_sheets(workbook, specs, withheld)
-        with workbook.regions.redeclaring([spec.name for spec in specs]):
-            built: list[Region | None] = []
-            for spec in specs:
-                built.append(build(workbook, spec, after=_below(built)))
-        _check_withheld(workbook, specs, built)
+        specs = [_redacted_spec(workbook, spec) for spec in specs]
+        before = workbook._withheld_sheets
+        withheld = {spec.path: _withheld_names(workbook, spec) for spec in hiding}
+        workbook._set_withheld_sheets(before.union(*withheld.values()))
+        try:
+            _check_hidden_sheets(workbook, specs, withheld)
+            with workbook.regions.redeclaring([spec.name for spec in specs]):
+                built: list[Region | None] = []
+                for spec in specs:
+                    built.append(build(workbook, spec, after=_below(built)))
+            built = _bounded(workbook, built)
+            _check_withheld(workbook, specs, built)
+        except BaseException:
+            workbook._set_withheld_sheets(before)   # kept whole or not at all
+            raise
     except BaseException:
-        workbook._set_withheld_sheets(before)   # kept whole or not at all
+        if workbook._redaction is not redaction_before:
+            workbook._set_redaction(redaction_before)
         raise
     return [workbook.regions.keep_table(region) for region in built if region is not None]
+
+
+def _redact(workbook: "Workbook", specs: "Sequence[RedactTerms]") -> None:
+    """Set the redaction ``specs`` declare on ``workbook`` (:meth:`Workbook.redact`):
+    before anything else is declared, or the same rules again."""
+    redaction = Redaction([spec.rule for spec in specs])
+    try:
+        workbook.redact(redaction)
+    except ValueError:
+        raise DeclarationError("redact_late", f"{specs[0].path}.redact", "terms are "
+                               "redacted from the workbook's first declarations, before any "
+                               "table, region or hidden sheet is kept: declare them first, "
+                               "or open the workbook again") from None
+
+
+def _redacted_spec(workbook: "Workbook", spec: TableSpec) -> TableSpec:
+    """``spec`` with the texts it matches the workbook's by -- headers, the key, a header's
+    match -- redacted as the workbook's are, so that it still finds them; a table name,
+    column id or description of its own that holds a redacted term is refused
+    (``redacted_term``), by its path only: the model would read it."""
+    redaction = workbook._redaction
+    if redaction is None:
+        return spec
+
+    def own(text: str | None, path: str) -> None:
+        if text and redaction.holds(text):
+            raise DeclarationError("redacted_term", path, "holds a term the workbook's "
+                                   "redaction replaces, and the model would read it: write it "
+                                   "without the term")
+
+    own(spec.name, f"{spec.path}.name")
+    own(spec.description, f"{spec.path}.description")
+    fields = []
+    for field in spec.fields:
+        own(field.id, f"{field.path}.id")
+        own(field.description, f"{field.path}.description")
+        fields.append(replace(field, header=workbook._redacted(field.header))
+                      if field.header else field)
+    return replace(spec, fields=tuple(fields),
+                   key=workbook._redacted(spec.key) if spec.key else spec.key,
+                   header_match=tuple(workbook._redacted(t) for t in spec.header_match))
+
+
+def _bounded(workbook: "Workbook", built: "list[Region | None]") -> "list[Region | None]":
+    """``built`` with each part's hidden columns ending just above the header (the first
+    row, without one) of the next table declared on the same sheet below it -- among
+    those declared together, and those kept already -- so that a section below may show
+    the column (:meth:`Span.withheld <xlsx_agent.read.regions.Span.withheld>`); with no
+    such table, at the sheet's last row."""
+    tops: dict[str, list[int]] = {}
+    others = [r for r in workbook.regions.configured
+              if r.name.casefold() not in {b.name.casefold() for b in built if b is not None}]
+    for region in [*others, *built]:
+        if region is None:
+            continue
+        if region.span is not None:
+            for part in region.span.parts:
+                top = part.header if part.header is not None else part.first
+                tops.setdefault(part.sheet.casefold(), []).append(top)
+        else:
+            tops.setdefault(region.sheet.casefold(), []).append(region.area.first.row)
+    out: list[Region | None] = []
+    for region in built:
+        if region is None or region.span is None or not region.span.hidden:
+            out.append(region)
+            continue
+        parts = []
+        for part in region.span.parts:
+            below = [top for top in tops.get(part.sheet.casefold(), []) if top > part.last
+                     and top > (part.header or 0)]
+            parts.append(replace(part, end=min(below) - 1) if below else part)
+        out.append(replace(region, span=replace(region.span, parts=tuple(parts))))
+    return out
 
 
 def _withheld_names(workbook: "Workbook", spec: HiddenSheets) -> set[str]:
@@ -589,16 +714,17 @@ def _withheld_names(workbook: "Workbook", spec: HiddenSheets) -> set[str]:
         where = f"{spec.path}.sheets" if len(spec.sheets) == 1 else f"{spec.path}.sheets[{n}]"
         if any(ch in wanted for ch in GLOB):
             pattern = wanted.casefold()
-            found = {s.name.casefold() for s in every
-                     if s.name and fnmatch.fnmatchcase(s.name.casefold(), pattern)}
+            found = {name for s in every if s.name and _globbed(s, pattern)
+                     for name in (s.name.casefold(), s.stored_name.casefold())}
             if not found and not spec.optional:
                 raise DeclarationError("no_sheets", where, "the glob matches no sheet",
                                        valid_options=shown[:50])
             out |= found
             continue
         folded = wanted.casefold()
-        if any(s.name.casefold() == folded for s in every):
-            out.add(folded)
+        named = [s for s in every if folded in (s.name.casefold(), s.stored_name.casefold())]
+        if named:
+            out |= {named[0].name.casefold(), named[0].stored_name.casefold()}
         elif not spec.optional:
             raise DeclarationError("unknown_sheet", where, "no sheet has that name",
                                    valid_options=nearest(wanted, shown))
@@ -688,7 +814,7 @@ def _meet(one: Area, two: Area) -> bool:
 
 def _specs(value: Any) -> bool:
     return isinstance(value, (list, tuple)) and bool(value) \
-        and all(isinstance(v, (TableSpec, HiddenSheets)) for v in value)
+        and all(isinstance(v, (TableSpec, HiddenSheets, RedactTerms)) for v in value)
 
 
 def build(workbook: "Workbook", spec: TableSpec,
@@ -775,7 +901,7 @@ def _sheets(workbook: "Workbook", spec: TableSpec) -> "list[Sheet]":
         if any(ch in wanted for ch in GLOB):
             pattern = wanted.casefold()
             found = [i for i, s in enumerate(every) if s.part is not None and s.type in cells
-                     and fnmatch.fnmatchcase(s.name.casefold(), pattern)]
+                     and _globbed(s, pattern)]
             if not found:
                 if spec.optional:
                     continue
@@ -786,15 +912,26 @@ def _sheets(workbook: "Workbook", spec: TableSpec) -> "list[Sheet]":
         try:
             sheet = workbook.sheet(wanted)
         except NameNotFound as error:
-            if spec.optional:
+            stored = [s for s in every if s.stored_name.casefold() == wanted.casefold()]
+            if stored:
+                sheet = stored[0]
+            elif spec.optional:
                 continue
-            raise DeclarationError("unknown_sheet", where, f"no sheet {wanted!r}",
-                                   valid_options=error.valid_options) from None
+            else:
+                raise DeclarationError("unknown_sheet", where, "no sheet "
+                                       f"{workbook._redacted(wanted)!r}",
+                                       valid_options=error.valid_options) from None
         if sheet.part is None or sheet.type not in cells:
             raise DeclarationError("not_cells", where, f"sheet {quote_sheet(sheet.name)} is "
                                    f"a {sheet.type or 'sheet of no known type'}: it holds no cells")
         chosen.add(next(i for i, s in enumerate(every) if s is sheet or s == sheet))
     return [every[i] for i in sorted(chosen)]
+
+
+def _globbed(sheet: "Sheet", pattern: str) -> bool:
+    """Whether a declaration's glob (folded) matches ``sheet``'s name, shown or stored."""
+    return fnmatch.fnmatchcase(sheet.name.casefold(), pattern) \
+        or fnmatch.fnmatchcase(sheet.stored_name.casefold(), pattern)
 
 
 def _extent(workbook: "Workbook", spec: TableSpec, sheet: "Sheet",
@@ -1064,4 +1201,5 @@ def _check_keys(workbook: "Workbook", region: Region, path: str) -> None:
 
 
 __all__ = ["DeclarationError", "FieldSpec", "HiddenSheets", "MAX_DESCRIPTION", "MAX_ID",
+           "RedactTerms",
            "TableSpec", "TYPES", "build", "declare_tables", "parse_declarations"]

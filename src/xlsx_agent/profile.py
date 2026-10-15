@@ -91,7 +91,7 @@ from typing import TYPE_CHECKING, Callable, Iterable, Sequence
 from ooxml_edit.charts.workbook import Area, Cell
 
 from .address import RangeAddress, quote_sheet
-from .read.names import range_of
+from .read.names import range_of, sheet_names
 from .read.regions import Region
 from .read.stream import Validation
 from .read.types import TYPES, Value, serial_text, text_date
@@ -661,8 +661,9 @@ def _allowed(workbook: "Workbook", sheet: str, rule: Validation,
         return AllowedList(None, cells, reason="formula", formula=rule.formula1)
     literal = _literal(text)
     if literal is not None:
-        return AllowedList(tuple(literal.split(",")), cells, formula=rule.formula1)
-    sheets = {sheet.name.casefold(): sheet.name for sheet in workbook.sheets}
+        return AllowedList(tuple(workbook._redacted(literal).split(",")), cells,
+                           formula=rule.formula1)
+    sheets = sheet_names(workbook.sheets)
     here = quote_sheet(sheet)
     target, reason = range_of(text if "!" in text else f"{here}!{text}", sheets)
     if target is None and reason == "formula" and "!" not in text:

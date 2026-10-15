@@ -119,6 +119,13 @@ flag them, `xlsx_derive` counts them per column, and a slide's or document's tab
 were cleaned. A pattern that could backtrack without bound is refused when declared.
 See `xlsx_agent.clean` and docs/api-tour.md, "Cleaning text".
 
+Terms can be redacted from everything a workbook shows -- `{"redact": ["Acme Corp",
+"re:Project\\s+\\w+"], "with": "[redacted]"}` among the declarations: every cell, header,
+comment, link, drop-down list, sheet name and an Excel table's column names reads with the
+match replaced, in every tool and in a deck's or document's `from`; a formula holding a
+match keeps its value, not its text, and `find_text` never finds a term. The model sees
+the replacement only -- no count, no flag. See `xlsx_agent.redact`.
+
 **Dates stored as text.** `xlsx_derive`'s `min` and `max` take dates and give a date. On a
 column whose dates are stored as text they are refused, and the error says so in one step:
 its `details` give the `issue` (`date_as_text`) and its `cells` (the count, the first

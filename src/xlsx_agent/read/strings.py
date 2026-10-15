@@ -57,10 +57,13 @@ class SharedStrings:
 
     ``data`` is the part's bytes (``None`` when the workbook has no table).  ``strings[i]``
     is the ``i``-th item's text; an index past the end is an ``IndexError``.  The part is
-    streamed: each item is read, its text kept, and the item dropped."""
+    streamed: each item is read, its text kept, and the item dropped.  ``redact`` (a
+    function of a text) is applied to each item as it is read: the workbook's redaction
+    (:mod:`xlsx_agent.redact`), so that no reader sees the text as stored."""
 
-    def __init__(self, data: bytes | None) -> None:
+    def __init__(self, data: bytes | None, redact=None) -> None:
         self._data = data
+        self._redact = redact
         self._items: list[str] | None = None
 
     @property
@@ -81,8 +84,10 @@ class SharedStrings:
         if not self._data:
             return []
         items: list[str] = []
+        redact = self._redact
         for _, node in iterparse_xml(self._data, tag=_SI):
-            items.append(item_text(node))
+            text = item_text(node)
+            items.append(redact(text) if redact is not None and text else text)
             node.clear()
             parent = node.getparent()
             if parent is not None:
