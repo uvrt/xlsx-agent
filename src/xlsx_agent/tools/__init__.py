@@ -43,7 +43,8 @@ date order, as Excel does (:mod:`xlsx_agent.read.types`).
 
 Tables the application knows from its own configuration -- sheets by name or glob, a
 table over several sheets, the header row, the key, column ids and descriptions, columns
-hidden from the model, key-value tables -- are declared as plain data, never by the model,
+hidden from the model, key-value tables, whole sheets hidden and terms redacted
+(:mod:`xlsx_agent.redact`) -- are declared as plain data, never by the model,
 so they cost no definition tokens: ``format(tables=[...])`` for every workbook, or
 ``declare(session, [...])`` for one session's (:mod:`xlsx_agent.declare`)::
 

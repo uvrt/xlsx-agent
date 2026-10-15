@@ -193,18 +193,20 @@ def parse_clean(item: Any) -> Clean:
     return Clean(strip=strip, split=split, collapse_space=collapse)
 
 
-def compile_pattern(text: Any) -> "re.Pattern[str]":
+def compile_pattern(text: Any, *, key: str = "strip",
+                    loose: int = MAX_LOOSE_REPEATS) -> "re.Pattern[str]":
     """``text`` compiled, when it is a pattern whose cost is bounded (see the module's
-    notes); :class:`RuleError` ``bad_pattern`` otherwise."""
+    notes; ``loose`` the most repeats that may give characters back, ``key`` the rule
+    named when refused); :class:`RuleError` ``bad_pattern`` otherwise."""
     if not isinstance(text, str) or not text or len(text) > MAX_PATTERN:
-        raise RuleError("bad_pattern", "strip", f"a pattern is text of 1 to {MAX_PATTERN} "
+        raise RuleError("bad_pattern", key, f"a pattern is text of 1 to {MAX_PATTERN} "
                         "characters")
     try:
         pattern = re.compile(text)
     except re.error as error:
-        raise RuleError("bad_pattern", "strip", f"not a regular expression: {error.msg} "
+        raise RuleError("bad_pattern", key, f"not a regular expression: {error.msg} "
                         f"at position {error.pos}") from None
-    _check(text, pattern)
+    _check(text, pattern, key, loose)
     return pattern
 
 
@@ -255,22 +257,23 @@ _CATEGORIES = {"CATEGORY_DIGIT": re.compile(r"\d"), "CATEGORY_SPACE": re.compile
                "CATEGORY_WORD": re.compile(r"\w")}
 
 
-def _check(text: str, pattern: "re.Pattern[str]") -> None:
+def _check(text: str, pattern: "re.Pattern[str]", key: str = "strip",
+           loose: int = MAX_LOOSE_REPEATS) -> None:
     try:
         from re import _parser as parser
     except ImportError:  # pragma: no cover - re._parser is Python 3.11's on
-        raise RuleError("bad_pattern", "strip", "this Python cannot check a pattern's "
+        raise RuleError("bad_pattern", key, "this Python cannot check a pattern's "
                         "cost; patterns are refused") from None
     parsed = parser.parse(text, pattern.flags)
     folds = bool(pattern.flags & re.IGNORECASE) or re.search(r"\(\?[a-zA-Z-]*i", text) is not None
-    state = {"loose": 0, "choices": 1}
+    state = {"loose": 0, "choices": 1, "key": key}
     _walk(list(parsed), state, folds, inside=False, last=True)
-    if state["loose"] > MAX_LOOSE_REPEATS:
-        raise RuleError("bad_pattern", "strip", f"{state['loose']} repeats can give "
+    if state["loose"] > loose:
+        raise RuleError("bad_pattern", key, f"{state['loose']} repeats can give "
                         "characters back to what follows them (as .* before ; can), and "
-                        f"at most {MAX_LOOSE_REPEATS} may: write [^;]*; for .*;")
+                        f"at most {loose} may: write [^;]*; for .*;")
     if state["choices"] > MAX_CHOICES:
-        raise RuleError("bad_pattern", "strip", f"its alternations combine in more than "
+        raise RuleError("bad_pattern", key, f"its alternations combine in more than "
                         f"{MAX_CHOICES} ways")
 
 
@@ -280,13 +283,13 @@ def _walk(items: list, state: dict, folds: bool, *, inside: bool, last: bool) ->
     for n, (op, av) in enumerate(items):
         name = str(op)
         if name in _REFUSED:
-            raise RuleError("bad_pattern", "strip", "a backreference or conditional group "
+            raise RuleError("bad_pattern", state["key"], "a backreference or conditional group "
                             "makes a pattern's cost unbounded")
         if name in _REPEATS:
             low, high, body = av
             body = list(body)
             if inside:
-                raise RuleError("bad_pattern", "strip", "a repeat inside a repeat (as "
+                raise RuleError("bad_pattern", state["key"], "a repeat inside a repeat (as "
                                 "(a+)+) can take for ever")
             _walk(body, state, folds, inside=high > 1, last=False)
             if high >= 1 and name != "POSSESSIVE_REPEAT" \
@@ -294,12 +297,12 @@ def _walk(items: list, state: dict, folds: bool, *, inside: bool, last: bool) ->
                 state["loose"] += 1
         elif name == "BRANCH":
             if inside:
-                raise RuleError("bad_pattern", "strip", "an alternation inside a repeat "
+                raise RuleError("bad_pattern", state["key"], "an alternation inside a repeat "
                                 "(as (a|ab)*) can take for ever")
             choices = av[1]
             state["choices"] *= len(choices)
             if state["choices"] > MAX_CHOICES:
-                raise RuleError("bad_pattern", "strip", f"its alternations combine in more "
+                raise RuleError("bad_pattern", state["key"], f"its alternations combine in more "
                                 f"than {MAX_CHOICES} ways")
             for choice in choices:
                 _walk(list(choice), state, folds, inside=inside, last=False)

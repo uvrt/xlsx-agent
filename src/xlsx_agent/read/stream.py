@@ -279,7 +279,8 @@ class SheetReader:
 
     def __init__(self, data: bytes, *, sheet: str, hidden: bool, strings: SharedStrings,
                  styles: Styles, date1904: bool, locale: Any, formats: bool = False,
-                 grouping: bool = True, local_dates: bool = False) -> None:
+                 grouping: bool = True, local_dates: bool = False,
+                 redaction: Any = None) -> None:
         self.data = data
         self.sheet = sheet
         self.hidden = hidden
@@ -290,6 +291,10 @@ class SheetReader:
         self.grouping = grouping
         self.local_dates = local_dates
         self.formats = formats
+        #: The workbook's redaction (:mod:`xlsx_agent.redact`): applied to every text (the
+        #: shared strings come redacted), a number format's code, and a formula's text,
+        #: which is withheld when it holds a match.
+        self.redaction = redaction
         #: Hidden columns as sorted, non-overlapping ``(first, last)`` spans, known once
         #: the pass has passed ``cols``.
         self.hidden_columns: list[tuple[int, int]] = []
@@ -456,6 +461,8 @@ class SheetReader:
             self._formula(value, f_node)
         if self.formats:
             value.format = self._format(node.get("s")).code
+            if self.redaction is not None and value.format:
+                value.format = self.redaction.text(value.format)
 
         if kind == "n":
             self._number(value, v_text, node)
@@ -524,6 +531,8 @@ class SheetReader:
         return None
 
     def _text(self, value: Value, text: str) -> None:
+        if self.redaction is not None and text:
+            text = self.redaction.text(text)
         value.v, value.t = text, "text"
         if len(text) >= TEXT_LIMIT:
             value.at_limit = True
@@ -602,6 +611,14 @@ class SheetReader:
         value.formula = True
         text = f_node.text
         kind = f_node.get("t")
+        if text and self.redaction is not None and self.redaction.holds(text):
+            self._formula_parts(value, f_node, text, kind)
+            value.formula_text = None
+            value.formula_withheld = True
+            return
+        self._formula_parts(value, f_node, text, kind)
+
+    def _formula_parts(self, value: Value, f_node, text: str | None, kind: str | None) -> None:
         if kind == "shared":
             group = f_node.get("si")
             if text:

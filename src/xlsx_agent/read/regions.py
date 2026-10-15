@@ -379,13 +379,16 @@ class Selection:
 class Part:
     """One sheet of a declared table read as one (:class:`Span`): ``sheet`` its name as
     the workbook spells it, ``header`` its header row (``None`` without one), ``first``
-    and ``last`` its data rows (``last`` is ``first - 1`` when it has none)."""
+    and ``last`` its data rows (``last`` is ``first - 1`` when it has none); ``end`` the
+    last row its hidden columns are hidden to (``None``: the sheet's last row), just above
+    the next table declared below it on the sheet (:mod:`xlsx_agent.declare`)."""
 
     sheet: str
     sheet_id: int | None
     header: int | None
     first: int
     last: int
+    end: int | None = None
 
     @property
     def rows(self) -> int:
@@ -472,11 +475,16 @@ class Span:
     def withheld(self) -> list[tuple[str, Area]]:
         """The cells of the columns hidden from the model, sheet by sheet: never shown.  A
         hidden column is hidden from its header row (the first data row, without one) to
-        the sheet's last row: the cells below the table's rows are the column's too (a
-        row added later, a total, a stray note); those above its header are not the
-        table's (a title, a block of run details beside it)."""
-        return [(sheet, Area(Cell(area.first.row, column), Cell(MAX_ROW, column)))
-                for sheet, area in self.areas() for column in self.hidden]
+        the sheet's last row, or to just above the next table declared below it on the
+        sheet (:attr:`Part.end`): the cells below the table's rows are the column's too (a
+        row added later, a total, a stray note) up to the next section; those above its
+        header are not the table's (a title, a block of run details beside it)."""
+        out = []
+        for part, (sheet, area) in zip(self.parts, self.areas()):
+            end = part.end if part.end is not None else MAX_ROW
+            out += [(sheet, Area(Cell(area.first.row, column), Cell(end, column)))
+                    for column in self.hidden]
+        return out
 
     def read(self, workbook: "Workbook", area: Area, *, formats: bool = False,
              columns: "set[int] | None" = None) -> Iterator[list[Value]]:
@@ -580,7 +588,9 @@ class Regions:
         """Every Excel table the workbook can read, those a declared table covers too: their
         names stay taken.  A table on a sheet withheld from the model is not one: the
         workbook shows nothing of that sheet."""
-        return [t for t in self._every_table if not self.workbook._sheet_withheld(t.sheet)]
+        redaction = self.workbook._redaction
+        return [t for t in self._every_table if not self.workbook._sheet_withheld(t.sheet)
+                and (redaction is None or not redaction.holds(t.name))]
 
     @property
     def _every_table(self) -> list[Region]:
@@ -605,11 +615,13 @@ class Regions:
         """The defined names the workbook shows: every one but those of a sheet withheld
         from the model -- local to it, over its cells, or whose formula names it
         (:meth:`_names_withheld_sheet`): a name may say what the sheet is."""
-        if not self.workbook._withheld_sheets:
+        redaction = self.workbook._redaction
+        if not self.workbook._withheld_sheets and redaction is None:
             return self._every_name
         if self._shown_names is None:
             self._shown_names = [n for n in self._every_name
-                                 if not self._names_withheld_sheet(n, set())]
+                                 if not self._names_withheld_sheet(n, set())
+                                 and (redaction is None or not redaction.holds(n.name))]
         return list(self._shown_names)
 
     @property

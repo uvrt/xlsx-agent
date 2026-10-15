@@ -957,7 +957,65 @@ find `Reference`. **Not covered**: a hidden column of one section is hidden to t
 last row (T17b's *Below the table*), so a section below that shows the same column is
 refused (`hidden_elsewhere`) -- hide it there too, or put the sections in other columns.
 Definitions unchanged; `describe` of the two-section test sheet 459 → 471 estimated tokens
-(two declared tables in place of two detected ones).
+(two declared tables in place of two detected ones). *Since changed* (with T15, below): a
+hidden column now ends just above the next declared section's header.
+
+*T15 as built* (production feedback, 2026-10-15): **terms redacted from every text.** A
+name that may only appear under a condition was removed by rewriting the shared strings.
+Now `{"redact": ["Acme Corp", "re:Project\\s+\\w+"], "with": "[redacted]"}` sits in the
+same declarations as the tables and hidden sheets (`declare.RedactTerms`,
+`xlsx_agent.redact`; `whole_words` optional, several apply in order). **Terms**: a literal
+is found case aside, any run of white space for its spaces, inside words unless
+`whole_words` (a term missed is a leak, an extra match an untidy cell); `re:` is a Python
+regular expression, checked as X6's `strip` is and more strictly -- no repeat may give
+characters back (`[^;]*;`, `\s+\w+` pass; `.*;` is refused), nor may it match empty
+text. A redaction searches the whole text, so a text over 512 characters is searched
+`WINDOW` (256) characters at a time in windows of 512, a match a window's end cuts
+checked against the whole text: matches up to 256 characters are always found. Worst
+pattern tried, `[a-z]+[0-9]` on 32,767 letters: 0.26 s (3.12), 0.24 s (3.15), once per
+distinct text; two literal terms about 2 µs a cell (Intel Core i7-6567U, 2026-10-15).
+**Choke points**: the shared strings (redacted as the table is read, so every reader and
+`find_text`'s pre-check see them so), the sheet reader (inline strings, a formula's cached
+text, a number format's code; a formula whose text holds a match keeps its value, not its
+text, `formula_withheld`, a shared group's first cell so judged), `Workbook.comments`
+(text and author), `Workbook.hyperlinks` (address and place), the drop-down's literal list,
+an Excel table's column names (before duplicates are named by letter), and the sheet list.
+Everything else -- describe, reads, query, profile, derive, compare, validate, keys, a
+`t:` source in a deck or document, the problems -- reads through those. **Names,
+decided**: shown redacted where an address can still hold them -- a sheet (quoted;
+`Sheet.stored_name` keeps the file's, two alike made unique with ` (2)`), an Excel table's
+column (escaped, `t:T['[redacted'] share]`) -- and left out where a redacted name would be
+no name: an Excel table or defined name whose name holds a match is not listed (its cells
+read by address; the table's found as a block of its sheet), as T14 does for a withheld
+sheet's names. A defined name or drop-down whose formula names a redacted sheet by its
+stored name resolves to the shown one. Keys read redacted, so two that redact alike are
+`duplicate_key`. **The caller's words**: declarations name sheets as stored (name or
+glob; a hidden sheet too) and find headers, keys and `match` texts by their stored text
+(each redacted before it is compared); a table name, column id or description of the
+caller's that holds a match is refused (`redacted_term`, path only); a refusal never
+echoes a term. **Order**: set first -- refused once a table, region, key or hidden sheet
+is kept (`redact_late`), unless the same rules; a failing declaration list leaves no
+redaction set. `Workbook.redact()` for a program. **No note to the model** (decided): the
+replacement is the only sign -- no count or flag in any result, since how often a name
+matched is information about it; `Workbook.redaction.redacted` counts the distinct texts
+changed, for the program. `find_text` searches the redacted text, so a term is neither
+found nor said to have been there (tested: a search for one gives the same result as for
+a word the workbook lacks). **Not covered**: `Workbook.to_bytes` is the file as stored;
+`DefinedName.formula` and `Validation.formula1` (program fields, never in a result) are as
+stored; chart titles, pivot tables, headers and footers are not read by any tool.
+**Tokens** (offline proxy, the test workbook): `describe` 1,105 → 998 (an Excel table and a
+name left out). Definitions unchanged (tested: a format redacting gives the plain one's
+definitions; every definition 3,712, guard 3,716).
+
+*Sections bound a hidden column* (T15's follow-up, main-session decision, 2026-10-15):
+with T16 sections, a hidden column hidden to the sheet's last row refused a later section
+showing that column (`hidden_elsewhere`). Now a declared table's hidden column ends just
+above the header row (the first row, without one) of the next table declared below it on
+the same sheet (`Part.end`; tables declared in the same list, or kept already) -- the
+cells between the sections stay hidden. Only declared tables bound it: an Excel table or
+a detected block below does not. A table kept already is not re-bounded by one declared
+later (declare the sections together); a table over the hidden table's own rows is still
+`hidden_elsewhere`.
 
 ### 0.2 — edit
 

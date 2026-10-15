@@ -13,6 +13,8 @@ import pytest
 from build import Formula, WorkbookBuilder
 from ooxml_edit.tools import Toolbox
 
+from ooxml_edit.charts.workbook import Area, Cell
+
 from xlsx_agent import DeclarationError, RegionError, Workbook
 from xlsx_agent.tools import GROUPS, TOOLS, format as xlsx_format
 
@@ -184,15 +186,59 @@ def test_the_hidden_column_above_its_header_stays_visible():
     assert wb.cell("Log!D4").t == "blank"
 
 
-def test_another_table_below_showing_the_hidden_column_is_refused():
+def sections() -> WorkbookBuilder:
     built = WorkbookBuilder()
     sheet = built.sheet("Log")
     sheet.rows("A1", [COLUMNS] + ROWS)
+    sheet.cell("D6", "private epsilon")                 # between the sections: still hidden
     sheet.rows("C8", [["Code", "Count"], ["x", 1], ["y", 2]])
+    return built
+
+
+COUNTS = {"name": "counts", "sheets": "Log", "header_row": 8, "columns": "C:D"}
+
+
+def test_a_table_declared_below_ends_the_hidden_column_above_its_header():
+    wb = Workbook.open(sections().to_bytes())
+    checks, counts = wb.declare_tables([CHECKS, COUNTS])
+    assert checks.span.withheld() == [("Log", Area(Cell(1, 4), Cell(7, 4)))]
+    assert counts.columns == ("Code", "Count")
+    assert [v.v for row in wb.read("t:counts") for v in row] == ["x", 1, "y", 2]
+    assert wb.cell("Log!D6").t == "blank" and wb.cell("Log!D4").t == "blank"
+    assert wb.cell("Log!D8").v == "Count"
+    assert [f.address for f in wb.find_text("private")] == []
+
+
+def test_a_header_found_by_its_text_below_bounds_it_too():
+    wb = Workbook.open(sections().to_bytes())
+    checks, counts = wb.declare_tables([
+        {**CHECKS, "header_row": {"match": ["Ref", "Note"]}},
+        {"name": "counts", "sheets": "Log", "columns": "C:D",
+         "header_row": {"match": ["Code", "Count"]}}])
+    assert checks.span.withheld() == [("Log", Area(Cell(1, 4), Cell(7, 4)))]
+    assert wb.cell("Log!D9").v == 1
+
+
+def test_a_table_over_the_hidden_rows_is_still_refused():
     with pytest.raises(DeclarationError) as caught:
-        Workbook.open(built.to_bytes()).declare_tables(
-            [CHECKS, {"name": "counts", "sheets": "Log", "header_row": 8, "columns": "C:D"}])
+        Workbook.open(sections().to_bytes()).declare_tables(
+            [CHECKS, {"name": "counts", "sheets": "Log", "header_row": 3, "columns": "C:D"}])
     assert caught.value.code == "hidden_elsewhere"
+    # A table whose header is the first row under the hidden one's rows takes them from
+    # there: the declaration says where the next section starts.
+    wb = Workbook.open(sections().to_bytes())
+    wb.declare_tables([CHECKS, {"name": "notes", "sheets": "Log", "header_row": 6,
+                                "columns": "D:D", "last_row": 6}])
+    assert wb.cell("Log!D6").v == "private epsilon" and wb.cell("Log!D5").t == "blank"
+
+
+def test_only_declared_tables_bound_it():
+    built = sections()
+    built.sheets[0].table("CountsTable", "C8:D10", ["Code", "Count"], write_header=False)
+    wb = Workbook.open(built.to_bytes())
+    (checks,) = wb.declare_tables([CHECKS])
+    assert checks.span.withheld() == [("Log", Area(Cell(1, 4), Cell(1048576, 4)))]
+    assert wb.cell("Log!D8").t == "blank"
 
 
 # -- the tools -----------------------------------------------------------------------------------

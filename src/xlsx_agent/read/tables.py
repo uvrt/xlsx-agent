@@ -58,10 +58,13 @@ class TablePart:
     flags: tuple[Problem, ...] = ()
 
 
-def read_table(root, *, sheet: str, written_sheet: str, part: str) -> TablePart | None:
+def read_table(root, *, sheet: str, written_sheet: str, part: str,
+               redact=None) -> TablePart | None:
     """The table part whose root element is ``root`` (``None`` when it is not a
     ``table``).  ``sheet`` is the sheet's name, ``written_sheet`` the sheet as an address
-    writes it (for the flags' addresses)."""
+    writes it (for the flags' addresses); ``redact`` (a function of a text) is applied to
+    each column name before names are checked (:mod:`xlsx_agent.redact`): two that read
+    alike redacted are named by their letters."""
     if not isinstance(root.tag, str) or root.tag.rpartition("}")[2] != "table":
         return None
     object_name = decode_xstring(root.get("name") or "")
@@ -85,7 +88,8 @@ def read_table(root, *, sheet: str, written_sheet: str, part: str) -> TablePart 
         elif local == "tableColumns":
             for column in child:
                 if isinstance(column.tag, str) and column.tag.rpartition("}")[2] == "tableColumn":
-                    names.append(decode_xstring(column.get("name") or ""))
+                    text = decode_xstring(column.get("name") or "")
+                    names.append(redact(text) if redact is not None and text else text)
                     function = (column.get("totalsRowFunction") or "").strip()
                     totals.append(None if function in ("", "none") else function)
     columns: tuple[str, ...] = ()

@@ -5,6 +5,18 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **Terms redacted from every text** (T15): `{"redact": ["Acme Corp", "re:Project\\s+\\w+"],
+  "with": "[redacted]"}` in the declarations replaces each match -- literal terms case and
+  white space aside (`whole_words` optional), or bounded regular expressions -- in every
+  text the workbook gives: cells however stored, headers, comments, links, drop-down
+  lists, number formats, an Excel table's column names, sheet names (shown and addressed
+  redacted; declarations still name them as stored). A formula holding a match keeps its
+  value, not its text; an Excel table or defined name whose name holds one is not listed;
+  `find_text` never finds a term. The model sees only the replacement; `Workbook.redact`,
+  `Workbook.redaction` and `Sheet.stored_name` for a program. No definition changes.
+- **A hidden column ends at the next declared section**: a declared table's hidden
+  column is hidden to just above the next table declared below it on the sheet, not to
+  the sheet's last row, so a later section may show that column (was `hidden_elsewhere`).
 - **Whole sheets hidden from the model** (T14): `{"sheets": "Notes", "hidden": true}` in
   the declarations withholds a sheet entirely -- it is no sheet of the workbook for
   `describe`, `open_document`'s count, reads by name or id, its Excel tables, the defined

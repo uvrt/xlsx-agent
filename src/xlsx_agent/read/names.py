@@ -80,7 +80,7 @@ def read_names(holder, sheets: Sequence) -> list[DefinedName]:
     if holder is None:
         return []
     names = [sheet.name for sheet in sheets]
-    folded = {name.casefold(): name for name in names}
+    folded = sheet_names(sheets)
     out = []
     for node in holder:
         if not isinstance(node.tag, str) or node.tag.rpartition("}")[2] != "definedName":
@@ -102,6 +102,18 @@ def read_names(holder, sheets: Sequence) -> list[DefinedName]:
                                range=area, reason=reason,
                                builtin=name.casefold().startswith(BUILTIN_PREFIX.casefold()),
                                formula=formula, bad_scope=bad_scope))
+    return out
+
+
+def sheet_names(sheets: Sequence) -> dict[str, str]:
+    """Each sheet's name, case folded, to its name; a sheet whose name a redaction changed
+    (:mod:`xlsx_agent.redact`) by its stored name too, which formulas hold."""
+    out = {}
+    for sheet in sheets:
+        out[sheet.name.casefold()] = sheet.name
+        stored = getattr(sheet, "stored", None)
+        if stored:
+            out.setdefault(stored.casefold(), sheet.name)
     return out
 
 
