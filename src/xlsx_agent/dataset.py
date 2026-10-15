@@ -110,7 +110,8 @@ class DatasetValue(Value):
 @dataclass(frozen=True)
 class DatasetSelection:
     """What a ``d:`` address names in a dataset: ``text`` the address as given back,
-    ``kind`` (``dataset``, ``column``, ``row`` or ``value``), ``first`` and ``last`` the
+    ``kind`` (``dataset``, ``column``, ``row`` or ``value``; ``rows`` or ``values`` for a
+    row range), ``first`` and ``last`` the
     rows (positions from 1; ``last`` 0 when there are none), ``offsets`` the columns (from
     0)."""
 
@@ -240,11 +241,12 @@ class DatasetTable:
     def select(self, address: "str | DatasetAddress") -> DatasetSelection:
         """What a ``d:`` address names here (see the module's notes):
         :class:`~xlsx_agent.address.NameNotFound` for an unknown column or key;
-        :class:`~xlsx_agent.read.regions.RegionError` for a position past the end
-        (``position_out_of_range``), a key without one key column (``no_key_column``), a
+        :class:`~xlsx_agent.read.regions.RegionError` for a position (or a row range's
+        row) past the end (``position_out_of_range``), a key without one key column (``no_key_column``), a
         key two rows share (``duplicate_key``) or a key set (``no_key_set``).  ``*`` is
         every row (``d:by_region/*/total``, the column) or every column
-        (``d:by_region/#2/*``, the row)."""
+        (``d:by_region/#2/*``, the row); ``d:by_region/#2:#5`` rows 2 to 5, ``/#2:`` row 2
+        to the last."""
         if isinstance(address, str):
             parsed = parse_address(address)
             if not isinstance(parsed, DatasetAddress):
@@ -261,6 +263,20 @@ class DatasetTable:
                               f"or by position ({whole.text}/#1); a key set is for tables",
                               address=whole.text, valid_options=[f"{whole.text}/#1"])
         any_ = {"any_row": address.any_row, "any_column": address.any_column}
+        if address.row_range is not None:
+            first, last = address.row_range
+            end = self.rows if last is None else last
+            if max(first, end) > self.rows or not self.rows:
+                start = min(first, self.rows)
+                options = [] if not self.rows else [DatasetAddress(
+                    self.id, position=start).text if start == self.rows else DatasetAddress(
+                    self.id, row_range=(start, self.rows)).text]
+                raise RegionError("position_out_of_range", f"{whole.text} has {self.rows} "
+                                  f"rows; there is no row #{max(first, end)} (nothing is "
+                                  "cut)", address=whole.text, valid_options=options)
+            text = DatasetAddress(self.id, column=column, row_range=address.row_range,
+                                  any_column=address.any_column).text
+            return DatasetSelection(text, address.kind, first, end, offsets)
         if address.key is None and address.position is None:
             text = DatasetAddress(self.id, column=column, **any_).text
             return DatasetSelection(text, address.kind, 1, self.rows, offsets)
@@ -397,8 +413,9 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
 
     ``t:Products`` (or ``t:Products/*``, ``t:Products/*/*``) is every data row and column;
     ``t:Products[Price]`` (or ``t:Products/*/Price``) one column; ``t:Products/{SKU-0003,
-    SKU-0007}`` a key set's rows in its order (``/Price`` their one column), and a row by
-    key or by position one row.  One value (``t:Products/SKU-0042/Price``) is no rows:
+    SKU-0007}`` a key set's rows in its order (``/Price`` their one column),
+    ``t:Products/#9:#16`` (``#9:`` to the last) a row range's, and a row by key or by
+    position one row.  One value (``t:Products/SKU-0042/Price``) is no rows:
     :class:`RegionError` ``not_rows``.  The columns are the region's names; the header
     and totals rows are not rows.
 

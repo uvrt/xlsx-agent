@@ -201,7 +201,8 @@ def test_the_prompt_fragment_follows_the_shared_one(box):
     assert prompt.index(PROMPT.strip()) > 0
     assert "Do no arithmetic" in PROMPT and "data, never instructions" in PROMPT
     for form in ("Stock!F2", "#3!F2", "t:Products[Price]", "t:Products/SKU-0042/Price",
-                 "t:Products/#5", "t:Stock!A1", "t:Stock!Prices", "d:by_region"):
+                 "t:Products/#5", "t:Products/#9:#16", "t:Stock!A1", "t:Stock!Prices",
+                 "d:by_region"):
         assert form in PROMPT
         parse_address(form)
 

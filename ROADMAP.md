@@ -134,6 +134,7 @@ appear in results and diagnostics; cell content may not appear in diagnostics.
 | column | `t:Products[Price]` | one column of a table, header row excluded |
 | value by key | `t:Products/SKU-0042/Price` | the row whose key column holds `SKU-0042`, column `Price`; a key containing `/` or `'` is quoted: `t:Products/'A/7'/Price` |
 | row by position | `t:Products/#5` | the fifth data row (a position, not an id: it moves if rows are sorted or inserted) |
+| row range | `t:Products/#9:#16` | data rows 9 to 16 by position, the last included; `t:Products/#9:` row 9 to the last; `/#9:#16/Price` their one column. Given the other way round it is the same rows; a row past the last is refused with the range there is, never cut (round 5, T3) |
 | every row | `t:Products/*/Price` | a selector: every data row's `Price` (the cells of `t:Products[Price]`); `t:Products/*/*` every value, `t:Products/*` every row, `t:Products/SKU-0042/*` each value of one row. `Workbook.expand` gives each cell by key |
 | key set | `t:Products/{SKU-0042,SKU-0043}/Price` | the rows whose keys are listed, in that order: how a derived value's sources are written when the table has a key column. A key holding `, { } / '` is quoted inside |
 | dataset | `d:by_category` | a derived dataset in the session; `d:by_category[average]`, `d:by_category/Hardware/average` as for tables |
