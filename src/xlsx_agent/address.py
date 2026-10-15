@@ -15,6 +15,8 @@ Every result names what it returns by address, and every tool takes the same for
     t:Products/SKU-0042/Price    the row whose key is SKU-0042, column Price
     t:Products/'A/7'/Price       a key holding / or ' is quoted, as a sheet name is
     t:Products/#5                the fifth data row (a position, not an id)
+    t:Products/#9:#16            data rows 9 to 16, the last included: a row range;
+                                 t:Products/#9: row 9 to the last
     t:Products/*/Price           every row's Price: a selector (Workbook.expand gives each
                                  value by key); t:Products/*/* every value, t:Products/*
                                  every row, t:Products/SKU-0042/* each value of one row
@@ -88,6 +90,13 @@ rows are.  It keeps R2's grammar -- a sheet, ``!``, then where on it -- with not
 **Positions and ids.**  ``#3!`` names a sheet by id; ``/#5`` names a row by position.  A
 key that begins with ``#`` is quoted, so the two never meet.
 
+**Row ranges.**  ``/#9:#16`` names data rows 9 to 16 by position (from 1, as ``#5``; the
+last included), ``/#9:`` row 9 to the last: a run of rows, in the table's order, as a key
+set names rows by key (``/#9:#16/Price`` their one column, ``/#9:#16/*`` every column).  A
+range given the other way round (``#16:#9``) is the same rows, and one of one row
+(``#9:#9``) is that row (``#9``); ``#9:16`` is read as ``#9:#16``.  A row past the last is refused when the address is
+resolved, never cut (``position_out_of_range``, the range there is as an option).
+
 **Selectors and key sets.**  ``*`` in a row's place is every data row, in the table's order
 when it is expanded (``t:Products/*/Price``: the cells of ``t:Products[Price]``;
 ``t:Products/*``: the table); ``*`` in a column's place is every column
@@ -134,6 +143,7 @@ FORMS: dict[str, str] = {
     "column": "t:Products[Price]",
     "value by key": "t:Products/SKU-0042/Price",
     "row by position": "t:Products/#5",
+    "row range": "t:Products/#9:#16",
     "every row": "t:Products/*/Price",
     "key set": "t:Products/{SKU-0042,SKU-0043}/Price",
     "dataset": "d:by_category",
@@ -173,14 +183,15 @@ _CELLS = re.compile(r"\$?([A-Za-z]{1,3})\$?([0-9]{1,7})(?::\$?([A-Za-z]{1,3})\$?
 _COLUMNS = re.compile(r"\$?([A-Za-z]{1,3}):\$?([A-Za-z]{1,3})")
 _ROWS = re.compile(r"\$?([0-9]{1,7}):\$?([0-9]{1,7})")
 _POSITION = re.compile(r"#([1-9][0-9]{0,6})")
+_ROW_RANGE = re.compile(r"#([1-9][0-9]{0,6}):(?:#?([1-9][0-9]{0,6}))?")
 
 _RANGE_FORMS = ("cell", "range", "columns", "rows", "sheet", "quoted sheet", "sheet by id")
 _TABLE_FORMS = ("table", "sheet-scoped name", "detected region", "column", "value by key",
-                "row by position", "every row", "key set")
+                "row by position", "row range", "every row", "key set")
 _DATASET_ID_RULE = ("a dataset id is a letter or _, then letters, digits, _ . or -; at most "
                     "64 characters")
 _DATASET_FORMS = ("d:by_category", "d:by_category[average]", "d:by_category/Hardware/average",
-                  "d:by_category/#2", "d:by_category/*/average")
+                  "d:by_category/#2", "d:by_category/#2:#5", "d:by_category/*/average")
 
 #: The wildcard: every row, in a row's place; every column, in a column's.
 ANY = "*"
@@ -434,8 +445,9 @@ class RangeAddress:
 
 class _Selection:
     """What table and dataset addresses share: a column, a row (by key or by position),
-    or a value (a row and a column); or a selector (``*`` for every row, or every column)
-    or a key set (``keys``: several rows by key)."""
+    or a value (a row and a column); or a selector (``*`` for every row, or every column),
+    a key set (``keys``: several rows by key) or a row range (``row_range``: the first and
+    last rows by position, from 1, the last ``None`` for to the last row)."""
 
     column: str | None
     key: str | None
@@ -443,13 +455,24 @@ class _Selection:
     keys: tuple[str, ...] | None
     any_row: bool
     any_column: bool
+    row_range: tuple[int, int | None] | None
 
     def _check_selection(self) -> None:
         rows = [self.key is not None, self.position is not None, self.keys is not None,
-                bool(self.any_row)]
+                bool(self.any_row), self.row_range is not None]
         if sum(rows) > 1:
-            raise ValueError("a row is named by key, by position, by a key set or by *, "
-                             "one of them")
+            raise ValueError("a row is named by key, by position, by a key set, by a row "
+                             "range or by *, one of them")
+        if self.row_range is not None:
+            found = self.row_range
+            if not isinstance(found, tuple) or len(found) != 2 or not all(
+                    isinstance(n, int) and not isinstance(n, bool) and 1 <= n <= MAX_ROW
+                    for n in (found[0], found[0] if found[1] is None else found[1])):
+                raise ValueError(f"a row range is (first, last), whole numbers from 1 to "
+                                 f"{MAX_ROW}, last None for to the last row")
+            if found[1] is not None and found[1] <= found[0]:
+                raise ValueError("a row range runs from its first row to a later last (one "
+                                 "row is written as a position)")
         if self.any_column and (self.column is not None or not any(rows)):
             raise ValueError("* for every column follows a row (t:Products/SKU-0042/*), "
                              "in place of a column")
@@ -471,7 +494,7 @@ class _Selection:
 
     @property
     def _selected(self) -> str | None:
-        if self.keys is not None:
+        if self.keys is not None or self.row_range is not None:
             return "values" if self.column is not None else "rows"
         if self.key is not None or self.position is not None:
             return "value" if self.column is not None else "row"
@@ -490,13 +513,16 @@ class _Selection:
 
     def _selection_text(self) -> str:
         has_row = self.key is not None or self.position is not None or \
-            self.keys is not None or self.any_row
+            self.keys is not None or self.any_row or self.row_range is not None
         if not has_row:
             return "" if self.column is None else f"[{_escape_column(self.column)}]"
         if self.any_row:
             row = ANY
         elif self.position is not None:
             row = f"#{self.position}"
+        elif self.row_range is not None:
+            first, last = self.row_range
+            row = f"#{first}:" + ("" if last is None else f"#{last}")
         elif self.keys is not None:
             row = "{" + ",".join(_set_item(k) for k in self.keys) + "}"
         else:
@@ -514,8 +540,8 @@ class TableAddress(_Selection):
     defined name local to a sheet (``t:Stock!Prices``: ``scope`` is the sheet), or a
     detected region (``t:Stock!A1``: ``region`` is its header's first cell, ``name`` is
     ``None``); with, optionally, a column (``t:Products[Price]``), a row by key
-    (``t:Products/SKU-0042``) or position (``t:Products/#5``), or a value
-    (``t:Products/SKU-0042/Price``).
+    (``t:Products/SKU-0042``) or position (``t:Products/#5``), a row range
+    (``t:Products/#9:#16``), or a value (``t:Products/SKU-0042/Price``).
 
     Parsing does not say whether the name is a table, a name or a region, nor whether the
     key and column exist: :meth:`Workbook.resolve <xlsx_agent.workbook.Workbook.resolve>`
@@ -530,6 +556,7 @@ class TableAddress(_Selection):
     keys: tuple[str, ...] | None = None
     any_row: bool = False
     any_column: bool = False
+    row_range: tuple[int, int | None] | None = None
 
     def __post_init__(self) -> None:
         if (self.name is None) == (self.region is None):
@@ -547,7 +574,8 @@ class TableAddress(_Selection):
     @property
     def kind(self) -> str:
         """``"table"`` or ``"region"`` (the whole of it), ``"column"``, ``"row"`` or
-        ``"value"``; ``"rows"`` or ``"values"`` for a key set (with a column: values).  A
+        ``"value"``; ``"rows"`` or ``"values"`` for a key set or a row range (with a
+        column: values).  A
         selector is what it covers: ``t:Products/*/Price`` a column, ``t:Products/*`` the
         table, ``t:Products/SKU-0042/*`` a row."""
         return self._selected or ("region" if self.region is not None else "table")
@@ -585,7 +613,7 @@ class TableAddress(_Selection):
 class DatasetAddress(_Selection):
     """A derived dataset in the session (``d:by_category``), or a column, row or value of
     one, written as for tables: ``d:by_category[average]``,
-    ``d:by_category/Hardware/average``, ``d:by_category/#2``."""
+    ``d:by_category/Hardware/average``, ``d:by_category/#2``, ``d:by_category/#2:#5``."""
 
     id: str
     column: str | None = None
@@ -594,6 +622,7 @@ class DatasetAddress(_Selection):
     keys: tuple[str, ...] | None = None
     any_row: bool = False
     any_column: bool = False
+    row_range: tuple[int, int | None] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.id, str) or not DATASET_ID.fullmatch(self.id):
@@ -603,8 +632,8 @@ class DatasetAddress(_Selection):
     @property
     def kind(self) -> str:
         """``"dataset"`` (the whole of it), ``"column"``, ``"row"``, ``"value"``, or
-        ``"rows"``/``"values"`` for a key set; a selector is what it covers, as for
-        tables."""
+        ``"rows"``/``"values"`` for a key set or a row range; a selector is what it
+        covers, as for tables."""
         return self._selected or "dataset"
 
     @property
@@ -870,8 +899,8 @@ class _Parser:
 
     def selection(self, at: int) -> dict:
         """``[column]``, ``/row`` or ``/row/column`` from ``at`` to the end, a row being a
-        key, ``#n``, ``*`` or a key set ``{a,b}`` and a column a name or ``*``; as the
-        address's fields."""
+        key, ``#n``, a row range ``#n:#m`` or ``#n:``, ``*`` or a key set ``{a,b}`` and a
+        column a name or ``*``; as the address's fields."""
         body = self.body
         out: dict = {}
         if at == len(body):
@@ -895,14 +924,20 @@ class _Parser:
             if not quoted and row == ANY:
                 out["any_row"] = True
             elif not quoted and row.startswith("#"):
-                match = _POSITION.fullmatch(row)
+                match = _POSITION.fullmatch(row) or _ROW_RANGE.fullmatch(row)
                 if match is None:
-                    self.fail("a row position is # and a whole number from 1, as in /#5; "
+                    self.fail("a row position is # and a whole number from 1, as in /#5, "
+                              "and a row range two of them, /#9:#16 (or /#9: to the last); "
                               "a key that starts with # is quoted", at + 1)
-                position = int(match.group(1))
-                if position > MAX_ROW:
+                numbers = [int(n) for n in match.groups() if n is not None]
+                if max(numbers) > MAX_ROW:
                     self.fail(f"a row position is at most {MAX_ROW}", at + 1)
-                out["position"] = position
+                if match.re is _POSITION or numbers[0] == numbers[-1] and len(numbers) == 2:
+                    out["position"] = numbers[0]
+                elif len(numbers) == 1:
+                    out["row_range"] = (numbers[0], None)
+                else:
+                    out["row_range"] = (min(numbers), max(numbers))
             else:
                 out["key"] = row
         if end == len(body):

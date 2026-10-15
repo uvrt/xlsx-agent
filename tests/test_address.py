@@ -54,6 +54,11 @@ CANONICAL = [
     ("t:Products/SKU-0042", TableAddress, "row"),
     ("t:Products/#5", TableAddress, "row"),
     ("t:Products/#5/Price", TableAddress, "value"),
+    ("t:Products/#9:#16", TableAddress, "rows"),
+    ("t:Products/#9:", TableAddress, "rows"),
+    ("t:Products/#9:#16/Price", TableAddress, "values"),
+    ("t:Products/#9:/*", TableAddress, "rows"),
+    ("t:Stock!A1/#2:#3", TableAddress, "rows"),
     ("t:Stock!A1/SKU-0042/Price", TableAddress, "value"),
     ("t:Products/42/Price", TableAddress, "value"),
     ("d:by_category", DatasetAddress, "dataset"),
@@ -61,6 +66,8 @@ CANONICAL = [
     ("d:by_category/Hardware/average", DatasetAddress, "value"),
     ("d:by_category/Hardware", DatasetAddress, "row"),
     ("d:by_category/#2", DatasetAddress, "row"),
+    ("d:by_category/#2:#5", DatasetAddress, "rows"),
+    ("d:by_category/#2:/average", DatasetAddress, "values"),
     ("$step1", RefAddress, "ref"),
     ("$step1/SKU-0042/Price", RefAddress, "ref"),
 ]
@@ -303,6 +310,11 @@ INVALID = [
     ("t:Products/#-1", "row position"),
     ("t:Products/#1048577", "at most 1048576"),
     ("t:Products/#", "row position"),
+    ("t:Products/#0:#3", "row range"),
+    ("t:Products/#3::", "row range"),
+    ("t:Products/#3-#9", "row range"),
+    ("t:Products/#3:#1048577", "at most 1048576"),
+    ("t:Products/{#3:#5}", "keys, not positions"),
     ("t:Products x", "no spaces"),
     ("t:Products?", None),  # accepted: see below
     ("d:", "follows the prefix"),
@@ -420,6 +432,29 @@ def test_constructors_refuse_what_no_address_can_say():
         DatasetAddress("by/category")
     with pytest.raises(ValueError):
         RefAddress("Step1")
+
+
+@pytest.mark.parametrize("text, canonical, found", [
+    ("t:Products/#16:#9", "t:Products/#9:#16", (9, 16)),
+    ("t:Products/#9:16", "t:Products/#9:#16", (9, 16)),
+    ("t:Products/#9:#9", "t:Products/#9", None),
+    ("t:Products/#9:9/Price", "t:Products/#9/Price", None),
+    ("d:by_category/#5:#2", "d:by_category/#2:#5", (2, 5)),
+])
+def test_a_row_range_normalises(text, canonical, found):
+    address = parse_address(text)
+    assert address.text == canonical and address.row_range == found
+
+
+def test_a_row_range_is_a_run_of_positions():
+    address = parse_address("t:Products/#9:/Price")
+    assert (address.row_range, address.column, address.position) == ((9, None), "Price", None)
+    assert TableAddress(name="Products", row_range=(2, 4)).text == "t:Products/#2:#4"
+    for bad in [(4, 4), (4, 2), (0, 3), (3,), (True, 4), (2, 1048577)]:
+        with pytest.raises(ValueError):
+            TableAddress(name="P", row_range=bad)
+    with pytest.raises(ValueError):
+        TableAddress(name="P", row_range=(2, 4), position=3)
 
 
 def test_a_range_on_the_other_name_of_its_sheet():

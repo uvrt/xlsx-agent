@@ -262,6 +262,28 @@ def test_no_tool_shows_the_hidden_column_through_the_excel_table():
     assert "t:ChecksTable" not in texts[1]
 
 
+def test_a_row_range_reads_its_rows_and_never_the_hidden_column():
+    toolbox = Toolbox(TOOLS, formats=[xlsx_format(tables=[CHECKS])], groups=GROUPS)
+    session = toolbox.session()
+    blob = session.add_blob(book().to_bytes(), name="log.xlsx")
+    assert toolbox.dispatch(session, "open_document", {"blob": blob}).ok
+    read = toolbox.dispatch(session, "xlsx_read", {"doc": "d1", "target": "t:checks/#2:"})
+    assert read.ok, read.to_json()
+    assert [[cell["v"] for cell in row] for row in read.data["rows"]] == [
+        ["R-2", "valve", "Lee"], ["R-3", "hose", "Kim"]]
+    calls = [("xlsx_read", {"doc": "d1", "target": "t:checks/#1:#2/Note"}),
+             ("xlsx_read", {"doc": "d1", "target": "t:ChecksTable/#1:#2"}),
+             ("find_text", {"doc": "d1", "text": "private", "range": "t:checks/#1:#3"})]
+    for name, arguments in calls:
+        result = toolbox.dispatch(session, name, arguments)
+        text = json.dumps(result.to_json(), ensure_ascii=False, default=str)
+        given = arguments.get("target", arguments.get("range"))
+        # The column the model wrote may be told again, quoted: nothing else of it.
+        clean(text.replace(given, "").replace("'Note'", "").replace('"withheld"', ""))
+    past = toolbox.dispatch(session, "xlsx_read", {"doc": "d1", "target": "t:checks/#2:#5"})
+    assert past.error.code == "not_found" and past.error.valid_options == ["t:checks/#2:#3"]
+
+
 def test_describe_lists_a_dataset_of_the_declared_table_without_the_hidden_column():
     """Round 5, T11: a derive from the declared table cannot take the hidden column, so
     the datasets ``describe`` lists never name it."""

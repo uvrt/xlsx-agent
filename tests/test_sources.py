@@ -98,6 +98,9 @@ def test_a_declared_key_writes_the_sources_by_it(wb):
     ("t:checks/{B1,A1}/*", 5, ["B1", "A1"]),
     ("t:checks/A2", 5, ["A2"]),
     ("t:checks/#3", 5, ["B1"]),
+    ("t:checks/#2:#3", 5, ["A2", "B1"]),                     # a row range
+    ("t:checks/#2:", 5, ["A2", "B1"]),
+    ("t:checks/#1:#2/*", 5, ["A1", "A2"]),
 ])
 def test_rows_by_selector(wb, address, columns, codes):
     data = wb.dataset(address)
@@ -124,6 +127,26 @@ def test_one_value_is_not_rows_and_other_addresses_are_refused(wb):
     with pytest.raises(NameNotFound) as missing:
         wb.dataset("t:chekcs")
     assert "t:checks" in missing.value.valid_options
+
+
+def test_a_row_range_keeps_each_values_source(wb):
+    data = wb.dataset("t:checks/#2:#3/rating")
+    assert data.rows == ((4,), (2.5,))
+    assert data.sources == ((("t:checks/A2/rating",),), (("t:checks/B1/rating",),))
+    assert wb.dataset("t:visits/#3:").sources[0][0] == ("'Visit plan'!B5",)
+
+
+@pytest.mark.parametrize("address, option", [
+    ("t:checks/#2:#4", "t:checks/#2:#3"),
+    ("t:checks/#3:#9", "t:checks/#3"),
+    ("t:checks/#4:", "t:checks/#3"),
+])
+def test_a_row_range_past_the_last_row_is_refused_not_cut(wb, address, option):
+    with pytest.raises(RegionError) as error:
+        wb.dataset(address)
+    assert error.value.code == "position_out_of_range"
+    assert "has 3 data rows" in error.value.message and "nothing is cut" in error.value.message
+    assert error.value.valid_options == [option]
 
 
 def test_too_many_values_are_refused_before_reading(wb):

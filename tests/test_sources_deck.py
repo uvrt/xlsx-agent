@@ -106,6 +106,17 @@ def test_a_key_set_places_its_rows_in_its_order(toolbox, session):
     assert drawn["from"]["series"][0]["sources"] == ["t:checks/{B1,A1}/rating"]
 
 
+def test_a_row_range_places_those_rows_and_names_their_cells(toolbox, session):
+    table = ok(call(toolbox, session, "ppt_add_table", doc="d1", slide="s:256", box=BOX,
+                    **{"from": "t:checks/#2:", "from_columns": ["code", "rating"]})).data
+    assert table["cells"] == [["code", "rating"], ["A2", "4"], ["B1", "2.5"]]
+    assert table["from"]["source"] == "d2/t:checks/#2:"
+    assert table["from"]["columns"][1]["sources"] == ["t:checks/{A2,B1}/rating"]
+    error = failed(call(toolbox, session, "ppt_add_table", doc="d1", slide="s:256", box=BOX,
+                        **{"from": "t:checks/#2:#5"}), "not_found")
+    assert error.valid_options == ["t:checks/#2:#3"]
+
+
 def test_a_table_without_a_key_names_its_cells_merged(toolbox, session):
     table = ok(call(toolbox, session, "ppt_add_table", doc="d1", slide="s:256", box=BOX,
                     **{"from": "d2/t:visits", "from_columns": ["area", "rating"]})).data

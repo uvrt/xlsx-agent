@@ -346,7 +346,8 @@ class Selection:
     data cells selected (header and totals rows excluded; ``None`` when the region has no
     data rows, and for a key set); ``row`` the data row's position (from 1) for a row or a
     value; ``column`` the column's name as the region spells it; ``positions`` a key set's
-    rows, in its order (:attr:`areas` gives their cells).  For a declared table read as
+    rows, in its order, or a row range's (:attr:`areas` gives their cells; a row range's
+    ``range`` is all of them).  For a declared table read as
     one (a :attr:`Region.span`), ``range`` is in the table's own rectangle: reading it
     gives each cell's own address, and :meth:`Region.located` gives the sheets'."""
 
@@ -1362,7 +1363,8 @@ class Regions:
         sheet = region.sheet_ref
         whole = region.address
         any_ = {"any_row": address.any_row, "any_column": address.any_column}
-        if address.key is None and address.position is None and address.keys is None:
+        if address.key is None and address.position is None and address.keys is None \
+                and address.row_range is None:
             if address.column is None:
                 data = region.data
                 text = replace(whole, **any_).text
@@ -1383,6 +1385,19 @@ class Regions:
             text = replace(whole, keys=address.keys, column=column, **any_).text
             return Selection(text, "values" if column is not None else "rows", region, None,
                              column=column, positions=positions)
+        if address.row_range is not None:
+            first, last = _row_range(region, address.row_range, whole)
+            data = region.data
+            if column is not None:
+                left = right = region.area.first.column + region.column_index(column)
+            else:
+                left, right = data.first.column, data.last.column
+            area = Area(Cell(data.first.row + first - 1, left),
+                        Cell(data.first.row + last - 1, right))
+            text = replace(whole, row_range=address.row_range, column=column, **any_).text
+            return Selection(text, "values" if column is not None else "rows", region,
+                             RangeAddress(sheet, area), column=column,
+                             positions=tuple(range(first, last + 1)))
         if address.position is not None:
             position = address.position
             if position > region.rows:
@@ -1430,6 +1445,9 @@ class Regions:
             positions = [index.find(address.key)]
         elif address.position is not None:
             positions = [self.resolve(replace(address, column=None, any_column=False)).row]
+        elif address.row_range is not None:
+            first, last = _row_range(region, address.row_range, whole)
+            positions = list(range(first, last + 1))
         else:
             positions = list(range(1, region.rows + 1))
         blank = [p for p in positions if index.keys[p - 1] is None]
@@ -1747,3 +1765,22 @@ def _table_address(address: "str | TableAddress") -> TableAddress:
     if not isinstance(address, TableAddress):
         raise ValueError("a t: address is expected, as t:Products")
     return address
+
+
+def _row_range(region: Region, row_range: tuple[int, int | None],
+               whole: "TableAddress") -> tuple[int, int]:
+    """A row range's first and last data rows in ``region`` (``None``, the last: its last
+    row); :class:`RegionError` ``position_out_of_range`` for a row past the last, with the
+    range there is as the option -- nothing is cut."""
+    first, last = row_range
+    end = region.rows if last is None else last
+    if max(first, end) > region.rows or region.rows == 0:
+        options = []
+        if region.rows:
+            start = min(first, region.rows)
+            options = [(replace(whole, position=start) if start == region.rows
+                        else replace(whole, row_range=(start, region.rows))).text]
+        raise RegionError("position_out_of_range", f"{whole.text} has {region.rows} data "
+                          f"rows; there is no row #{max(first, end)} (nothing is cut)",
+                          address=whole.text, valid_options=options)
+    return first, end

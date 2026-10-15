@@ -5,6 +5,16 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **Row ranges** (T3): `t:Products/#9:#16` names data rows 9 to 16 by position (from 1,
+  the last included, as `#5` names one), `t:Products/#9:` row 9 to the last;
+  `/#9:#16/Price` their one column, `/#9:#16/*` every column; `d:by_region/#2:#5` the
+  same in a dataset. `#16:#9` is the same rows, `#9:#9` is `#9`, `#9:16` reads as
+  `#9:#16`. `xlsx_read`, `find_text`'s `range`, `Workbook.read`/`resolve`/`expand`/
+  `dataset` and a deck or document tool's `from` take them -- a slide table of rows 1-9 of
+  a long table is `from: "t:Products/#1:#9"` -- with the withholding as before. A row
+  past the last is refused (`position_out_of_range`, the range there is as the option):
+  nothing is cut. `TableAddress.row_range` and `DatasetAddress.row_range`. The tool
+  definitions are unchanged; the prompt fragment names the form.
 - **Terms redacted from every text** (T15): `{"redact": ["Acme Corp", "re:Project\\s+\\w+"],
   "with": "[redacted]"}` in the declarations replaces each match -- literal terms case and
   white space aside (`whole_words` optional), or bounded regular expressions -- in every

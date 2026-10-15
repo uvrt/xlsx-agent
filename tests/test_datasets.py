@@ -148,7 +148,11 @@ def test_a_foreign_dataset_keeps_its_opaque_sources():
     ("d:by_region/West", ["d:by_region/#4/Region", "d:by_region/#4/t"]),
     ("d:by_region/South/t", ["d:by_region/#2/t"]),
     ("d:by_region/#3/region", ["d:by_region/#3/Region"]),
-], ids=["dataset", "column", "row", "row-by-key", "value-by-key", "column-case-aside"])
+    ("d:by_region/#2:#3", ["d:by_region/#2/Region", "d:by_region/#2/t",
+                           "d:by_region/#3/Region", "d:by_region/#3/t"]),
+    ("d:by_region/#3:/t", ["d:by_region/#3/t", "d:by_region/#4/t"]),
+], ids=["dataset", "column", "row", "row-by-key", "value-by-key", "column-case-aside",
+        "row-range", "row-range-to-the-last"])
 def test_every_dataset_address_form_reads(wb, address, cells):
     by_region = wb.derive("t:Sales", group_by=["Region"],
                           measures=[{"fn": "sum", "column": "Amount", "as": "t"}],
@@ -167,6 +171,10 @@ def test_dataset_lookups_are_refused_with_their_codes(wb):
     with pytest.raises(RegionError) as caught:
         by_rep.read("d:by_rep/#7")
     assert caught.value.code == "position_out_of_range"
+    with pytest.raises(RegionError) as caught:
+        by_rep.read("d:by_rep/#2:#9")
+    assert caught.value.code == "position_out_of_range" and "nothing is cut" in str(caught.value)
+    assert caught.value.valid_options == [f"d:by_rep/#2:#{by_rep.rows}"]
     with pytest.raises(NameNotFound) as caught:
         by_rep.read("d:by_rep[totals]")
     assert caught.value.what == "column" and caught.value.valid_options[0] == "total"
