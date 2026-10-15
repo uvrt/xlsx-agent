@@ -905,6 +905,60 @@ that dataset (`"d:by_rep"`). Withholding holds: a derive from a declared table r
 hidden columns and `table_dataset` leaves them out, so a listed dataset never names one.
 No definition changes.
 
+*T14 as built* (production feedback, 2026-10-15): **a sheet withheld from the model is no
+sheet of the workbook.** A declaration with every column hidden is refused (`no_columns`),
+so a sheet a model must never see was blanked in the file. Now `{"sheets": "Notes",
+"hidden": true}` (`declare.HiddenSheets`: `sheets` a name, glob or list; `optional`; no
+other key) sits in the same declarations as the tables -- the shape the feedback asked for,
+kept rather than a separate `hidden_sheets=` option: the format's `tables=`, a session's
+`declare` and `Workbook.declare_tables` already carry it, and "kept whole or not at all"
+covers it (a refused table withholds nothing). **Choke points**, beside T17's: the sheet
+list -- `Workbook.sheets` leaves it out (`Workbook._every_sheet` keeps it for a name's
+`localSheetId`, a run of sheets and the table parts), so `sheet`, `sheet_by_id`,
+`sheet_of` and `_cell_sheet` (a `Sheet` object too) refuse it as `NameNotFound`, the same
+message and options as for a name no sheet has, and everything that lists or walks sheets
+(the catalogue, `find_text`, the problems, compare's sheet changes, `open_document`'s count,
+a table's glob, a schema's required sheets) never meets it; **names and tables** --
+`Regions.excel_tables` and `Regions.names` leave out a table on it and a defined name local
+to it, over its cells, or whose formula names it (its name anywhere in the text, a run of
+sheets over it, its table, such a name), while `_every_table`/`_every_name` keep them for
+the formula scan; **cells** -- `Regions.withheld` gives a withheld sheet's every cell, so
+T17b's `formula_withheld` withholds a visible formula's text when it reaches the sheet
+(reference, run, table, name, `INDIRECT`/`OFFSET`), and also when the text holds the
+sheet's name anywhere (`HYPERLINK("#Notes!A1")`, a string an `INDIRECT` takes): the value
+stays. A link whose location names it is left out of `Workbook.hyperlinks`; a drop-down
+drawn from it reads `unknown_sheet`, as from no sheet. **Decided**: the name is not
+listed at all, not even as withheld (a sheet's name may say what it holds); a hidden
+sheet's declaration that matches nothing is refused by path only, never echoing the name,
+since a refusal at `open_document` reaches the model; ids are not renumbered (a gap shows,
+as after a deletion); a sheet stays withheld once withheld, and a table or region kept
+already over it is refused (`on_hidden_sheet`, naming the table). The catalogue lists no
+charts or pivot tables, so none can reveal it. **Tokens** (offline proxy, the test
+workbook: a log sheet whose formulas reach a withheld sheet of an Excel table, a comment
+and three names, and a spare sheet): `describe` 1,075 → 612. **Not covered**: a cell's own
+text that names the sheet is content and shown; `Workbook.to_bytes` is the file as stored.
+Definitions unchanged (every definition 3,712, guard 3,716; a format withholding a sheet
+gives the plain one's definitions, tested).
+
+*T16 as built* (production feedback, 2026-10-15): **a header found by its text.** Sheets
+of several sections needed code to find each header row. A declaration's `header_row` may
+now be `{"match": [texts], "rows": "8:40"}`: on each sheet, the one row whose text cells
+(in `columns`, else the used range's) hold every text -- each a cell's whole text, case and
+runs of white space aside, any order, other cells besides -- within `rows`, or without it
+below the last row of the tables declared before it in the same declarations on that sheet;
+each sheet of a table over several finds its own row (`Part.header`), the header text still
+the same on all. The data rows run to the first blank row or the row before the next row
+that matches, whichever is first, and nothing past that match is flagged `rows_below`;
+`first_row` and `last_row` are refused with it (`bad_rows`). **Decided**: exactly one row in
+the rows looked in -- none is `no_header`, several `ambiguous_header` with the rows by
+number as `valid_options` and what to do (give `rows`, or more texts) -- rather than the
+first, so a section never silently takes another's header; whole texts, so `Ref` does not
+find `Reference`. **Not covered**: a hidden column of one section is hidden to the sheet's
+last row (T17b's *Below the table*), so a section below that shows the same column is
+refused (`hidden_elsewhere`) -- hide it there too, or put the sections in other columns.
+Definitions unchanged; `describe` of the two-section test sheet 459 → 471 estimated tokens
+(two declared tables in place of two detected ones).
+
 ### 0.2 — edit
 
 | # | Item | Effort | Done when |

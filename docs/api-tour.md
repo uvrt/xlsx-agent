@@ -142,6 +142,21 @@ What a declaration says:
   `last_row` the data ends at the first blank row, as a detected region's does; anything
   further down within the columns is flagged `rows_below`. `columns` (`"A:F"`) when the
   header row's extent is not the table's.
+- **A header found by its text**, for a sheet of several sections: `"header_row":
+  {"match": ["Ref", "Item"], "rows": "8:40"}` takes the one row whose cells hold every
+  text given (each a cell's whole text, case and runs of spaces aside, in any order, other
+  cells besides), on each sheet, within `rows` -- or, without it, below the tables
+  declared before it in the same list on that sheet. Its data runs to the first blank row
+  or the next row that matches, whichever comes first (no `first_row`, `last_row`). No
+  row, or more than one, is refused (`no_header`, `ambiguous_header`, the rows by number
+  as `valid_options`):
+
+  ```python
+  wb.declare_tables([
+      {"name": "ratings", "sheets": "Sections", "header_row": {"match": ["Ref", "Rating"]}},
+      {"name": "owners", "sheets": "Sections", "header_row": {"match": ["Ref", "Item"]}}])
+  # owners' header is looked for below ratings' rows: the one at row 9, not row 3
+  ```
 - **The key**: every row has one, and no two rows share one, across every sheet; otherwise
   the declaration is refused, naming the cells (never the key).
 - **Fields** (by `header` or `column` letter): an `id` to address and show the column by
@@ -150,6 +165,20 @@ What a declaration says:
   model sees -- describe, read, query, derive, profile, compare, validate, a deck's `from`,
   `find_text`, a region detected or declared over it -- and refused as unknown when named.
   A column Excel hides is a column like any other unless declared hidden.
+- **Sheets hidden from the model**: `{"sheets": "Notes", "hidden": true}` (a name, a
+  glob or a list; `optional` as for a table) in the same list withholds whole sheets.
+  The workbook then has no such sheet: `wb.sheets`, `describe`, `open_document`'s count,
+  `find_text`, the problems and a comparison leave it out; an address by its name or id,
+  its Excel tables, the defined names on it, local to it or whose formula names it, and a
+  declared table naming it are refused exactly as for a sheet the workbook has not (its
+  name never offered); a drop-down drawn from it reads as one from no sheet, and a link to
+  it is left out. A formula on another sheet that reaches it -- a reference, a run of
+  sheets over it, its table, a name over it, `INDIRECT`/`OFFSET`, or its name anywhere in
+  the text -- keeps its value but not its text (`formula_withheld`). A sheet is never
+  shown again once withheld; a table kept already over it is refused (`on_hidden_sheet`),
+  and a sheet named that is not there is refused by its path only, never its name.
+  `wb.withheld_sheets` lists them for the program (no tool gives it). Use this, not a
+  table with every column hidden (refused: `no_columns`).
 - **The sheet is not a column.** A value is a cell, and the sheet's name is no cell's, so
   there is no `_sheet` to group by; every address names its sheet. For one sheet's
   figures, declare its own table too (`"sheets": "Area North"`).
