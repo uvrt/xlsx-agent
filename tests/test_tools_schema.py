@@ -32,6 +32,9 @@ regression guard and not a budget, raised as the read tools arrive.  T19 says wh
 ``key_column`` names, where ``sources`` works and that ``xlsx_derive`` sorts by output
 columns (its own ``sort``): ``xlsx_read`` 492 -> 501, ``xlsx_derive`` 794 -> 801, the core
 3,490 estimated, about 5,165 counted; every definition 3,712, the guard 3,716.
+ooxml-edit 0.36.0 (round 6, R6): find_text's ``slides`` takes slide ids as render's does
+(a string with ``orInteger``; decks only): the core 3,490 -> 3,496, about 5,174 counted;
+every definition 3,712 -> 3,718, the guard 3,720.
 """
 
 from __future__ import annotations
@@ -50,7 +53,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6000
-ALL_GUARD = 3716
+ALL_GUARD = 3720
 
 
 @pytest.fixture(scope="module")
