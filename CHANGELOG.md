@@ -5,6 +5,11 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- From ooxml-edit 0.36.0 (round 6, R5, R6): a text fact with a suffix that is no number
+  format (`{{d:x/#1/avg:0.20}}`) says so and lists the forms; find_text's `slides` (decks
+  only) takes slide ids: the core 3,490 -> 3,496 estimated, every definition 3,712 ->
+  3,718 (the guard 3,716 -> 3,720).
+
 - **Row ranges** (T3): `t:Products/#9:#16` names data rows 9 to 16 by position (from 1,
   the last included, as `#5` names one), `t:Products/#9:` row 9 to the last;
   `/#9:#16/Price` their one column, `/#9:#16/*` every column; `d:by_region/#2:#5` the
