@@ -5,6 +5,16 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **`xlsx_read` names a row by key one way** (L8): the row is the target
+  (`t:Products/SKU-0042`); `key_column` is now `key`, as `xlsx_compare` names it, and
+  `columns` picks a `t:` target's columns in order (`["Price", "Qty"]`). `key_column` and
+  `row` are still read (as `key` and `target`, with a warning). A misread `key` works
+  where it can only mean one thing -- a column that does not hold the key is read as a
+  column to read, the row's key itself as the row -- with a warning, else is refused with
+  what to do; several key columns are refused with the ones holding the key; a key not
+  found names the key column that has it, or the rows with a key like it by position
+  (`KeyIndex.near`). Definitions: the core 3,496 -> 3,525 estimated, every definition
+  3,718 -> 3,747 (the guard 3,720 -> 3,750); the strict set unchanged.
 - From ooxml-edit 0.36.0 (round 6, R5, R6): a text fact with a suffix that is no number
   format (`{{d:x/#1/avg:0.20}}`) says so and lists the forms; find_text's `slides` (decks
   only) takes slide ids: the core 3,490 -> 3,496 estimated, every definition 3,712 ->
