@@ -163,18 +163,136 @@ def test_a_row_by_key_takes_the_key_column(box):
     sheet.table("Lines", "A1:C3", ["SKU", "Code", "Qty"], write_header=False)
     session = _session(box, book)
     refused = _read(box, session, target="t:Lines/A-2")
-    assert refused.error.code == "refused" and refused.error.valid_options == ["SKU", "Code", "Qty"]
-    found = _read(box, session, target="t:Lines/A-2/Qty", key_column="SKU")
+    assert refused.error.code == "refused" and refused.error.valid_options == ["SKU"]  # holds it
+    found = _read(box, session, target="t:Lines/A-2/Qty", key="SKU")
     assert _cells(found) == [{"a": "Stock!C3", "v": 2, "t": "number"}]
-    assert found.data["target"] == "t:Lines/A-2/Qty"
-    stray = _read(box, session, target="t:Lines", key_column="SKU")
-    assert stray.error.code == "invalid_arguments" and stray.error.field == "key_column"
+    assert found.data["target"] == "t:Lines/A-2/Qty" and found.warnings == []
+    stray = _read(box, session, target="Stock!A1:C3", key="SKU")
+    assert stray.error.code == "invalid_arguments" and stray.error.field == "key"
     sources = _read(box, session, target="t:Lines/A-2/Qty", sources=True)
     assert (sources.error.code, sources.error.field) == ("invalid_arguments", "sources")
     assert sources.error.message == (                 # where it works, what to do instead
         "sources works on a dataset (d:) only, where each value lists the cells it came "
         "from; a t: or cell read gives each cell its own address (a), its source: read it "
         "without sources")
+
+
+
+# -- a row by key, its key column and its columns (L8) -----------------------------------------
+
+
+def kit() -> WorkbookBuilder:
+    """Two tables: Kit, whose one key column is Part (Label repeats; Cost is no key), one
+    part stored with other case and a trailing space; Pairs, where Code and Alt can both be
+    the key."""
+    book = WorkbookBuilder()
+    sheet = book.sheet("Stock")
+    sheet.rows("A1", [["Part", "Label", "Qty", "Cost"], ["P-10", "Gear", 4, 2.5],
+                      ["P-11", "Gear", 4, 1.25], ["p-12 ", "Pin", 9, 0.5]])
+    sheet.table("Kit", "A1:D4", ["Part", "Label", "Qty", "Cost"], write_header=False)
+    other = book.sheet("Two")
+    other.rows("A1", [["Code", "Alt", "Note"], ["C-1", "Z-9", "x"], ["C-2", "Z-8", "x"]])
+    other.table("Pairs", "A1:C3", ["Code", "Alt", "Note"], write_header=False)
+    return book
+
+
+def _values(result) -> list[list]:
+    return [[cell["v"] for cell in row] for row in result.data["rows"]]
+
+
+def test_columns_pick_a_t_targets_columns_in_their_order(box):
+    session = _session(box, kit())
+    row = _read(box, session, target="t:Kit/P-11", columns=["Cost", "Qty"])
+    assert row.ok and row.warnings == [] and row.data["target"] == "t:Kit/P-11"
+    assert _cells(row) == [{"a": "Stock!D3", "v": 1.25, "t": "number"},
+                           {"a": "Stock!C3", "v": 4, "t": "number"}]
+    assert row.data["columns"] == ["Cost", "Qty"]
+    every = _read(box, session, target="t:Kit", columns=["qty", "Part"])   # case aside
+    assert _values(every) == [[4, "P-10"], [4, "P-11"], [9, "p-12 "]]
+    assert every.data["columns"] == ["Qty", "Part"]
+    both = _read(box, session, target="t:Kit/{P-10,P-11}/Cost", columns=["Part"])
+    assert _values(both) == [[2.5, "P-10"], [1.25, "P-11"]]         # the address's first
+    page = _read(box, session, target="t:Kit", columns=["Qty"], limit=2)
+    rest = _read(box, session, target="t:Kit", columns=["Qty"], cursor=page.next_cursor)
+    assert _values(page) + _values(rest) == [[4], [4], [9]]
+    other = _read(box, session, target="t:Kit", columns=["Part"], cursor=page.next_cursor)
+    assert other.error.code == "invalid_arguments" and other.error.field == "cursor"
+    unknown = _read(box, session, target="t:Kit", columns=["Price"])
+    assert unknown.error.code == "not_found" and "Qty" in unknown.error.message
+    cells = _read(box, session, target="Stock!A1:B2", columns=["Part"])
+    assert (cells.error.code, cells.error.field) == ("invalid_arguments", "columns")
+    assert "t: target" in cells.error.message
+
+
+def test_key_read_as_the_column_to_read_reads_it(box):
+    session = _session(box, kit())
+    row = _read(box, session, target="t:Kit/P-11", key="Cost")      # the misread: Cost
+    assert row.ok and _values(row) == [["P-11", "Gear", 4, 1.25]]   # the whole row has it
+    assert row.warnings == ["key read as a column to read: 'Cost' does not hold target's "
+                            "key, 'Part' does; key is the column holding it, columns picks "
+                            "columns"]
+    value = _read(box, session, target="t:Kit/P-11/Qty", key="Cost")
+    assert _values(value) == [[4, 1.25]] and value.data["columns"] == ["Qty", "Cost"]
+    table = _read(box, session, target="t:Kit", key="Cost")         # no row by key at all
+    assert table.ok and table.total == 3 and "key read as a column to read" in table.warnings[0]
+    column = _read(box, session, target="t:Kit[Qty]", key="Cost")
+    assert _values(column) == [[4, 2.5], [4, 1.25], [9, 0.5]]
+
+
+def test_key_read_as_the_rows_key_reads_the_row(box):
+    session = _session(box, kit())
+    row = _read(box, session, target="t:Kit", key="P-10")
+    assert row.ok and _values(row) == [["P-10", "Gear", 4, 2.5]]
+    assert row.warnings == ["key read as the key of the row to read: key is the column "
+                            "holding it, and the row goes in target (t:Kit/<key>)"]
+    value = _read(box, session, target="t:Kit[Cost]", key="P-10")
+    assert _values(value) == [[2.5]]
+    nowhere = _read(box, session, target="t:Kit", key="Q-1")
+    assert (nowhere.error.code, nowhere.error.field) == ("invalid_arguments", "key")
+    assert nowhere.error.valid_options == ["Part"] and "Q-1" not in nowhere.error.message
+    assert nowhere.error.message == (
+        "key is the column of t:Kit holding the key in target, one of valid_options; the row "
+        "goes in target (t:Kit/<key>), the columns to read in columns")
+
+
+def test_key_column_and_row_are_read_as_key_and_target(box):
+    session = _session(box, kit())
+    old = _read(box, session, target="t:Kit/P-10/Qty", key_column="Part")
+    assert old.ok and _values(old) == [[4]] and old.warnings == ["key_column read as key"]
+    row = box.dispatch(session, "xlsx_read", {"doc": "d1", "row": "t:Kit/P-10"})
+    assert row.ok and _values(row) == [["P-10", "Gear", 4, 2.5]]
+    assert row.warnings == ["row read as target"]
+    twice = box.dispatch(session, "xlsx_read", {"doc": "d1", "target": "t:Kit",
+                                                "row": "t:Kit/P-10"})
+    assert twice.error.code == "invalid_arguments" and twice.error.valid_options == ["target"]
+
+
+def test_a_key_not_found_says_where_it_is_or_which_rows_are_like_it(box):
+    session = _session(box, kit())
+    derived = _read(box, session, target="t:Kit/P-10")           # Part is the one key column
+    assert derived.ok and derived.warnings == []
+    near = _read(box, session, target="t:Kit/P-12")
+    assert near.error.code == "not_found" and near.error.valid_options == ["t:Kit/#3"]
+    assert near.error.message == ("no row of t:Kit has that key in column 'Part'; 1 row has "
+                                  "a key like it (case, spaces or a character apart): "
+                                  "valid_options, by position")
+    several = _read(box, session, target="t:Kit/P-1")
+    assert several.error.valid_options == ["t:Kit/#1", "t:Kit/#2"]
+    none = _read(box, session, target="t:Kit/W-77")
+    assert none.error.code == "not_found" and none.error.valid_options == []
+    choose = _read(box, session, target="t:Pairs/Z-9")             # Code or Alt: refused
+    assert (choose.error.code, choose.error.field) == ("refused", "key")
+    assert choose.error.valid_options == ["Alt"]                  # the one holding it
+    assert choose.error.message == ("t:Pairs has no one key column (2 can be); 'Alt' holds "
+                                    "target's key: give key")
+    other = _read(box, session, target="t:Pairs/C-9")             # in neither: both offered
+    assert other.error.code == "refused" and other.error.valid_options == ["Code", "Alt"]
+    found = _read(box, session, target="t:Pairs/Z-9", key="Alt")
+    assert found.ok and _values(found) == [["C-1", "Z-9", "x"]]
+    misread = _read(box, session, target="t:Pairs/Z-9", key="Note")  # Note holds no key
+    assert misread.ok and _values(misread) == [["C-1", "Z-9", "x"]]
+    wrong = _read(box, session, target="t:Pairs/Z-9", key="Code")  # a key column, not this one
+    assert wrong.ok and "'Alt' does" in wrong.warnings[0]
 
 
 def test_formats_formulas_comments_links_and_merges_on_request(box):
@@ -427,6 +545,9 @@ def test_no_cell_content_reaches_a_diagnostic(box, caplog):
         _profile(box, session, target="t:Parts"),
         _read(box, session, target=f"t:Parts/{MARKER}"),            # a key: never echoed
         _read(box, session, target=f"t:Parts/{MARKER}", key_column="Name"),
+        _read(box, session, target=f"t:Parts/{MARKER}", key="Qty"),       # a misread key
+        _read(box, session, target="t:Parts", key=MARKER),                # the key as key
+        _read(box, session, target=f"t:Parts/{MARKER}X"),                 # near no key
         _read(box, session, target=f"t:Parts/Bolt {MARKER}/Qty", key_column="Name"),
     ]
     assert results[-1].ok and _cells(results[-1])[0]["a"] == "Stock!C2"
@@ -439,5 +560,5 @@ def test_no_cell_content_reaches_a_diagnostic(box, caplog):
     diagnostics += [w for r in results for w in r.warnings] + [r.summary for r in results]
     diagnostics += [json.dumps(r.error.to_json()) for r in results if not r.ok]
     diagnostics += [json.dumps(record.__dict__, default=str) for record in session.log]
-    assert len([r for r in results if not r.ok]) == 2
+    assert len([r for r in results if not r.ok]) == 5
     assert diagnostics and not [d for d in diagnostics if MARKER in d]

@@ -471,6 +471,22 @@ def test_the_format_declares_the_tables_and_no_tool_shows_the_hidden_column():
     assert [p["at"] for p in checked["problems"]] == ["'Area South'!C5"]
 
 
+
+def test_columns_pick_a_declared_tables_columns_on_every_sheet():
+    toolbox = Toolbox(TOOLS, formats=[xlsx_format(tables=[CHECKS])], groups=GROUPS)
+    session, blob = _session(toolbox)
+    assert toolbox.dispatch(session, "open_document", {"blob": blob}).ok
+    read = toolbox.dispatch(session, "xlsx_read", {"doc": "d1", "target": "t:checks/{S-3,N-1}",
+                                                   "columns": ["rating", "Ref"]})
+    assert read.ok, read.error
+    assert [[c["a"] for c in row] for row in read.data["rows"]] == [
+        ["'Area South'!C6", "'Area South'!A6"], ["'Area North'!C4", "'Area North'!A4"]]
+    hidden = toolbox.dispatch(session, "xlsx_read", {"doc": "d1", "target": "t:checks",
+                                                     "columns": ["Remark"]})
+    assert hidden.error.code == "not_found" and "Remark" not in json.dumps(
+        hidden.error.valid_options)
+
+
 def test_a_session_declares_its_own_tables_in_place_of_the_formats():
     toolbox = Toolbox(TOOLS, formats=[xlsx_format(tables=[RUN])], groups=GROUPS)
     session, blob = _session(toolbox)

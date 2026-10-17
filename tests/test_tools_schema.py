@@ -35,6 +35,10 @@ columns (its own ``sort``): ``xlsx_read`` 492 -> 501, ``xlsx_derive`` 794 -> 801
 ooxml-edit 0.36.0 (round 6, R6): find_text's ``slides`` takes slide ids as render's does
 (a string with ``orInteger``; decks only): the core 3,490 -> 3,496, about 5,174 counted;
 every definition 3,712 -> 3,718, the guard 3,720.
+L8 (round 7): ``xlsx_read``'s ``key_column`` is ``key`` (``key_column`` and ``row`` are
+aliases, never sent), and ``columns`` picks a ``t:`` target's columns: ``xlsx_read`` 501 ->
+530, the core 3,496 -> 3,525 estimated, about 5,174 -> 5,217 counted; every definition
+3,718 -> 3,747, the guard 3,720 -> 3,750.
 """
 
 from __future__ import annotations
@@ -53,7 +57,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6000
-ALL_GUARD = 3720
+ALL_GUARD = 3750
 
 
 @pytest.fixture(scope="module")
