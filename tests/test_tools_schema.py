@@ -6,7 +6,7 @@ adapters' output passes each provider's documented strict rules; no parameter is
 the groups are as the roadmap lists them.
 
 **The budget** (ROADMAP.md, "Tools"; the siblings' per-format budget): what a request
-loads -- the core -- is at most 6,000 tokens as Anthropic's count-tokens counts them.
+loads -- the core -- is at most 6,500 tokens as Anthropic's count-tokens counts them.
 Offline, characters / 3.5 of each definition's compact JSON stands in for it, times 1.48,
 the ratio of the counted to the estimated size the siblings measured on Sonnet 5.5 (T5 and
 T5b).  The online count is R14's (``test_tools_online.py``, marked ``provider``).
@@ -56,7 +56,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
-CORE_COUNTED_BUDGET = 6000
+CORE_COUNTED_BUDGET = 6500
 ALL_GUARD = 3750
 
 

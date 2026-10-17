@@ -18,7 +18,7 @@ tool saves one. The definitions pass Claude's and OpenAI's documented rules offl
 (`ooxml_edit.tools.adapters.anthropic_problems`, `openai_problems`), and on Claude online
 (`tests/test_tools_online.py`, marked `provider`): Claude accepts them as sent, and the
 loaded core counts **4,958 tokens** (claude-sonnet-5-5's count-tokens, 2026-10-13, 9
-definitions with the tool-use prompt; the budget is 6,000). Three tasks were run on Claude
+definitions with the tool-use prompt; the budget is 6,500). Three tasks were run on Claude
 (claude-haiku-5-5) and are kept as golden transcripts (`tests/golden/`). The tools have not
 been run live on OpenAI yet; the loop below is the siblings', which a production user ran
 on Azure OpenAI's Responses API.

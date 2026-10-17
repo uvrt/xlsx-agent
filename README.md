@@ -19,7 +19,7 @@ Nothing is edited or saved yet: that is 0.2. Not released to PyPI; installed fro
 
 - The Python API: [docs/api-tour.md](docs/api-tour.md).
 - The tools, for Claude and OpenAI: [src/xlsx_agent/tools/README.md](src/xlsx_agent/tools/README.md).
-  The loaded core counts 4,958 tokens on Claude (the budget is 6,000).
+  The loaded core counts 4,958 tokens on Claude (the budget is 6,500).
 - What changed: [CHANGELOG.md](CHANGELOG.md).
 
 ## Install from source
