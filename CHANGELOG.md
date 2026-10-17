@@ -5,6 +5,14 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- Tool roles (round 7, item 9; ooxml-edit 0.45.0): every workbook tool is `review`'s, so a
+  reviewer (`Toolbox(roles=["review"])`, `toolbox.session(roles=...)`; with `resolve` or
+  `accept` alike: no workbook tool has comments or tracked changes) is sent the
+  default's definitions unchanged (core 3,523, every definition 3,746 estimated; no strict
+  tool) and runs every tool; a role set without `review` is sent only the session's tools
+  and every read is refused naming the role. A reviewer's prompt has the role line, not
+  told it may comment. Tests in `tests/test_tools_roles.py`; definitions unchanged.
+
 - The loaded core's budget is now 6,500 tokens as count-tokens counts them (raised from 6,000
   by the user on 2026-10-17); the offline proxy and the online check use it.
 

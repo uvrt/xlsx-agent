@@ -55,6 +55,11 @@ A workbook can also come in as an input the model opens itself:
 `{"blob": "b1"}`. `.xlsx`, `.xlsm`, `.xltx` and `.xltm` open; `.xls`, `.xlsb` and encrypted
 workbooks are refused with the reason. A macro is never run.
 
+**Roles.** Every workbook tool reads, so all are the `review` role's (ooxml-edit 0.45.0,
+[TOOLS.md, "Roles"](https://github.com/uvrt/ooxml-edit/blob/main/docs/TOOLS.md)): a
+reviewer's toolbox, `Toolbox(..., roles=["review"])`, sends the same definitions, and in a
+toolbox with the deck or Word tools a reviewer keeps every workbook tool.
+
 **The user's locale.** How text that looks like a number or a date is read (numbers stored
 as text), and the language of the language-dependent built-in number formats, is the
 application's setting -- never the model's -- per toolbox or per session, with the shared

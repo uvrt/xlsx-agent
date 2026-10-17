@@ -1049,6 +1049,15 @@ be counted online); every definition 3,718 -> 3,746, the guard 3,720 -> 3,750. T
 strict set is unchanged (`xlsx_read` was not strict and is not); its definition changed:
 `key_column` renamed `key`, `columns` added.
 
+
+*Roles* (round 7, item 9; ooxml-edit 0.45.0, user-decided 2026-10-17): the siblings' tool
+roles -- `review`, `resolve`, `edit`, additive toolsets per toolbox or session, enforced by
+the dispatcher. Every workbook tool reads, so all are `review`'s by default (no tagging
+needed); a reviewer's role set is sent exactly the default's definitions (core 3,523,
+every definition 3,746 estimated; no strict tool), a set without `review` only the
+session's `open_document`, `close_document` and `read_blob`, every read refused. A
+reviewer's prompt gets the role line, without the sentence about comments (no workbook
+tool places one). Tests: `tests/test_tools_roles.py`.
 ### 0.2 — edit
 
 | # | Item | Effort | Done when |
