@@ -37,8 +37,8 @@ ooxml-edit 0.36.0 (round 6, R6): find_text's ``slides`` takes slide ids as rende
 every definition 3,712 -> 3,718, the guard 3,720.
 L8 (round 7): ``xlsx_read``'s ``key_column`` is ``key`` (``key_column`` and ``row`` are
 aliases, never sent), and ``columns`` picks a ``t:`` target's columns: ``xlsx_read`` 501 ->
-530, the core 3,496 -> 3,525 estimated, about 5,174 -> 5,217 counted; every definition
-3,718 -> 3,747, the guard 3,720 -> 3,750.
+528, the core 3,496 -> 3,523 estimated, about 5,174 -> 5,214 counted; every definition
+3,718 -> 3,746, the guard 3,720 -> 3,750.
 """
 
 from __future__ import annotations

@@ -159,15 +159,15 @@ def test_a_range_is_clipped_to_the_used_range_and_says_so(box):
 def test_a_row_by_key_takes_the_key_column(box):
     book = WorkbookBuilder()
     sheet = book.sheet("Stock")
-    sheet.rows("A1", [["SKU", "Code", "Qty"], ["A-1", "X1", 1], ["A-2", "X2", 2]])
-    sheet.table("Lines", "A1:C3", ["SKU", "Code", "Qty"], write_header=False)
+    sheet.rows("A1", [["Ref", "Code", "Qty"], ["A-1", "X1", 1], ["A-2", "X2", 2]])
+    sheet.table("Lines", "A1:C3", ["Ref", "Code", "Qty"], write_header=False)
     session = _session(box, book)
     refused = _read(box, session, target="t:Lines/A-2")
-    assert refused.error.code == "refused" and refused.error.valid_options == ["SKU"]  # holds it
-    found = _read(box, session, target="t:Lines/A-2/Qty", key="SKU")
+    assert refused.error.code == "refused" and refused.error.valid_options == ["Ref"]  # holds it
+    found = _read(box, session, target="t:Lines/A-2/Qty", key="Ref")
     assert _cells(found) == [{"a": "Stock!C3", "v": 2, "t": "number"}]
     assert found.data["target"] == "t:Lines/A-2/Qty" and found.warnings == []
-    stray = _read(box, session, target="Stock!A1:C3", key="SKU")
+    stray = _read(box, session, target="Stock!A1:C3", key="Ref")
     assert stray.error.code == "invalid_arguments" and stray.error.field == "key"
     sources = _read(box, session, target="t:Lines/A-2/Qty", sources=True)
     assert (sources.error.code, sources.error.field) == ("invalid_arguments", "sources")

@@ -195,7 +195,7 @@ def _calls(ident: str, other: str | None):
            ("xlsx_read", {"target": "t:Big"}), "next", "next",
            ("xlsx_read", {"target": late, "formulas": True, "merges": True}),
            ("xlsx_read", {"target": "Data!E1500:F1510", "formulas": True}),
-           ("xlsx_read", {"target": "t:Big/SKU-002000", "key": "Code"}),
+           ("xlsx_read", {"target": "t:Big/SKU-002000", "key_column": "Code"}),
            ("find_text", {"text": "SKU-0001"}), "next", "next", "next", "next",
            ("find_text", {"text": "Hardware"}), "next",
            ("find_text", {"text": "Garden", "range": f"Data!A1500:G{ROWS}"}), "next",

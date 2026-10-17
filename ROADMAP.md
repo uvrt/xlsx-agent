@@ -226,7 +226,7 @@ Every result is bounded by `Limits.max_result_chars` (24,000) and
 | `open_document` (shared) | `blob` | `d1`, the summary: sheets, tables, size, problems at open | the zip limits; `.xls`/`.xlsb` refused |
 | `describe` (shared) | `doc` | the catalogue: sheets (id, name, visible, hidden or very hidden, protected, used range); tables, names and detected regions with their key columns; per column: header, inferred type, fill rate, min/max/mean or distinct values when 12 or fewer, text length median and max, formula share, data-validation list, flags (mixed types, numbers as text, no cached value, cut at 32,767); up to two sample rows per table; workbook flags (recalculation, external links, macros); the session's datasets (id, columns, types, rows, from; T11) | about 3,000 tokens by default; a workbook too big for that lists every table and the first columns, and says which were left for `xlsx_profile` |
 | `xlsx_profile` | `doc`, `target` (table or column), `columns`, `cursor` | the full per-column profile for one table, every column (a date column's range as dates; text lengths in characters and words with the longest cell's address; the range of dates stored as text) | one table per call; 50 columns a page, within 24,000 characters; paged |
-| `xlsx_read` | `doc` (not for a dataset), `target` (range, table, column, row, dataset), `formats`, `formulas`, `comments`, `hyperlinks`, `merges`, `sources` (a dataset's only), `key` (the column holding a by-key target's key, `SKU` for `t:Products/SKU-0042`; `key_column` read as it), `columns` (a `t:` target's columns to give, in that order), `limit`, `max_chars`, `cursor` | typed values by row, with addresses; optionally format codes, formula text, comments, links, merges; the array blocks over the rows always | default 50 rows, at most 500 or 24,000 characters; paged, a row too wide for a page split across pages |
+| `xlsx_read` | `doc` (not for a dataset), `target` (range, table, column, row, dataset), `formats`, `formulas`, `comments`, `hyperlinks`, `merges`, `sources` (a dataset's only), `key` (the column holding a by-key target's key, `Code` for `t:Parts/BX-17`; `key_column` read as it), `columns` (a `t:` target's columns to give, in that order), `limit`, `max_chars`, `cursor` | typed values by row, with addresses; optionally format codes, formula text, comments, links, merges; the array blocks over the rows always | default 50 rows, at most 500 or 24,000 characters; paged, a row too wide for a page split across pages |
 | `xlsx_query` | `doc`, `table`, `columns`, `where` (`eq`, `in`, `gte`, `lte`, `contains`, `words_gt`, `blank`, `not_blank`, combined with and), `sort`, `limit`, `cursor` | matching rows with their addresses, and the count of all matches | as `xlsx_read`; a filter on a column of the wrong type is refused naming the column's type |
 | `find_text` (shared) | `doc`, `text`, `regex`, `range` (a sheet, range or table), `cursor` | matches by address and kind: cell (text cells; numbers and dates are not searched, having no display string yet), table or region name, column header, comment, defined name; hidden ones marked; formula text not searched (the shared tool has no option for it) | 50 per page |
 | `xlsx_derive` | `doc`, `from` (table, region or dataset), `where`, `group_by`, `measures` (`count`, `sum`, `mean`, `median`, `min`, `max` (of dates, a date), `first`, `last` (row order, any column), `share`, `distinct`, each with `column` and `as`), `bins` (edges for a number or date column), `pivot` (a column whose values become columns), `sort` (by output columns: a `group_by` column or a measure's `as`), `top`, `round`, `coerce` (`number_as_text`, `date_as_text`), `id` | `d:<id>`: columns, rows, the rounding applied, and for every value its sources (see *Provenance*); the rows left out and why, counted by reason | at most 1,000 result rows and 50 shown; a measure on a column whose type does not allow it is refused before anything is computed |
@@ -1021,20 +1021,20 @@ later (declare the sections together); a table over the hidden table's own rows 
 *L8 as built* (production feedback, round 7, 2026-10-17): **one way to name a row by
 key, and a place for the columns.** Models read `xlsx_read`'s `key_column` as "the column
 whose value I want" (and, before T19, as the key itself) and were refused. A row by key
-stays a target -- `t:Products/SKU-0042`, the syntax every tool, `from`, a dataset's
+stays a target -- `t:Parts/BX-17`, the syntax every tool, `from`, a dataset's
 sources and `{{t:...}}` already take -- and the parameter is `key`, as `xlsx_compare`,
 `xlsx_validate_data` and the declarations name a key column (and as the `no_key_column`
 refusal already said: "name one with key="). `columns` picks a `t:` target's columns, in
-the order given (`t:Products/SKU-0042` with `["Price", "Qty"]`; a column in the address
+the order given (`t:Parts/BX-17` with `["Bin", "Count"]`; a column in the address
 comes first; case aside); a cursor belongs to the target and its columns; a range of
 cells or a dataset (whose column goes in its address) refuses it. **What a misread gets**
 (tested on made-up tables; every warning and refusal names columns and positions, never
 a key -- design rule 7): `key_column` and `row` are aliases of `key` and `target` (never
 sent: no tokens), with the dispatcher's "read as" warning; `key` naming a column that does
 not hold the target's key, when one column that can be the key does, is read as a column
-to read, with a warning ("'Price' does not hold target's key, 'SKU' does"); `key` on a
-target with no row by key (`t:Products`, `t:Products[Price]`, `#5`) is a column to read
-too; `key` holding the row's key (`t:Products` with `key: "SKU-0042"`) reads that row
+to read, with a warning ("'Bin' does not hold target's key, 'Code' does"); `key` on a
+target with no row by key (`t:Parts`, `t:Parts[Bin]`, `#5`) is a column to read
+too; `key` holding the row's key (`t:Parts` with `key: "BX-17"`) reads that row
 when one key column holds it, else is refused naming the key candidates; a row by key
 with no one key column (several can be) is refused as `no_key_column` with the
 candidates holding the key as `valid_options` (all of them when none does), field `key`;
@@ -1042,10 +1042,10 @@ a key not in its column names the other key candidates that hold it (`give key`)
 the rows whose key is like it -- case and outer spaces aside, then
 `difflib.get_close_matches` in a column of at most 50,000 keys -- as positions
 (`KeyIndex.near`, also in the library's `NameNotFound`): a key is still matched exactly,
-never case aside. **Budget**: `xlsx_read` 501 -> 530 estimated (`key` about as long as
-`key_column` was, `columns` +30); the loaded core 3,496 -> 3,525 estimated,
-about 5,174 -> 5,217 by the offline proxy (5,058 online before: about 5,101 expected, to
-be counted online); every definition 3,718 -> 3,747, the guard 3,720 -> 3,750. The
+never case aside. **Budget**: `xlsx_read` 501 -> 528 estimated (`key` about as long as
+`key_column` was, `columns` +30, the example 2 shorter); the loaded core 3,496 -> 3,523 estimated,
+about 5,174 -> 5,214 by the offline proxy (5,058 online before: about 5,098 expected, to
+be counted online); every definition 3,718 -> 3,746, the guard 3,720 -> 3,750. The
 strict set is unchanged (`xlsx_read` was not strict and is not); its definition changed:
 `key_column` renamed `key`, `columns` added.
 

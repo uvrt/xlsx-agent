@@ -13,7 +13,7 @@ row by row; on request with its number format's code (``formats``), its formula'
 (``merges``).  The blocks array formulas and dynamic arrays fill that cross the rows are
 always listed (``arrays``): a cell inside one says nothing of it by itself.
 
-**A row by key** is a target, ``t:Products/SKU-0042`` (the one way every tool names it);
+**A row by key** is a target, ``t:Parts/BX-17`` (the one way every tool names it);
 its key column is the region's own (declared, or the only column that can be one), else
 ``key``.  ``columns`` picks a ``t:`` target's columns, in the order given (an address's own
 column first).  What a model that misreads ``key`` meant is read where it can only mean
@@ -104,7 +104,7 @@ _FIRST = 3
 DOC = string("Document id.")
 
 #: Names a model writes for ``xlsx_read``'s own: ``key_column`` (its name before round 7,
-#: L8) and ``row`` (a row by key is a target: ``t:Products/SKU-0042``).
+#: L8) and ``row`` (a row by key is a target: ``t:Parts/BX-17``).
 ALIASES = {"key_column": "key", "row": "target"}
 CURSOR = string("next_cursor of the previous page, with the same target.", optional=True)
 
@@ -128,7 +128,7 @@ CURSOR = string("next_cursor of the previous page, with the same target.", optio
        "merges": boolean("List the merged areas over the rows. Default false.", optional=True),
        "sources": boolean("d: only: add each value's source cells (8, more counted); "
                           "for one value, all, paged.", optional=True),
-       "key": string("Column holding target's key (SKU for t:Products/SKU-0042) if "
+       "key": string("Column holding target's key (Code for t:Parts/BX-17) if "
                      "several key_candidates; not one to read.", optional=True),
        "columns": array(string(), "Only these columns of a t: target, in order.",
                         optional=True),
@@ -371,7 +371,7 @@ def _cells(workbook: Any, target: str, key: str | None, columns: list[str] | Non
             if given is not None:
                 raise ToolError("invalid_arguments", f"{name} is for a t: target: "
                                 + ("the column holding the key of a row by key "
-                                   "(t:Products/SKU-0042)" if name == "key" else
+                                   "(t:Parts/BX-17)" if name == "key" else
                                    "its columns to read; a range of cells names its own"),
                                 field=name)
     pick = None
@@ -435,9 +435,9 @@ def _keyed(workbook: Any, region: Any, address: TableAddress, key: str,
            ) -> tuple[TableAddress, str | None, list[str] | None]:
     """``key`` as the column holding the key of ``address``'s row (or rows) by key; or,
     where it cannot be that, what it was meant as, with a warning in ``notes`` (never the
-    key: cell content): a column to read (``t:Products/SKU-0042`` with ``key: "Price"``,
-    or any target with no row by key), or the row's key itself (``t:Products`` with
-    ``key: "SKU-0042"``).  The address, key column and columns to read."""
+    key: cell content): a column to read (``t:Parts/BX-17`` with ``key: "Bin"``, or any
+    target with no row by key), or the row's key itself (``t:Parts`` with
+    ``key: "BX-17"``).  The address, key column and columns to read."""
     whole = region.address.text
     try:
         named = region.columns[region.column_index(key)]
