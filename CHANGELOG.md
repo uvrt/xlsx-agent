@@ -6,7 +6,8 @@ has the detail of every milestone.
 ## Unreleased
 
 - Tool roles (round 7, item 9; ooxml-edit 0.45.0): every workbook tool is `review`'s, so a
-  reviewer (`Toolbox(roles=["review"])`, `toolbox.session(roles=...)`) is sent the
+  reviewer (`Toolbox(roles=["review"])`, `toolbox.session(roles=...)`; with `resolve` or
+  `accept` alike: no workbook tool has comments or tracked changes) is sent the
   default's definitions unchanged (core 3,523, every definition 3,746 estimated; no strict
   tool) and runs every tool; a role set without `review` is sent only the session's tools
   and every read is refused naming the role. A reviewer's prompt has the role line, not

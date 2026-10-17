@@ -2,8 +2,9 @@
 
 Every xlsx tool reads: none changes a workbook, so all of them are ``review``'s and a
 reviewer, ``["review"]`` or ``["review", "resolve"]``, is sent exactly the default's
-definitions (core 3,523 estimated, every definition 3,746; no strict tool).  A role set
-without ``review`` -- ``["edit"]``, ``["resolve"]`` -- is sent only the session's
+definitions (core 3,523 estimated, every definition 3,746; no strict tool), with
+``accept`` too.  A role set without ``review`` -- ``["edit"]``, ``["resolve"]``,
+``["accept"]`` -- is sent only the session's
 ``open_document`` and ``close_document`` and ``read_blob`` (322 estimated), and every read
 is refused.  A reviewer's prompt has the role line without the sentence about comments: no
 workbook tool places one.
@@ -41,7 +42,8 @@ def test_every_workbook_tool_is_a_reviewer_s():
 
 
 @pytest.mark.parametrize("provider", ["anthropic", "openai-responses", "openai-chat"])
-@pytest.mark.parametrize("roles", [["review"], ["review", "resolve"], ROLES], ids=str)
+@pytest.mark.parametrize("roles", [["review"], ["review", "resolve"], ["review", "accept"],
+                                   ROLES], ids=str)
 def test_a_reviewer_is_sent_the_default_s_definitions(box, provider, roles):
     for groups in (None, "core"):
         assert box.definitions(provider, groups=groups, roles=roles) == \
@@ -55,7 +57,7 @@ def test_a_reviewer_s_core_is_the_core_and_within_the_budget(box):
     assert everything <= ALL_GUARD, everything
 
 
-@pytest.mark.parametrize("roles", [["edit"], ["resolve"]], ids="+".join)
+@pytest.mark.parametrize("roles", [["edit"], ["resolve"], ["accept"]], ids="+".join)
 def test_a_set_without_review_reads_nothing(box, roles):
     sent = {d["name"] for d in box.definitions("anthropic", defer=False, roles=roles)}
     assert sent == {"open_document", "close_document", "read_blob"}
