@@ -5,6 +5,9 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- The loaded core's budget is now 6,500 tokens as count-tokens counts them (raised from 6,000
+  by the user on 2026-10-17); the offline proxy and the online check use it.
+
 - **`xlsx_read` names a row by key one way** (L8): the row is the target
   (`t:Parts/BX-17`); `key_column` is now `key`, as `xlsx_compare` names it, and
   `columns` picks a `t:` target's columns in order (`["Bin", "Count"]`). `key_column` and
