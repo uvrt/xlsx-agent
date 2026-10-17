@@ -13,6 +13,16 @@ row by row; on request with its number format's code (``formats``), its formula'
 (``merges``).  The blocks array formulas and dynamic arrays fill that cross the rows are
 always listed (``arrays``): a cell inside one says nothing of it by itself.
 
+**A row by key** is a target, ``t:Parts/BX-17`` (the one way every tool names it);
+its key column is the region's own (declared, or the only column that can be one), else
+``key``.  ``columns`` picks a ``t:`` target's columns, in the order given (an address's own
+column first).  What a model that misreads ``key`` meant is read where it can only mean
+one thing, with a warning (:func:`_keyed`): a column that does not hold the key, while one
+key column does, is a column to read; the row's key given as ``key`` is the row.  A key not
+found names the key column that holds it, else the rows with a key like it, by position
+(:meth:`KeyIndex.near <xlsx_agent.read.regions.KeyIndex.near>`).  ``key_column`` (the
+name before round 7) and ``row`` are read as ``key`` and ``target`` (:data:`ALIASES`).
+
 A dataset (``d:by_region``, ``d:by_region[total]``, ``d:by_region/#2/total``...) is read by
 :func:`.derive.read_dataset`: no ``doc`` is needed, since a dataset outlives its workbook,
 and ``sources`` adds each value's source cells (R11).  Every other target needs ``doc``.
@@ -57,16 +67,18 @@ from __future__ import annotations
 
 import json
 import zlib
+from dataclasses import replace
 from typing import Any, Iterable
 
 from ooxml_edit.charts.workbook import Area, Cell
 from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, boolean, integer,
                               string, tool)
 
-from ..address import (RangeAddress, RefAddress, SheetRef, TableAddress, parse_address,
-                       quote_sheet)
+from ..address import (NameNotFound, RangeAddress, RefAddress, SheetRef, TableAddress,
+                       parse_address, quote_sheet)
+from ..read.regions import RegionError
 from ..read.types import Value
-from .docformat import KIND, handler
+from .docformat import KIND, handler, tool_error
 
 #: The most rows a page of ``xlsx_read`` holds (ROADMAP.md, "Tools": "at most 500").
 READ_ROWS = 500
@@ -90,6 +102,10 @@ _MARGIN = 400
 _FIRST = 3
 
 DOC = string("Document id.")
+
+#: Names a model writes for ``xlsx_read``'s own: ``key_column`` (its name before round 7,
+#: L8) and ``row`` (a row by key is a target: ``t:Parts/BX-17``).
+ALIASES = {"key_column": "key", "row": "target"}
 CURSOR = string("next_cursor of the previous page, with the same target.", optional=True)
 
 
@@ -112,26 +128,31 @@ CURSOR = string("next_cursor of the previous page, with the same target.", optio
        "merges": boolean("List the merged areas over the rows. Default false.", optional=True),
        "sources": boolean("d: only: add each value's source cells (8, more counted); "
                           "for one value, all, paged.", optional=True),
-       "key_column": string("Column holding target's key (SKU for t:Products/SKU-0042); "
-                            "if describe gives no or several key_candidates.",
-                            optional=True),
+       "key": string("Column holding target's key (Code for t:Parts/BX-17) if "
+                     "several key_candidates; not one to read.", optional=True),
+       "columns": array(string(), "Only these columns of a t: target, in order.",
+                        optional=True),
        "limit": integer(f"Rows per page. Default 50, at most {READ_ROWS}.", minimum=1,
                         maximum=READ_ROWS, optional=True),
        "max_chars": integer("Characters per page. Default and at most 24000.",
                             minimum=MIN_CHARS, optional=True),
        "cursor": CURSOR},
-      group=CORE, datasets=("target",))
+      group=CORE, datasets=("target",), aliases=ALIASES)
 @handler
 def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = False,
               formulas: bool = False, comments: bool = False, hyperlinks: bool = False,
-              merges: bool = False, sources: bool = False, key_column: str | None = None,
-              limit: int | None = None, max_chars: int | None = None,
-              cursor: str | None = None) -> Result:
+              merges: bool = False, sources: bool = False, key: str | None = None,
+              columns: list[str] | None = None, limit: int | None = None,
+              max_chars: int | None = None, cursor: str | None = None) -> Result:
     """``xlsx_read``'s handler: a workbook's cells, or a dataset's values (see the
     module's notes)."""
     from .derive import read_dataset, workbook_of
 
     if isinstance(target, str) and target.startswith(DATASET_PREFIX):
+        if columns:
+            raise ToolError("invalid_arguments", "columns picks a t: target's columns; a "
+                            "dataset's column goes in target (d:by_region[total])",
+                            field="columns")
         return read_dataset(call, target, sources=bool(sources), limit=limit,
                             max_chars=max_chars, cursor=cursor)
     if sources:
@@ -140,7 +161,8 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
                         "each cell its own address (a), its source: read it without sources",
                         field="sources")
     workbook = workbook_of(call, doc)
-    found = _cells(workbook, target, key_column)
+    notes: list[str] = []
+    found = _cells(workbook, target, key, columns or None, notes)
     rows_limit = min(limit or call.limits.max_list_items, READ_ROWS)
     chars = min(max_chars or call.limits.max_result_chars, call.limits.max_result_chars)
     chars = max(chars, MIN_CHARS)
@@ -150,7 +172,9 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     if found.rows is not None:          # a key set: its rows, in its order
         total = len(found.rows)
         width = found.rows[0].last.column - found.rows[0].first.column + 1
-    start_row, start_column = _read_cursor(cursor, found.text, total, width)
+    if found.pick is not None:
+        width = len(found.pick)
+    start_row, start_column = _read_cursor(cursor, found.token, total, width)
 
     data: dict[str, Any] = {"target": found.text}
     if found.sheet is not None:
@@ -166,7 +190,8 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
             names_cut = len(found.columns)
     data["rows"] = []
     if area is None and not found.rows:
-        return Result(summary=f"{found.label}: no cells to read", data=data, total=0)
+        return Result(summary=f"{found.label}: no cells to read", data=data, total=0,
+                      warnings=notes)
 
     if found.rows is not None:
         pages = found.rows[start_row:start_row + rows_limit]
@@ -181,6 +206,10 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
         rows = workbook.read(RangeAddress(found.ref, pages[0]), formats=formats)
         more = bottom < area.last.row
         single = area.first == area.last
+    if found.pick is not None:          # the columns asked for, in their order
+        offsets = found.offsets(pages[0])
+        rows = ([row[o] for o in offsets] for row in rows)
+        single = len(found.pick) == 1 and total == 1
     annotate = _Annotations(workbook, found.sheets, comments=comments, hyperlinks=hyperlinks)
     # What lies over the page besides its cells, as wide as the page can be: its length is
     # kept out of the budget for the cells, and only shrinks once the page is known.
@@ -215,7 +244,7 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
             cut["cells"] = width - stop[1]
         if full:
             cut["chars"] = True
-        next_cursor = _cursor(found.text, *stop)
+        next_cursor = _cursor(found.token, *stop)
     if cut_text:
         cut["text"] = {"count": len(cut_text), "first": cut_text[:_FIRST]}
     if names_cut:
@@ -224,7 +253,8 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
         data["cut"] = cut
     summary = _summary(found.label, start_row + 1, start_row + len(shown), total,
                        next_cursor is not None)
-    return Result(summary=summary, data=data, total=total, next_cursor=next_cursor)
+    return Result(summary=summary, data=data, total=total, next_cursor=next_cursor,
+                  warnings=notes)
 
 
 def cleaned_count(addresses: list[str]) -> dict:
@@ -285,9 +315,16 @@ class _Found:
                  area: Area | None, requested: str | None = None,
                  columns: list[str] | None = None, label: str | None = None,
                  rows: list[Area] | None = None, region: Any = None,
-                 workbook: Any = None) -> None:
+                 workbook: Any = None, pick: list[int] | None = None,
+                 first_column: int = 0) -> None:
         self.rows = rows
         self.text = text
+        #: ``columns`` asked for: each one's place in its region (from 0), in their order;
+        #: ``first_column`` the region's first column, from which they count.
+        self.pick = pick
+        self.first_column = first_column
+        #: What a cursor belongs to: the address, and the columns asked for.
+        self.token = text if pick is None else f"{text}|{','.join(map(str, pick))}"
         self.label = label or text
         self.ref = ref
         self.sheet = sheet
@@ -302,6 +339,10 @@ class _Found:
             self.sheets = [workbook.sheet(part.sheet) for part in self.region.span.parts]
         else:
             self.sheets = [sheet_object]
+
+    def offsets(self, area: Area) -> list[int]:
+        """Where each column of :attr:`pick` is in a row read over ``area``."""
+        return [self.first_column + p - area.first.column for p in self.pick or ()]
 
     def located(self, area: Area | None) -> str | None:
         """``area`` as the sheets' range(s), as text."""
@@ -320,20 +361,41 @@ class _Found:
                 for a in areas for r in self.region.span.locate(a)]
 
 
-def _cells(workbook: Any, target: str, key_column: str | None) -> _Found:
+def _cells(workbook: Any, target: str, key: str | None, columns: list[str] | None,
+           notes: list[str]) -> _Found:
     address = parse_address(target)
     if isinstance(address, RefAddress):
         raise ToolError("not_found", f"no call has defined {address.text}", field="target")
-    if key_column is not None and not (isinstance(address, TableAddress)
-                                       and (address.key is not None
-                                            or address.keys is not None)):
-        raise ToolError("invalid_arguments", "key_column is for a row or value by key "
-                        "(t:Products/SKU-0042)", field="key_column")
+    if not isinstance(address, TableAddress):
+        for name, given in (("key", key), ("columns", columns)):
+            if given is not None:
+                raise ToolError("invalid_arguments", f"{name} is for a t: target: "
+                                + ("the column holding the key of a row by key "
+                                   "(t:Parts/BX-17)" if name == "key" else
+                                   "its columns to read; a range of cells names its own"),
+                                field=name)
+    pick = None
     if isinstance(address, TableAddress):
-        selection = workbook.resolve(address, key=key_column)
+        region = workbook.region(address)
+        if key is not None:
+            address, key, columns = _keyed(workbook, region, address, key, columns, notes)
+        if columns is not None:
+            wanted = ([address.column] if address.column is not None else []) + list(columns)
+            pick = list(dict.fromkeys(region.column_index(name) for name in wanted))
+            address = replace(address, column=None, any_column=False)
+        try:
+            selection = workbook.resolve(address, key=key)
+        except (NameNotFound, RegionError) as error:
+            if error.what != "key" if isinstance(error, NameNotFound) else \
+                    error.code != "no_key_column":
+                raise
+            raise _elsewhere(workbook, region, address, error) from None
         region = selection.region
+        columns = list(region.columns) if selection.column is None else [selection.column]
+        if pick is not None:
+            columns = [region.columns[p] for p in pick]
+        chosen = {"pick": pick, "first_column": region.area.first.column}
         if region.span is not None:      # a declared table over several sheets
-            columns = list(region.columns) if selection.column is None else [selection.column]
             label = selection.address
             if address.key is not None:
                 label = f"a {selection.kind} by key of {region.address.text}"
@@ -344,9 +406,8 @@ def _cells(workbook: Any, target: str, key_column: str | None) -> _Found:
             area = selection.range.area if selection.range is not None else None
             return _Found(selection.address, region.range.sheet, None, None, area,
                           columns=columns, label=label, rows=rows, region=region,
-                          workbook=workbook)
+                          workbook=workbook, **chosen)
         sheet = _sheet(workbook, workbook.sheet_of(region.range))
-        columns = list(region.columns) if selection.column is None else [selection.column]
         area = selection.range.area if selection.range is not None else None
         label = selection.address
         if address.key is not None:
@@ -356,7 +417,7 @@ def _cells(workbook: Any, target: str, key_column: str | None) -> _Found:
             label = f"{len(address.keys)} {selection.kind} by key of {region.address.text}"
             rows = [a.area for a in selection.areas]
         return _Found(selection.address, region.range.sheet, _forms(workbook, sheet), sheet,
-                      area, columns=columns, label=label, rows=rows)
+                      area, columns=columns, label=label, rows=rows, **chosen)
     sheet = _sheet(workbook, workbook.sheet_of(address))
     ref = SheetRef(name=sheet.name) if sheet.name else SheetRef(id=sheet.id)
     area = address.area
@@ -367,6 +428,97 @@ def _cells(workbook: Any, target: str, key_column: str | None) -> _Found:
         if area != address.area:
             requested = address.text
     return _Found(address.text, ref, _forms(workbook, sheet), sheet, area, requested)
+
+
+def _keyed(workbook: Any, region: Any, address: TableAddress, key: str,
+           columns: list[str] | None, notes: list[str]
+           ) -> tuple[TableAddress, str | None, list[str] | None]:
+    """``key`` as the column holding the key of ``address``'s row (or rows) by key; or,
+    where it cannot be that, what it was meant as, with a warning in ``notes`` (never the
+    key: cell content): a column to read (``t:Parts/BX-17`` with ``key: "Bin"``, or any
+    target with no row by key), or the row's key itself (``t:Parts`` with
+    ``key: "BX-17"``).  The address, key column and columns to read."""
+    whole = region.address.text
+    try:
+        named = region.columns[region.column_index(key)]
+    except NameNotFound:
+        named = None
+    by_key = address.key is not None or address.keys is not None
+    if named is None:
+        rowless = not (by_key or address.any_row) and address.position is None \
+            and address.row_range is None
+        row = replace(address, key=key)
+        holders = _holders(workbook, region, row) if rowless else []
+        if len(holders) == 1:
+            notes.append(f"key read as the key of the row to read: key is the column "
+                         f"holding it, and the row goes in target ({whole}/<key>)")
+            return row, holders[0], columns
+        options = workbook.key_columns(region) or list(region.columns)
+        raise ToolError("invalid_arguments", f"key is the column of {whole} holding the key "
+                        f"in target, one of valid_options; the row goes in target "
+                        f"({whole}/<key>), the columns to read in columns", field="key",
+                        valid_options=options[:50])
+    if not by_key:
+        notes.append(f"key read as a column to read: key is the column holding the key of "
+                     f"a row by key ({whole}/<key>); columns picks columns")
+        return address, None, _also(address, columns, named)
+    if _finds(workbook, address, named):
+        return address, named, columns
+    holders = _holders(workbook, region, address)
+    if len(holders) != 1:
+        return address, named, columns      # used as given: the lookup says what is wrong
+    notes.append(f"key read as a column to read: {named!r} does not hold target's key, "
+                 f"{holders[0]!r} does; key is the column holding it, columns picks columns")
+    return address, holders[0], _also(address, columns, named)
+
+
+def _also(address: TableAddress, columns: list[str] | None, name: str) -> list[str] | None:
+    """``columns`` with ``name``: only where columns are picked (by ``columns``, or by the
+    address's own); a whole row has it already."""
+    if columns is None and address.column is None:
+        return None
+    return [*(columns or []), name]
+
+
+def _holders(workbook: Any, region: Any, address: TableAddress) -> list[str]:
+    """The columns that can be ``address``'s key and hold every key it names: the
+    region's key column (declared, or the only one) alone when it has one, else each of
+    :meth:`~xlsx_agent.read.regions.Regions.key_columns` that does."""
+    try:
+        own = [workbook.regions.key_column(region)]
+    except RegionError:
+        own = workbook.key_columns(region)
+    return [c for c in own if _finds(workbook, address, c)]
+
+
+def _finds(workbook: Any, address: TableAddress, key: str) -> bool:
+    """Whether ``address``'s key (every key of a key set) is in column ``key``; a column
+    where it is twice (``duplicate_key``) holds it too, and is refused as that."""
+    try:
+        workbook.resolve(address, key=key)
+    except NameNotFound:
+        return False
+    except RegionError as error:
+        return error.code != "no_key"
+    return True
+
+
+def _elsewhere(workbook: Any, region: Any, address: TableAddress,
+               error: "NameNotFound | RegionError") -> ToolError:
+    """A key not found in the key column (or no one key column), as a tool error: the
+    columns that can be the key and hold it, when there are any, as ``valid_options`` for
+    ``key``; else the library's own."""
+    holding = _holders(workbook, region, address)
+    if not holding:
+        return tool_error(error)
+    held = f"{', '.join(map(repr, holding))} {'holds' if len(holding) == 1 else 'hold'}"
+    if isinstance(error, RegionError):
+        return ToolError("refused", f"{region.address.text} has no one key column "
+                         f"({len(error.valid_options)} can be); {held} target's key: give "
+                         "key", field="key", valid_options=holding,
+                         details={"code": error.code})
+    return ToolError("not_found", f"{error.message}; {held} it: give key", field="key",
+                     valid_options=holding, details={"what": "key"})
 
 
 def _sheet(workbook: Any, sheet: Any) -> Any:

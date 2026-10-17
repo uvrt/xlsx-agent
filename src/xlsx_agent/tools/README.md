@@ -141,7 +141,9 @@ derives from it again, and it outlives `close_document`. When the table has a ke
 (the one `describe` reports, or one the caller declares with `Workbook.declare_key` on the
 session's workbook), a value's sources are written by key, `t:Stock/{SKU-0001,SKU-0004}/Qty`:
 they name the same cells after a consultant inserts or sorts rows, where ranges would not.
-Without one they are ranges, as before. `xlsx_read` takes `*` for every row
+Without one they are ranges, as before. A row by key is a target (`t:Parts/BX-17`;
+`key` names its key column when several could be, `columns` picks its columns, in order).
+`xlsx_read` takes `*` for every row
 (`t:Stock/*/Price`) and key sets (`t:Stock/{SKU-0001,SKU-0004}/Price`, read in that
 order); `Workbook.expand` turns either into one address per cell, for a check that every
 required cell was used. A dataset whose workbook has

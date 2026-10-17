@@ -344,9 +344,10 @@ def test_cleaning_changes_no_tool_definition():
 
 
 #: The compact JSON length of the ``xlsx_*`` definitions before and after X6 (10,155),
-#: since X10 described xlsx_compare's summary (+41), and since T19 said what key_column,
-#: sources and xlsx_derive's sort name (+55).
-XLSX_CHARS = 10_251
+#: since X10 described xlsx_compare's summary (+41), since T19 said what key_column,
+#: sources and xlsx_derive's sort name (+55), and since L8 renamed xlsx_read's key_column
+#: key and added its columns (+97).
+XLSX_CHARS = 10_348
 
 
 def test_a_deck_table_from_a_cleaned_table_warns_in_the_tools_result():
