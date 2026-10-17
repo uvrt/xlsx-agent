@@ -161,7 +161,8 @@ def test_a_key_is_matched_exactly():
     wb = _open(inventory())
     with pytest.raises(NameNotFound) as caught:
         wb.resolve("t:Products/sku-0001/Price")
-    assert caught.value.what == "key" and caught.value.valid_options == []
+    assert caught.value.what == "key"           # never matched case aside, but offered
+    assert caught.value.valid_options == ["t:Products/#1"]       # by position, never by key
 
 
 def test_a_headerless_table_resolves_by_its_own_column_names():

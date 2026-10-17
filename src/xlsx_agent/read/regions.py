@@ -88,6 +88,7 @@ one address by key per cell (or per row).
 
 from __future__ import annotations
 
+import difflib
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Iterator, Sequence
@@ -1534,6 +1535,10 @@ class Regions:
         return self.key_index(region, key).find(wanted, k_th)
 
 
+#: The most keys :meth:`KeyIndex.near` compares a key not found with, beyond case and spaces.
+NEAR_KEYS = 50_000
+
+
 class KeyIndex:
     """A region's key column, read once: ``keys`` each data row's key by position (from
     0: row 1 is ``keys[0]``; ``None`` for a cell that is no key, :func:`key_text`),
@@ -1573,9 +1578,32 @@ class KeyIndex:
                               f"{which} in column {self.column!r}; name the row by its "
                               "position", address=whole.text, valid_options=options)
         if wanted not in self._first:
+            near = self.near(wanted)
+            like = "1 row has" if len(near) == 1 else f"{len(near)} rows have"
+            hint = (f"; {like} a key like it (case, spaces or a character apart): "
+                    "valid_options, by position" if near else "")
             raise NameNotFound(f"no row of {whole.text} has {which} in column "
-                               f"{self.column!r}", what="key", name=wanted)
+                               f"{self.column!r}{hint}", what="key", name=wanted,
+                               valid_options=[replace(whole, position=p).text for p in near])
         return self._first[wanted]
+
+    def __contains__(self, wanted: object) -> bool:
+        """Whether a row has the key ``wanted``."""
+        return wanted in self._first
+
+    def near(self, wanted: str, limit: int = 5) -> list[int]:
+        """The positions of the rows (at most ``limit``) whose key is like ``wanted`` but
+        not it: the same case and outer spaces aside first, then the closest by
+        :func:`difflib.get_close_matches` (in a column of at most :data:`NEAR_KEYS` keys).
+        Positions, never keys: a key is cell content, and a refusal carries none."""
+        folded = wanted.strip().casefold()
+        out = [p for k, p in self._first.items()
+               if k != wanted and k.strip().casefold() == folded]
+        if len(out) < limit and len(self._first) <= NEAR_KEYS:
+            for k in difflib.get_close_matches(wanted, list(self._first), n=limit, cutoff=0.8):
+                if k != wanted and self._first[k] not in out:
+                    out.append(self._first[k])
+        return sorted(out[:limit])
 
 
 class KeyFinder:
