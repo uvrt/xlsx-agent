@@ -59,6 +59,9 @@ workbooks are refused with the reason. A macro is never run.
 [TOOLS.md, "Roles"](https://github.com/uvrt/ooxml-edit/blob/main/docs/TOOLS.md)): a
 reviewer's toolbox, `Toolbox(..., roles=["review"])`, sends the same definitions, and in a
 toolbox with the deck or Word tools a reviewer keeps every workbook tool.
+Agents sharing one session (ooxml-edit 0.46.0) each work through a view of it,
+`session.view(roles=[...], context={...})`: the workbook and the datasets derived from it
+are the session's, so a deck builder's view uses the `d:` an analyst's view derived.
 
 **The user's locale.** How text that looks like a number or a date is read (numbers stored
 as text), and the language of the language-dependent built-in number formats, is the

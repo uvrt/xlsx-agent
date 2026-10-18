@@ -83,3 +83,24 @@ def test_a_reviewer_s_prompt_has_the_role_line_without_comments(box):
     assert "comment" not in prompt.split("Role: review.")[1]
     assert box.system_prompt() == box.system_prompt(roles=ROLES)
     assert "Role:" not in box.system_prompt()
+
+
+def test_two_agents_views_of_one_session_share_its_workbook_and_datasets(box):
+    """ooxml-edit 0.46.0 (round 8, M1): agents on one session, each through a view."""
+    session = box.session()                                  # every role
+    session.open(_book(), "stock.xlsx")
+    analyst = session.view(roles=["review"], context={"agent": "analyst-1"})
+    writer = session.view(roles=["edit"], context={"agent": "writer-1"})
+    derived = box.dispatch(analyst, "xlsx_derive", {
+        "doc": "d1", "from": "t:Lines", "measures": [{"fn": "sum", "column": "Qty"}],
+        "id": "stock"})
+    assert derived.ok and session.dataset_ids() == ["d:stock"]
+    # The dataset is the session's: every view sees it.
+    assert writer.dataset("d:stock") is analyst.dataset("d:stock")
+    refused = box.dispatch(writer, "xlsx_read", {"doc": "d1", "target": "t:Lines"})
+    assert refused.error.code == "refused" and refused.error.details == {
+        "role": "review", "roles": ["edit"]}
+    assert [record.context for record in session.log] == [{"agent": "analyst-1"},
+                                                          {"agent": "writer-1"}]
+    with pytest.raises(ValueError, match="never widens"):
+        writer.view(roles=["review"])
