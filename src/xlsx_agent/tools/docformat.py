@@ -105,6 +105,32 @@ t:Products (a column, a key set, rows #9:#16) or d:<id>, never retyped.
 #: and need no order yet (``describe`` has none).
 STRICT_FIRST: tuple[str, ...] = ()
 
+#: Tool names a model writes that ooxml-edit's reading of names (its tools' names, verbs
+#: and plurals read) does not settle, or settles wrongly -- the sheets are listed by
+#: ``describe``, not read (``DocumentFormat.tool_hints``; each key covers its spellings with
+#: another verb, a plural or no prefix).  Wording only.
+TOOL_HINTS = {
+    "xlsx_list_sheets": "describe",
+    "xlsx_list_tables": "describe",
+    "xlsx_open": "open_document",
+    "xlsx_find": "find_text",
+    "xlsx_search": "find_text",
+    "xlsx_filter": "xlsx_query",
+    "xlsx_find_rows": "xlsx_query",
+    "xlsx_lookup": "xlsx_query",
+    "xlsx_aggregate": "xlsx_derive",
+    "xlsx_pivot": "xlsx_derive",
+    "xlsx_group_by": "xlsx_derive",
+    "xlsx_summarize": "xlsx_derive",
+    "xlsx_sum": "xlsx_derive",
+    "xlsx_count": "xlsx_derive",
+    "xlsx_stats": "xlsx_profile",
+    "xlsx_column_stats": "xlsx_profile",
+    "xlsx_diff": "xlsx_compare",
+    "xlsx_validate": "xlsx_validate_data",
+    "xlsx_check_data": "xlsx_validate_data",
+}
+
 #: The tool error each :class:`~xlsx_agent.RegionError` code calls for.
 REGION_CODES: dict[str, str] = {
     "not_a_range": "refused",           # a defined name that is a formula or a constant
@@ -336,7 +362,7 @@ def workbook_format(*, grouping: bool = True, local_dates: bool = False,
         problems=problems,
         problem_key=problem_key, warnings=(KindMismatchWarning, CleanedWarning), prompt=PROMPT,
         errors=dict(ERRORS), summary=summary, strict_first=STRICT_FIRST,
-        datasets={"t:": resolve_table}, merge_sources=merge_sources)
+        datasets={"t:": resolve_table}, merge_sources=merge_sources, tool_hints=TOOL_HINTS)
 
 
 FORMAT = workbook_format()
