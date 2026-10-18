@@ -5,6 +5,14 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- What a name that is no workbook tool means (round 9, N5; ooxml-edit 0.47.0): "no tool
+  'xlsx_pivot': use xlsx_derive", with the best few tools in `valid_options` instead of
+  every one. ooxml-edit reads the tools' names; `TOOL_HINTS` (`FORMAT.tool_hints`) adds the
+  names it misses or settles wrongly: listing sheets or tables is `describe` (not
+  `xlsx_read`), filtering or looking up rows `xlsx_query`, pivoting, grouping or
+  aggregating `xlsx_derive`, statistics `xlsx_profile`, a diff `xlsx_compare`, validating
+  `xlsx_validate_data`. No workbook tool runs in a batch, so a batch op's comment (N4) does
+  not arise here. Data and tests only: definitions unchanged.
 - Agents sharing one session (round 8, M1; ooxml-edit 0.46.0): views of one session
   (`session.view(roles=..., context=...)`) share the workbook and its datasets, each held
   to its own roles. Tests and the tools README only: no workbook tool or definition

@@ -40,7 +40,8 @@ classifiers = [
 # 0.15.0 the shared locale (ooxml_common.locales.Locale), the reader's locale.  Neither is
 # on PyPI yet: install them first from sibling checkouts (`pip install -e ../ooxml-common
 # -e ../ooxml-edit`) or from GitHub.
-dependencies = ["lxml>=4.9", "ooxml-edit>=0.30.0", "ooxml-common>=0.15.0"]
+# ooxml-edit 0.47.0: DocumentFormat.tool_hints, which TOOL_HINTS fills (round 9, N5).
+dependencies = ["lxml>=4.9", "ooxml-edit>=0.47.0", "ooxml-common>=0.15.0"]
 
 [project.optional-dependencies]
 # pptx-agent (and pptx2svg, which its layout checks measure text with) for the tests only:

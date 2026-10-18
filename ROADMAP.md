@@ -1060,6 +1060,8 @@ reviewer's prompt gets the role line, without the sentence about comments (no wo
 tool places one). Tests: `tests/test_tools_roles.py`.
 Round 8, M1 (ooxml-edit 0.46.0): agents sharing one session each through a view of it
 (`Session.view`), roles narrowed per agent; the workbook and its datasets are shared.
+Round 9, N5 (ooxml-edit 0.47.0): a name that is no tool names the tool meant, the format's
+own `TOOL_HINTS` (`FORMAT.tool_hints`) for what ooxml-edit's reading of names misses.
 ### 0.2 — edit
 
 | # | Item | Effort | Done when |
