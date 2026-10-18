@@ -5,6 +5,10 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- Agents sharing one session (round 8, M1; ooxml-edit 0.46.0): views of one session
+  (`session.view(roles=..., context=...)`) share the workbook and its datasets, each held
+  to its own roles. Tests and the tools README only: no workbook tool or definition
+  changed.
 - Tool roles (round 7, item 9; ooxml-edit 0.45.0): every workbook tool is `review`'s, so a
   reviewer (`Toolbox(roles=["review"])`, `toolbox.session(roles=...)`; with `resolve` or
   `accept` alike: no workbook tool has comments or tracked changes) is sent the

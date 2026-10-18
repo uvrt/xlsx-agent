@@ -1058,6 +1058,8 @@ every definition 3,746 estimated; no strict tool), a set without `review` only t
 session's `open_document`, `close_document` and `read_blob`, every read refused. A
 reviewer's prompt gets the role line, without the sentence about comments (no workbook
 tool places one). Tests: `tests/test_tools_roles.py`.
+Round 8, M1 (ooxml-edit 0.46.0): agents sharing one session each through a view of it
+(`Session.view`), roles narrowed per agent; the workbook and its datasets are shared.
 ### 0.2 — edit
 
 | # | Item | Effort | Done when |
