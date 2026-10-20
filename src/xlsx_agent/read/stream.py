@@ -61,15 +61,20 @@ _DIMENSION, _HYPERLINK = _tags("dimension"), _tags("hyperlink")
 _R_ID = tuple(f"{{{ns}}}id" for ns in (
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
     "http://purl.oclc.org/ooxml/officeDocument/relationships"))
-_VALIDATION, _FORMULA1 = _tags("dataValidation"), _tags("formula1")
+_VALIDATION, _FORMULA1, _FORMULA2 = _tags("dataValidation"), _tags("formula1"), _tags("formula2")
 #: [MS-XLSX]'s namespaces of the x14 data-validation extension and of its ``xm:`` children.
 NS_X14 = "http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
 NS_XM = "http://schemas.microsoft.com/office/excel/2006/main"
 _X14_VALIDATION = frozenset({f"{{{NS_X14}}}dataValidation"})
 _X14_FORMULA1, _XM_F, _XM_SQREF = f"{{{NS_X14}}}formula1", f"{{{NS_XM}}}f", f"{{{NS_XM}}}sqref"
+_X14_FORMULA2 = f"{{{NS_X14}}}formula2"
+#: Conditional formats (ECMA-376 Part 1, §18.3.1.18 ``conditionalFormatting``), and the
+#: ``x14:conditionalFormatting`` of [MS-XLSX] in the worksheet's ``extLst``.
+_CONDITIONAL = _tags("conditionalFormatting")
+_X14_CONDITIONAL = frozenset({f"{{{NS_X14}}}conditionalFormatting"})
 _V, _F, _IS = _tags("v"), _tags("f"), _tags("is")
 _STREAMED = tuple(_ROW | _COL | _MERGE | _DIMENSION | _VALIDATION | _X14_VALIDATION
-                  | _HYPERLINK)
+                  | _HYPERLINK | _CONDITIONAL | _X14_CONDITIONAL)
 
 _REF = re.compile(r"\$?([A-Za-z]{1,3})\$?([0-9]{1,7})")
 _INTEGER = re.compile(r"[+-]?[0-9]+")
@@ -117,11 +122,32 @@ class Validation:
     ``"whole"``, ``"decimal"``...; ``"none"`` when the file gives none), ``areas`` the
     cells it covers (``sqref``; a reference that is not one is left out), ``formula1`` its
     first formula as text (a list's ``"Red,Green"`` literal, a range or a name), for a
-    program only."""
+    program only.  ``origin`` is ``"standard"`` (the worksheet's ``dataValidations``) or
+    ``"x14"`` (its ``extLst``); ``operator`` the ``operator`` attribute as written
+    (``None`` when absent: ECMA-376's default is ``between``), ``allow_blank`` its
+    ``allowBlank``, ``formula2`` its second formula (a ``between`` rule's upper bound), for
+    a program only; ``sqref`` the cells as written."""
 
     type: str
     areas: tuple[Area, ...]
     formula1: str | None = field(default=None, repr=False)
+    origin: str = "standard"
+    operator: str | None = None
+    allow_blank: bool = False
+    formula2: str | None = field(default=None, repr=False)
+    sqref: str = ""
+
+
+@dataclass(frozen=True)
+class ConditionalFormat:
+    """One conditional format (ECMA-376 Part 1, §18.3.1.18): ``sqref`` the cells as written,
+    ``origin`` ``"standard"`` or ``"x14"`` (the worksheet's ``extLst``), ``rules`` its
+    ``cfRule`` elements in priority order, each as ``(local name, attributes, text,
+    children)`` (:func:`_canonical`), for a program only: formulas are content."""
+
+    sqref: str
+    origin: str = "standard"
+    rules: tuple = field(default=(), repr=False)
 
 
 @dataclass(frozen=True)
@@ -318,6 +344,8 @@ class SheetReader:
         self.hidden_rows: set[int] = set()
         self.merges: list[Area] = []
         self.validations: list[Validation] = []
+        #: The conditional formats met, in the file's order (standard, then ``x14``).
+        self.conditional_formats: list[ConditionalFormat] = []
         #: The blocks of the array formulas met so far, and the sheet's hyperlinks.
         self.arrays: list[Area] = []
         self.hyperlinks: list[Hyperlink] = []
@@ -434,15 +462,21 @@ class SheetReader:
                     self.hyperlinks.append(Hyperlink(area, rel_id, node.get("location") or None))
             elif tag in _VALIDATION:
                 formula = next((child.text for child in node if child.tag in _FORMULA1), None)
-                self.validations.append(_validation(node.get("type"), node.get("sqref"), formula))
+                second = next((child.text for child in node if child.tag in _FORMULA2), None)
+                self.validations.append(_validation(node, node.get("sqref"), formula, second,
+                                                    "standard"))
+            elif tag in _CONDITIONAL or tag in _X14_CONDITIONAL:
+                self.conditional_formats.append(_conditional(node, tag in _X14_CONDITIONAL))
             elif tag in _X14_VALIDATION:
-                formula = sqref = None
+                formula = second = sqref = None
                 for child in node:
                     if child.tag == _X14_FORMULA1:
                         formula = next((f.text for f in child if f.tag == _XM_F), None)
+                    elif child.tag == _X14_FORMULA2:
+                        second = next((f.text for f in child if f.tag == _XM_F), None)
                     elif child.tag == _XM_SQREF:
                         sqref = child.text
-                self.validations.append(_validation(node.get("type"), sqref, formula))
+                self.validations.append(_validation(node, sqref, formula, second, "x14"))
 
     def column_hidden(self, column: int) -> bool:
         spans = self.hidden_columns
@@ -781,9 +815,49 @@ def _row(reader: SheetReader, row: int, left: int, width: int,
     return out
 
 
-def _validation(kind: str | None, sqref: str | None, formula: str | None) -> Validation:
+def _validation(node, sqref: str | None, formula: str | None, second: str | None,
+                origin: str) -> Validation:
     areas = tuple(area for area in map(_area, (sqref or "").split()) if area is not None)
-    return Validation((kind or "none").strip(), areas, formula)
+    operator = node.get("operator")
+    return Validation((node.get("type") or "none").strip(), areas, formula, origin=origin,
+                      operator=operator.strip() if operator else None,
+                      allow_blank=_true(node.get("allowBlank")), formula2=second,
+                      sqref=" ".join((sqref or "").split()))
+
+
+#: What a conditional format's rule is compared without: its place among the sheet's rules
+#: (``priority``, renumbered as rules come and go), the format it applies (``dxfId``, a
+#: style, and an ``x14`` rule's own ``dxf``) and the ids linking a rule to its ``x14``
+#: extension (``id``, ``extLst``).
+_CF_LEFT_OUT = ("priority", "dxfId", "id")
+_CF_CHILDREN_LEFT_OUT = ("extLst", "dxf")
+
+
+def _conditional(node, x14: bool) -> "ConditionalFormat":
+    sqref = node.get("sqref")
+    rules = []
+    for child in node:
+        if not isinstance(child.tag, str):
+            continue
+        local = child.tag.rpartition("}")[2]
+        if local == "sqref":
+            sqref = child.text
+        elif local == "cfRule":
+            rules.append((_int(child.get("priority")), _canonical(child)))
+    rules.sort(key=lambda rule: (rule[0] is None, rule[0] or 0))
+    return ConditionalFormat(" ".join((sqref or "").split()), "x14" if x14 else "standard",
+                             tuple(rule for _, rule in rules))
+
+
+def _canonical(node) -> tuple:
+    """An element as compared: ``(local name, attributes, text, children)``, the attributes
+    sorted (less :data:`_CF_LEFT_OUT`), the text stripped; a formula's (``formula``,
+    ``xm:f``) as written, for the comparer to normalise."""
+    attrs = tuple(sorted((key.rpartition("}")[2], value) for key, value in node.attrib.items()
+                         if key.rpartition("}")[2] not in _CF_LEFT_OUT))
+    children = tuple(_canonical(child) for child in node if isinstance(child.tag, str)
+                     and child.tag.rpartition("}")[2] not in _CF_CHILDREN_LEFT_OUT)
+    return (node.tag.rpartition("}")[2], attrs, (node.text or "").strip(), children)
 
 
 def _merge_spans(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:

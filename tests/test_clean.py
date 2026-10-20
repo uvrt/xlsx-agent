@@ -338,7 +338,7 @@ def test_cleaning_changes_no_tool_definition():
                        groups=GROUPS).definitions("anthropic", defer=False)
     assert cleaning == plain
     # this repository's own tools, character for character as main had them before X6
-    # (X10's, T19's, L8's and X3b's additions aside); the read tools
+    # (X10's, T19's, L8's, X3b's and X5's additions aside); the read tools
     # only (E3's xlsx_set_cells is new)
     own = [d for d in plain if d["name"].startswith("xlsx_") and d["name"] != "xlsx_set_cells"]
     assert len(json.dumps(own, separators=(",", ":"), ensure_ascii=False)) == XLSX_CHARS
@@ -348,8 +348,10 @@ def test_cleaning_changes_no_tool_definition():
 #: since X10 described xlsx_compare's summary (+41), since T19 said what key_column,
 #: sources and xlsx_derive's sort name (+55), and since L8 renamed xlsx_read's key_column
 #: key and added its columns (+97), and since X3b added xlsx_read's markdown (+97), and
+#: since X5 added xlsx_compare's cells and formula_text and xlsx_read's validations (+356),
+#: and since lane X's X6 named the structure xlsx_compare's cells compares (+49), and
 #: since round 10's O5 let xlsx_query take a dataset (+59: ``doc`` optional).
-XLSX_CHARS = 10_504
+XLSX_CHARS = 10_909
 
 
 def test_a_deck_table_from_a_cleaned_table_warns_in_the_tools_result():

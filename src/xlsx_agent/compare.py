@@ -73,6 +73,21 @@ characters, longer text cut with ``…``.  A row whose label cell is blank, not 
 hidden (on a hidden row or column) has none, and a column hidden from the model is no
 column, so never the label column.  Declarations name no label column of their own.
 
+**Cells by address** (X5, ``cells=True``): every cell of every sheet both workbooks have,
+by address, formulas by their text -- a formula changed, become a value, a value become a
+formula, a formula removed or added, even where the cached values agree -- the structural
+changes listed apart (X6: defined names, data validations, merges, conditional formats),
+and the changes a write policy does not allow (:mod:`xlsx_agent.integrity`,
+:attr:`Diff.cells`).  Tables are then compared only when ``tables`` names them.
+
+**Keys made by formulas.**  A key column whose cells hold formulas (an id made from the
+row's number) still pairs rows here, by the cached keys: a comparison is read-only, and a
+host may compare two versions of its own template.  Such a key moves with the rows -- a
+sort or a row moved gives the same key to another row -- so the table says so
+(:attr:`TableDiff.formula_key`, the tool's ``formula_key``) and the changes it pairs are
+only as good as the keys; the cell compare by address (``cells=True``) does not rest on
+them.  A write by key refuses such a column (:mod:`xlsx_agent.edit.keys`).
+
 **Content** (ROADMAP.md, "Design rules", 7).  Keys and values are cell content: they are in
 the :class:`Diff`, a result, and never in a message; errors name tables, columns and
 codes only.
@@ -88,6 +103,7 @@ from typing import TYPE_CHECKING, Any, Iterator, Mapping, Sequence
 from ooxml_edit.sheets import Area, Cell
 
 from .address import NameNotFound, RangeAddress, TableAddress, nearest
+from .integrity import CellsDiff, compare_cells
 from .profile import FIRST_ADDRESSES, Count
 from .read.regions import Region, RegionError, key_text
 from .read.types import Value
@@ -227,7 +243,9 @@ class TableDiff:
     order they are met (``changed`` and ``added`` in ``b``'s row order, ``removed`` in
     ``a``'s); ``compared`` the columns whose cells were compared, as ``b`` names them;
     ``label`` the column whose text names a row for a reader, as ``b`` names it (``None``
-    for a table without one: see the module's notes)."""
+    for a table without one: see the module's notes); ``formula_key`` a key cell holds a
+    formula in either workbook (the rows are paired by cached keys: see the module's
+    notes)."""
 
     a: str
     b: str
@@ -247,6 +265,7 @@ class TableDiff:
     changed: tuple[CellChange, ...] = ()
     compared: tuple[str, ...] = ()
     label: str | None = None
+    formula_key: bool = False
 
     def by_column(self) -> tuple[ColumnSummary, ...]:
         """Each compared column with a cell changed (:class:`ColumnSummary`), in ``b``'s
@@ -277,14 +296,20 @@ class Diff:
     tables: tuple[TableDiff, ...]
     tables_added: tuple[str, ...] = ()
     tables_removed: tuple[str, ...] = ()
+    cells: "CellsDiff | None" = None
 
     def totals(self) -> dict[str, int]:
-        """Every change counted by kind, over every table (zeros left out)."""
+        """Every change counted by kind, over every table, and with ``cells`` every cell
+        change by kind (:data:`~xlsx_agent.integrity.KINDS`) and every structural change
+        by kind (:data:`~xlsx_agent.integrity.STRUCTURE_KINDS`; zeros left out)."""
         out = {"sheets": len(self.sheets),
                "unmatched_tables": len(self.tables_added) + len(self.tables_removed)}
         for table in self.tables:
             for name, n in table.totals().items():
                 out[name] = out.get(name, 0) + n
+        if self.cells is not None:
+            out.update(self.cells.counts())
+            out.update(self.cells.structure_counts())
         return {name: n for name, n in out.items() if n}
 
     @property
@@ -296,17 +321,28 @@ class Diff:
 def compare(a: "Workbook", b: "Workbook", *,
             tables: "str | Sequence[str | tuple[str, str]] | None" = None,
             key: "str | Mapping[str, str] | None" = None,
-            columns: "Sequence[str] | None" = None) -> Diff:
-    """``a`` (the older) against ``b`` (the newer); see the module's notes."""
+            columns: "Sequence[str] | None" = None, cells: bool = False,
+            formula_text: bool = False, policy: Any = None) -> Diff:
+    """``a`` (the older) against ``b`` (the newer); see the module's notes.  ``cells``
+    adds every cell compared by address, formulas by their text (:attr:`Diff.cells`,
+    :mod:`xlsx_agent.integrity`), with ``formula_text`` their formulas, and the changes
+    outside ``policy`` (or ``a``'s own policies); tables are then compared only when
+    ``tables`` names them."""
     if isinstance(columns, str):
         columns = [columns]
-    pairs, added, removed = _pairs(a, b, tables)
+    if (formula_text or policy is not None) and not cells:
+        raise ValueError("formula_text and policy are for the cell compare: give cells=True")
     diffs = []
-    for region_a, region_b in pairs:
-        wanted = _key_for(key, region_a)
-        diffs.append(_table(a, b, region_a, region_b, wanted, columns))
+    added: list[str] = []
+    removed: list[str] = []
+    if not cells or tables is not None:
+        pairs, added, removed = _pairs(a, b, tables)
+        for region_a, region_b in pairs:
+            wanted = _key_for(key, region_a)
+            diffs.append(_table(a, b, region_a, region_b, wanted, columns))
+    by_cell = compare_cells(a, b, formula_text=formula_text, policy=policy) if cells else None
     return Diff(sheets=tuple(_sheets(a.sheets, b.sheets)), tables=tuple(diffs),
-                tables_added=tuple(added), tables_removed=tuple(removed))
+                tables_added=tuple(added), tables_removed=tuple(removed), cells=by_cell)
 
 
 # -- sheets ------------------------------------------------------------------------------------
@@ -444,8 +480,8 @@ def _table(a: "Workbook", b: "Workbook", old: Region, new: Region, key: str | No
 
     rows_old = _rows(a, old, read)
     rows_new = _rows(b, new, [by_old[o] for o in read])
-    keys_old, unkeyed_old = _keyed(rows_old, old)
-    keys_new, unkeyed_new = _keyed(rows_new, new)
+    keys_old, unkeyed_old, formulas_old = _keyed(rows_old, old)
+    keys_new, unkeyed_new, formulas_new = _keyed(rows_new, new)
     at_label = _label_column(read, keys_old, keys_new)
 
     duplicates = []
@@ -497,7 +533,8 @@ def _table(a: "Workbook", b: "Workbook", old: Region, new: Region, key: str | No
                      columns=tuple(column_changes), duplicates=tuple(duplicates),
                      unkeyed_a=unkeyed_old, unkeyed_b=unkeyed_new, added=tuple(added),
                      removed=tuple(removed), changed=tuple(changed), compared=tuple(titles),
-                     label=None if at_label is None else new.columns[by_old[read[at_label]]])
+                     label=None if at_label is None else new.columns[by_old[read[at_label]]],
+                     formula_key=formulas_old or formulas_new)
 
 
 def _label_column(read: list[int], *keyed: dict[str, list]) -> int | None:
@@ -590,13 +627,16 @@ def _kept(value: Value) -> _Kept:
 
 
 def _keyed(rows: Iterator[tuple[int, tuple[_Kept, ...]]], region: Region
-           ) -> tuple[dict[str, list], Count]:
-    """The rows by key, each key's rows in order; the rows without a key, counted."""
+           ) -> tuple[dict[str, list], Count, bool]:
+    """The rows by key, each key's rows in order; the rows without a key, counted; whether
+    a key cell holds a formula."""
     out: dict[str, list] = {}
     unkeyed = 0
     first: list[str] = []
+    formulas = False
     for position, cells in rows:
         v, t = cells[0][:2]
+        formulas = formulas or cells[0][3]
         text = key_text(Value("", 0, 0, v=v, t=t))
         if text is None:
             unkeyed += 1
@@ -604,7 +644,7 @@ def _keyed(rows: Iterator[tuple[int, tuple[_Kept, ...]]], region: Region
                 first.append(_at(region, position))
             continue
         out.setdefault(text, []).append((position, cells))
-    return out, Count(unkeyed, tuple(first))
+    return out, Count(unkeyed, tuple(first)), formulas
 
 
 def _same(one: _Kept, two: _Kept) -> bool:

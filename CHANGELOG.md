@@ -10,7 +10,69 @@ has the detail of every milestone.
   (`xlsx_agent.query.dataset_matches`) over the values as the dataset reports them, each
   with its `d:` address, paged as `xlsx_read` pages a dataset, `dataset` saying where it
   came from. The shared `undo`'s `scope` names a sheet (workbooks) beside a slide (decks).
-  Every definition 4,840 -> 4,859 estimated (guard 4,860); strict set unchanged.
+  Every definition 4,953 -> 4,971 estimated (guard 4,975); strict set unchanged.
+- **The contract's gaps closed** (lane X, X6; no ooxml-edit change). *Formula keys*: a
+  write by key, a new row or an allocation into a table whose key column holds a formula
+  in any data row is refused (`formula_key`: declare a key column of values the
+  application supplies); `compare` still pairs such rows by cached keys and says
+  `formula_key` on the table (and in `xlsx_compare`). *Explicit allocation*:
+  `set_cells(..., allocate={"t:stock/Lamp": 15})` names the free capacity row each new key
+  starts in; refused before any change, as `allocate[n]`: `no_capacity`, `capacity_full`,
+  `not_capacity`, `data_row`, `not_free` (a formula returning `""` too), `allocated_twice`,
+  `existing_key`, `capacity_gap` (the rows allocated continue the data rows, with the next
+  free row named). `new_rows=True` (the next free row) stays a Python convenience, refused
+  under a policy whose table entry lacks `new_rows` (`not_allocated`). `xlsx_set_cells`:
+  each cell's `row` allocates; `new_rows` is gone from the tool. *Structure in the
+  integrity compare*: `cells=True` also lists, apart from the cells
+  (`CellsDiff.structure`, `StructureChange`, `STRUCTURE_KINDS`), defined names, data
+  validations (standard and `x14` as one), merged areas and conditional formats added,
+  removed or changed, by name or `sqref` and rule, formulas normalised; bounded (counts,
+  first 50); formulas only with `formula_text`; every one outside a write policy
+  (`outside`'s `structure`) and counted in `Diff.totals`. The sheet reader keeps conditional
+  formats (`SheetReader.conditional_formats`) and the key index the key cells holding
+  formulas (`KeyIndex.formulas`). Definitions: `xlsx_set_cells` 533 -> 529, `xlsx_compare`
+  395 -> 409; the core 4,198 -> 4,212 (about 6,234 counted by the proxy); every definition
+  4,942 -> 4,953 (the guard 4,950 -> 4,960); the strict tool's complexity unchanged (13
+  optional parameters, 8 free strings).
+- **Formula-aware integrity compare** (lane X, X5; no ooxml-edit change).
+  `Workbook.compare(a, b, cells=True)` compares every cell of the sheets both workbooks
+  have by address (`Diff.cells`, `xlsx_agent.integrity`, `CellsDiff`, `CellEdit`):
+  `formula_changed`, `formula_to_literal`, `literal_to_formula`, `formula_removed`,
+  `formula_added`, `value_changed`, and `cache_changed` (the same formula, another cached
+  value: counted, never a write) -- a formula changed or turned into its own value is found
+  while the cached values agree. Formulas are compared normalised
+  (`xlsx_agent.formula.normalise`: names, functions, references and errors case aside,
+  ECMA-376 §18.17; whitespace dropped except the intersection operator; string literals
+  and structured references as written); a shared formula's member as its expanded text,
+  so a group written out cell by cell is no change; an array formula with its block.
+  Values as stored (shared, inline and `str` text alike), never through a redaction. With
+  `policy` (or `a`'s own write policies) the changes the policy does not allow are listed
+  (`outside`: an unwritable cell, a formula under `formulas: false`, a formula replaced
+  under `replace_formulas: false`; a sheet added, removed or renamed). `as_dict()` is
+  bounded as an edit report: counts, each kind's cells as ranges capped at 50; formula
+  text only with `formula_text=True`, withheld for a redacted formula or one reaching
+  hidden cells; nothing logged. Tables are compared too only when named.
+- **Validation inspection**: `Workbook.validations(sheet)` (`xlsx_agent.validations`,
+  `ValidationRule`): each rule `standard` or `x14`, its type, operator (`between` when
+  none is written), `allowBlank`, cells, and for a list its source -- `inline`, `range`,
+  `name` (followed through names that name names, local before workbook-wide), `table`
+  (a table column), `indirect`, `offset`, `formula`, `external` -- whether it resolves,
+  where its values are and how many; a dependent or dynamic list is reported unresolved
+  by address, with the references it uses, never evaluated. Formulas and values only on
+  request. The reader keeps each rule's operator, `allowBlank`, second formula and origin.
+  Rules (standard and `x14`) are tested byte for byte through unrelated edits and writes
+  into validated cells.
+- **A written value checked** (a warning, never a refusal): `Written.invalid` names the
+  cells written with a value a resolvable rule does not allow (a resolved list, case and
+  surrounding spaces aside; `whole`, `decimal`, `date`, `textLength` with number bounds or
+  a bound cell holding a number), `Written.unchecked` those under a rule that cannot be
+  read statically; `xlsx_set_cells` returns both and warns of the first.
+- **Tools**: `xlsx_compare` takes `cells` and `formula_text` (the session's write policy
+  is asked: `cells.outside`); `xlsx_read` takes `validations` (the rules over the target
+  as asked, before clipping to the used range, on the first page; their formulas with
+  `formulas`). Definitions: `xlsx_compare` 330 -> 395, `xlsx_read` 556 -> 593 estimated;
+  the core 4,096 -> 4,198 (about 6,213 counted by the proxy, under 6,500); every
+  definition 4,840 -> 4,942 (the guard 4,850 -> 4,950). No strict tool changed.
 - **Guarded writes** (lane X, X4; no ooxml-edit change). The host's write policy
   (`xlsx_agent.edit.policy`, `WritePolicy`, `PolicyError`): an immutable allowlist of
   `cells` (cells, ranges, whole sheets) and `tables` (a table's data cells by `columns`;

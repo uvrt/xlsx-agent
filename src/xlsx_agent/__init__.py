@@ -46,6 +46,8 @@ paged, keep figures as ``d:<id>``, compare workbooks and check them
     DatasetTable(ds).read("d:by_category/Hardware/average")   # [[DatasetValue(...)]]
     wb.derive(ds, measures=[{"fn": "max", "column": "average"}])   # cells carried through
     Workbook.compare(old, new, tables=["t:Products"], key="SKU")   # Diff, by key
+    Workbook.compare(before, after, cells=True, policy=policy).cells   # by address, formulas
+    wb.validations("Stock")                    # rules: standard/x14, list sources resolved
     wb.validate_data({"tables": [{"table": "t:Products", "key": ["SKU"], "columns": [
         {"name": "Price", "type": "number", "min": 0}]}]})   # problems by code and address
     wb.set_cells({"Stock!D10": 12, "Stock!H10": {"date": "2026-10-20"},
@@ -77,11 +79,14 @@ from .schema import CheckedTable, DataProblem, SchemaError, ValidationReport
 from .redact import RedactError, Redaction
 from .read import (Comment, DefinedName, Hyperlink, Locale, NumberFormat, Problem, Region,
                    RegionError, Selection, SheetScan, UnclearRegion, Value)
+from .integrity import CellEdit, CellsDiff
+from .validations import ValidationRule
 from .workbook import Sheet, Workbook
 
 __version__ = "0.1.0"
 
 __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellChange",
+           "CellEdit", "CellsDiff", "ValidationRule",
            "CheckedTable", "CleanedWarning", "Column", "DataProblem", "SchemaError", "ValidationReport",
            "ColumnChange", "Diff", "DuplicateKey", "RowChange", "SheetChange", "TableDiff",
            "ColumnStats", "Comment", "Count", "DatasetAddress", "DatasetSelection",

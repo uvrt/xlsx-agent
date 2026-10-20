@@ -454,6 +454,68 @@ which way" without paging through the differences. A date moves in days (`+7d`),
 as `+1:30`; text, booleans and lists count as changed only. A declared hidden column is
 not a column of its table, so it is never compared or named.
 
+### Every cell by address: the integrity compare (X5)
+
+A host that sends a template out and takes it back -- from a client's offline review, or
+an agent's step -- asks a stricter question than "which rows changed": did any formula
+change, or become a value, even where the cached values still agree, and did anything
+change outside what was allowed?
+
+```python
+before = Workbook.open("stock-sent.xlsx")
+after = Workbook.open("stock-returned.xlsx")
+diff = Workbook.compare(before, after, cells=True,
+                        policy={"cells": ["Stock!B4", "Stock!D10:E209"]})
+diff.cells.counts()        # {'formula_to_literal': 1, 'value_changed': 14, 'cache_changed': 3}
+diff.cells.ranges("formula_to_literal")   # ({'Stock': ['F12']}, 0, 1)
+[e.address for e in diff.cells.outside]  # ['Stock!F12']: a formula pasted over as its value
+diff.cells.as_dict()       # bounded: counts, each kind's cells as ranges (50 at most), outside
+```
+
+Formulas are compared as text, normalised: `=sum( stock!f10:f14 )` is `SUM(Stock!F10:F14)`,
+a string literal's case is not; a shared formula's member is compared as its own formula,
+so a group written out cell by cell is no change. `cache_changed` (the same formula,
+another cached value) is a recalculation, never outside a policy. `formula_text=True` puts
+each changed cell's formulas on the change; without it a change is its address and kind.
+`xlsx_compare` takes `cells` and `formula_text` and asks the session's write policy.
+
+The structure is compared too, and listed apart from the cells (X6): defined names (added,
+removed, another refers-to), data validations (standard and `x14` alike, by the cells they
+cover and their rule), merged areas and conditional formats (by their cells and rules; the
+format a rule applies is a style, not compared). Every structural change is outside any
+write policy, which lets cell values be written and nothing else:
+
+```python
+diff.cells.structure_counts()   # {'name_changed': 1, 'validation_removed': 1}
+[c.as_dict() for c in diff.cells.structure]
+# [{'kind': 'name_changed', 'at': 'Markup'},
+#  {'kind': 'validation_removed', 'at': 'Stock!H10:H200'}]   formulas only with formula_text
+diff.cells.as_dict()["outside"]   # {'count': 1, 'structure': 2}
+```
+
+A table compared by key whose key column holds formulas (an id made from the row's number)
+is still paired by the cached keys -- a comparison only reads -- and says `formula_key`:
+such keys move with the rows, so compare by address (`cells=True`) to be sure.
+
+## Data validations (X5)
+
+```python
+for rule in wb.validations("Orders"):
+    rule.as_dict()
+# {'sheet': 'Orders', 'origin': 'standard', 'type': 'list', 'allow_blank': True,
+#  'cells': 'B2:B50', 'source': 'name', 'resolved': True, 'name': 'Categories', 'range': 'Lists!A2:A5', 'count': 4}
+# {'sheet': 'Orders', 'origin': 'standard', 'type': 'list', 'allow_blank': True,
+#  'cells': 'A2:A50', 'source': 'indirect', 'resolved': False, 'reason': 'indirect', 'uses': ['$B2']}
+# {'sheet': 'Orders', 'origin': 'x14', 'type': 'whole', 'operator': 'between', ...}
+written = wb.set_cells({"Orders!C3": "XL"})
+written.invalid            # ('Orders!C3',): written, and named -- "XL" is not in the list
+```
+
+A list's values are read where they can be without evaluating anything (an inline list, a
+range, a defined name over one, a table column); a dependent or dynamic list (`INDIRECT`,
+`OFFSET`, a name over one) is reported unresolved by address. `xlsx_read`'s `validations`
+lists the rules over a target.
+
 ## Validate
 
 ```python
@@ -545,9 +607,11 @@ wb.undo(); wb.undo(); wb.cell("Totals!B1").cache    # 'cached_unverified' again
 - **Guards** (X4). The host says where the workbook may be written, once, at open
   (`policy=`: cells, ranges, whole sheets, a table's columns; `{"cells": []}` writes
   nothing), and may only narrow it; a protected sheet is never written; a value by key
-  is the row holding the key; a new row goes only into a declared table's empty
-  `capacity`; an expectation and the revision refuse a write made on a stale reading.
-  Everything is checked before anything changes:
+  is the row holding the key, and keys are values the application supplies (a key column
+  of formulas is refused, `formula_key`); a new row goes only into the free row of a
+  declared table's empty `capacity` that the host allocates to its key (X6, `allocate`); an
+  expectation and the revision refuse a write made on a stale reading. Everything is
+  checked before anything changes:
 
 ```python
 wb = Workbook.open(data, policy={
@@ -558,7 +622,11 @@ wb.declare_tables([{"name": "stock", "sheets": "Stock", "header_row": 9, "key": 
                     "capacity": 200}])                  # rows 10 to 209 are the table's
 wb.set_cells({"t:stock/Kettle/Quantity": 4})          # Stock!D12, wherever Kettle's row is
 wb.set_cells({"t:stock/Lamp/Quantity": 2, "t:stock/Lamp/Category": "Hardware"},
-             new_rows=True).new_rows                  # ('Stock!B15',): the first free row
+             allocate={"t:stock/Lamp": 15}).new_rows  # ('Stock!B15',): the row allocated
+wb.set_cells({"t:stock/Fan/Quantity": 1}, allocate={"t:stock/Fan": 17})
+# EditError capacity_gap (allocate[0]): the next free row is 16 -- no blank row between
+wb.set_cells({"t:stock/Fan/Quantity": 1}, new_rows=True)   # the next free row: a
+# convenience, allowed only where the policy's table entry says new_rows
 wb.set_cells({"Stock!B4": {"value": "Ann", "expect": {"type": "empty"}},
               "t:stock/Mug/Quantity": {"value": 17, "expect": {"value": 18}}},
              revision=wb.version)

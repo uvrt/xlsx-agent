@@ -21,7 +21,9 @@ by the sheet's id).  ``tables``: a table, declared table or region by name (``st
 header) -- on every sheet it spans, as its rows are when the call is made (a table with a
 ``capacity`` grows: :mod:`xlsx_agent.declare`); never its header or totals rows.
 ``new_rows: true`` also lets a new row by key be written into its capacity (its key column
-and ``columns``' cells there); without it, a policy never lets one be.  A cell is writable
+and ``columns``' cells there), and lets ``new_rows=True`` give a new key the next free row;
+without it, a policy lets a new row be written only into capacity rows its ``cells`` cover,
+each allocated by the host (``allocate``: :mod:`xlsx_agent.edit.keys`).  A cell is writable
 when a destination covers it; a policy with no destination (``WritePolicy.read_only()``,
 ``{"cells": []}``) lets nothing be written.
 
