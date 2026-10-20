@@ -58,7 +58,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
-from ooxml_edit.tools import CORE, Result, ToolError, array, string, tool
+from ooxml_edit.tools import CORE, Result, ToolError, array, boolean, string, tool
 
 from ..address import TableAddress, parse_address
 from ..compare import Diff, compare
@@ -87,12 +87,16 @@ KEYS_SHOWN = 10
        "key": string("Key column. Default the declared or only key column in both.",
                      optional=True),
        "columns": array(string(), "Compare only these columns' cells.", optional=True),
+       "cells": boolean("Every cell by address instead: formulas by text, even if values "
+                        "match; changes outside the write policy.", optional=True),
+       "formula_text": boolean("With cells: formulas' text.", optional=True),
        "cursor": CURSOR},
       group=CORE, kind=KIND, documents=("a", "b"))
 @handler
 def xlsx_compare(call: Any, a: str, b: str, tables: list[str] | None = None,
                  table_b: str | None = None, key: str | None = None,
-                 columns: list[str] | None = None, cursor: str | None = None) -> Result:
+                 columns: list[str] | None = None, cells: bool = False,
+                 formula_text: bool = False, cursor: str | None = None) -> Result:
     """``xlsx_compare``'s workbook handler (see the module's notes)."""
     old = call.document
     entry = call.entries.get(b)
@@ -107,12 +111,16 @@ def xlsx_compare(call: Any, a: str, b: str, tables: list[str] | None = None,
             raise ToolError("invalid_arguments", "table_b is b's name for the one table in "
                             "tables", field="table_b")
         _whole(table_b, "table_b")
+    if formula_text and not cells:
+        raise ToolError("invalid_arguments", "formula_text lists the formulas of the cell "
+                        "compare: give cells too", field="formula_text")
     pairs = None if not tables else \
         ([(tables[0], table_b)] if table_b is not None else list(dict.fromkeys(tables)))
     # A cursor belongs to one comparison: the two documents as they are, and the arguments.
     versions = [call.entry.version, entry.version]
-    ident = json.dumps(["compare", a, b, versions, pairs, key, columns], ensure_ascii=False)
-    diff = _diff(old, new, ident, pairs, key, columns)
+    ident = json.dumps(["compare", a, b, versions, pairs, key, columns, bool(cells),
+                        bool(formula_text)], ensure_ascii=False)
+    diff = _diff(old, new, ident, pairs, key, columns, bool(cells), bool(formula_text))
 
     items = list(_items(diff))
     total = len(items)
@@ -125,6 +133,8 @@ def xlsx_compare(call: Any, a: str, b: str, tables: list[str] | None = None,
     data["tables"] = shown_tables
     unsummed = _summaries(shown_tables, diff.tables, chars // 2, limit) if start == 0 else 0
     data["totals"] = totals
+    if diff.cells is not None and start == 0:
+        data["cells"] = diff.cells.as_dict()
     data["differences"] = []
     summary_room = len(_summary(a, b, diff, totals, 1, total, total, True))
     budget = chars - _MARGIN - _size({**data, "cut": _CUT_ROOM}) - summary_room
@@ -173,12 +183,13 @@ def _whole(name: str, field: str) -> None:
 
 
 def _diff(old: Any, new: Any, ident: str, pairs: Any, key: str | None,
-          columns: list[str] | None) -> Diff:
+          columns: list[str] | None, cells: bool = False, formula_text: bool = False) -> Diff:
     """The comparison, kept with the older workbook's last queries for its next pages."""
     kept = old._queries
     found = kept.get(ident)
     if found is None:
-        found = compare(old, new, tables=pairs, key=key, columns=columns)
+        found = compare(old, new, tables=pairs, key=key, columns=columns, cells=cells,
+                        formula_text=formula_text)
         kept[ident] = found
         while len(kept) > KEPT:
             kept.popitem(last=False)
@@ -271,6 +282,10 @@ def _items(diff: Diff):
             yield lambda cap, cells, row=row, where=where: _row(where, row, cap, cells)
         for change in table.changed:
             yield lambda cap, cells, change=change, where=where: _cell_change(where, change, cap)
+    if diff.cells is not None and diff.cells.formula_text:
+        for edit in diff.cells.edits:
+            if edit.a is not None or edit.b is not None or edit.withheld:
+                yield lambda cap, cells, edit=edit: _formula(edit, cap)
 
 
 def _drop(data: dict, name: str) -> dict:
@@ -344,6 +359,25 @@ def _cell_change(where: str, change: Any, cap: int) -> tuple[dict, int]:
     return out, cut
 
 
+def _formula(edit: Any, cap: int) -> tuple[dict, int]:
+    """A cell of the cell compare with its formulas (``formula_text``): its address, kind,
+    and each side's formula, cut at ``cap`` characters with its length."""
+    out: dict[str, Any] = {"formula": edit.kind, "at": edit.address}
+    cut = 0
+    if edit.withheld:
+        out["withheld"] = True
+    for side in ("a", "b"):
+        text = getattr(edit, side)
+        if text is None:
+            continue
+        shown, n = _text(text, cap)
+        out[side] = shown
+        if n:
+            out[f"{side}_length"] = len(text)
+        cut += n
+    return out, cut
+
+
 def _fit(item: Item, room: int) -> tuple[dict, int]:
     """A page's first difference, too big for the page as it is: its text cut, then a row's
     cells, until it fits ``room`` characters."""
@@ -368,10 +402,17 @@ _CUT_ROOM = {"differences": 10 ** 9, "chars": True, "text": 10 ** 6, "tables": 1
 def _summary(a: str, b: str, diff: Diff, totals: dict[str, int], first: int, last: int,
              total: int, more: bool) -> str:
     text = f"{a} and {b}: {len(diff.tables)} tables compared"
-    if not total:
+    if diff.cells is not None:
+        text += f", cells of {len(diff.cells.sheets)} sheets"
+        if diff.cells.outside is not None:
+            text += f" ({len(diff.cells.outside)} outside the write policy)"
+    if not totals:
         return text + "; no differences"
     counts = ", ".join(f"{n} {name.replace('_', ' ')}" for name, n in totals.items())
-    text += f"; {counts}; differences {first}-{last} of {total}"
+    text += f"; {counts}"
+    if not total:
+        return text
+    text += f"; differences {first}-{last} of {total}"
     return text + "; more with next_cursor" if more else text
 
 

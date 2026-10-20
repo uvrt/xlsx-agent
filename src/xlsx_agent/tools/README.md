@@ -249,6 +249,23 @@ answer cites the same cell after rows are inserted or sorted, and carries its ro
 key. The summary is on the first page; the differences page as before. A column the
 application declared hidden is never compared, named or used as the label.
 
+`cells: true` (X5) compares every cell by address instead -- tables too only when named --
+formulas by their normalised text, so a formula changed or pasted over as its own value is
+found even where the cached values agree: `cells` on the first page gives the counts per
+kind (`formula_changed`, `formula_to_literal`, `literal_to_formula`, `formula_removed`,
+`formula_added`, `value_changed`, `cache_changed`), each kind's cells as ranges (50 at
+most) and, when the session has a write policy (`xlsx_agent.tools.policy`), `outside`: the
+changes it does not allow. `formula_text: true` pages each changed formula's text as a
+difference (`{"formula": "formula_changed", "at": "Stock!I10", "a": ..., "b": ...}`).
+
+**Data validations.** `xlsx_read`'s `validations: true` lists the rules over the target
+(the range as asked, not clipped to the used range, since input cells are often empty), on
+its first page: `origin` (`standard` or `x14`), `type`, `operator`, `cells`, and for a list
+its `source` and whether it `resolved` (`range`, `count`, or the `reason` it did not:
+`indirect`, `offset`, `unknown_name`...); the formulas only with `formulas`.
+`xlsx_set_cells` names the cells written with a value a resolvable rule does not allow
+(`invalid`, with a warning) and those under a rule it cannot check (`unchecked`).
+
 ### Workbook tables into slides and documents
 
 A deck or document tool that takes its rows from a source takes a workbook's table, or a

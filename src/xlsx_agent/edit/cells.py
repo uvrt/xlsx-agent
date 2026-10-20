@@ -162,8 +162,11 @@ class Written:
     or ``formula``), the shared formula groups handed on (``released``: the old masters'
     addresses), the cells whose text has line breaks in a row of a fixed height
     (``fixed_height``: lines past it hidden in Excel), the key cells of the new rows
-    started in a table's capacity (``new_rows``), and the workbook's calculation status
-    after (``invalidated`` once anything was written).  Never a value."""
+    started in a table's capacity (``new_rows``), the cells whose value their data
+    validation does not allow (``invalid``) and those under a rule that cannot be checked
+    without evaluating it (``unchecked``; :func:`xlsx_agent.validations.check`: warnings,
+    never refusals), and the workbook's calculation status after (``invalidated`` once
+    anything was written).  Never a value."""
 
     cells: tuple[str, ...]
     changed: int
@@ -172,6 +175,8 @@ class Written:
     calculation: str = "cached_unverified"
     fixed_height: tuple[str, ...] = ()
     new_rows: tuple[str, ...] = ()
+    invalid: tuple[str, ...] = ()
+    unchecked: tuple[str, ...] = ()
 
     def as_dict(self, limit: int = MAX_LISTED) -> dict[str, Any]:
         """As plain data, at most ``limit`` cells listed (the rest counted)."""
@@ -186,6 +191,12 @@ class Written:
             out["fixed_height"] = list(self.fixed_height[:limit])
         if self.new_rows:
             out["new_rows"] = list(self.new_rows[:limit])
+        for name in ("invalid", "unchecked"):
+            found = getattr(self, name)
+            if found:
+                out[name] = list(found[:limit])
+                if len(found) > limit:
+                    out[f"{name}_cut"] = len(found) - limit
         out["calculation"] = self.calculation
         return out
 
@@ -246,10 +257,41 @@ def set_cells(workbook: Any, cells: Any, *, replace_formulas: bool = False,
     fixed = tuple(w.address for w in planned
                   if w.wrap and editor.cells.sheet(w.sheet.stored_name).custom_height(w.cell.row))
     rows = tuple(dict.fromkeys(w.address for w in planned if w.new_row))
+    try:
+        invalid, unchecked = _checked(workbook, planned)
+    except Exception:  # noqa: BLE001 -- advisory: a rule that cannot be read fails no write
+        invalid, unchecked = (), tuple(w.address for w in planned)
     return Written(cells=tuple(w.address for w in planned), changed=changed,
                    old={w.address: w.old for w in planned}, released=tuple(released),
                    calculation=workbook.calculation_status, fixed_height=fixed,
-                   new_rows=rows)
+                   new_rows=rows, invalid=invalid, unchecked=unchecked)
+
+
+def _checked(workbook: Any, planned: "list[Planned]") -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The cells written whose data validation does not allow the value, and those whose
+    rule cannot be checked statically (:func:`xlsx_agent.validations.check`)."""
+    from ooxml_edit.sheets import date_serial
+
+    from ..validations import check
+
+    rules: dict[str, list] = {}
+    invalid: list[str] = []
+    unchecked: list[str] = []
+    memo: dict = {}
+    for write in planned:
+        part = write.sheet.part
+        if part not in rules:
+            rules[part] = workbook.validations(write.sheet)
+        if not rules[part]:
+            continue
+        serial = date_serial(write.value, date1904=workbook.date1904) \
+            if write.kind == "date" else None
+        found = check(workbook, rules[part], write.cell, write.kind, write.value, serial, memo)
+        if found == "invalid":
+            invalid.append(write.address)
+        elif found == "unchecked":
+            unchecked.append(write.address)
+    return tuple(invalid), tuple(unchecked)
 
 
 def _translate(text: str, rows: int, columns: int) -> str:

@@ -61,12 +61,13 @@ _DIMENSION, _HYPERLINK = _tags("dimension"), _tags("hyperlink")
 _R_ID = tuple(f"{{{ns}}}id" for ns in (
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
     "http://purl.oclc.org/ooxml/officeDocument/relationships"))
-_VALIDATION, _FORMULA1 = _tags("dataValidation"), _tags("formula1")
+_VALIDATION, _FORMULA1, _FORMULA2 = _tags("dataValidation"), _tags("formula1"), _tags("formula2")
 #: [MS-XLSX]'s namespaces of the x14 data-validation extension and of its ``xm:`` children.
 NS_X14 = "http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
 NS_XM = "http://schemas.microsoft.com/office/excel/2006/main"
 _X14_VALIDATION = frozenset({f"{{{NS_X14}}}dataValidation"})
 _X14_FORMULA1, _XM_F, _XM_SQREF = f"{{{NS_X14}}}formula1", f"{{{NS_XM}}}f", f"{{{NS_XM}}}sqref"
+_X14_FORMULA2 = f"{{{NS_X14}}}formula2"
 _V, _F, _IS = _tags("v"), _tags("f"), _tags("is")
 _STREAMED = tuple(_ROW | _COL | _MERGE | _DIMENSION | _VALIDATION | _X14_VALIDATION
                   | _HYPERLINK)
@@ -117,11 +118,20 @@ class Validation:
     ``"whole"``, ``"decimal"``...; ``"none"`` when the file gives none), ``areas`` the
     cells it covers (``sqref``; a reference that is not one is left out), ``formula1`` its
     first formula as text (a list's ``"Red,Green"`` literal, a range or a name), for a
-    program only."""
+    program only.  ``origin`` is ``"standard"`` (the worksheet's ``dataValidations``) or
+    ``"x14"`` (its ``extLst``); ``operator`` the ``operator`` attribute as written
+    (``None`` when absent: ECMA-376's default is ``between``), ``allow_blank`` its
+    ``allowBlank``, ``formula2`` its second formula (a ``between`` rule's upper bound), for
+    a program only; ``sqref`` the cells as written."""
 
     type: str
     areas: tuple[Area, ...]
     formula1: str | None = field(default=None, repr=False)
+    origin: str = "standard"
+    operator: str | None = None
+    allow_blank: bool = False
+    formula2: str | None = field(default=None, repr=False)
+    sqref: str = ""
 
 
 @dataclass(frozen=True)
@@ -434,15 +444,19 @@ class SheetReader:
                     self.hyperlinks.append(Hyperlink(area, rel_id, node.get("location") or None))
             elif tag in _VALIDATION:
                 formula = next((child.text for child in node if child.tag in _FORMULA1), None)
-                self.validations.append(_validation(node.get("type"), node.get("sqref"), formula))
+                second = next((child.text for child in node if child.tag in _FORMULA2), None)
+                self.validations.append(_validation(node, node.get("sqref"), formula, second,
+                                                    "standard"))
             elif tag in _X14_VALIDATION:
-                formula = sqref = None
+                formula = second = sqref = None
                 for child in node:
                     if child.tag == _X14_FORMULA1:
                         formula = next((f.text for f in child if f.tag == _XM_F), None)
+                    elif child.tag == _X14_FORMULA2:
+                        second = next((f.text for f in child if f.tag == _XM_F), None)
                     elif child.tag == _XM_SQREF:
                         sqref = child.text
-                self.validations.append(_validation(node.get("type"), sqref, formula))
+                self.validations.append(_validation(node, sqref, formula, second, "x14"))
 
     def column_hidden(self, column: int) -> bool:
         spans = self.hidden_columns
@@ -781,9 +795,14 @@ def _row(reader: SheetReader, row: int, left: int, width: int,
     return out
 
 
-def _validation(kind: str | None, sqref: str | None, formula: str | None) -> Validation:
+def _validation(node, sqref: str | None, formula: str | None, second: str | None,
+                origin: str) -> Validation:
     areas = tuple(area for area in map(_area, (sqref or "").split()) if area is not None)
-    return Validation((kind or "none").strip(), areas, formula)
+    operator = node.get("operator")
+    return Validation((node.get("type") or "none").strip(), areas, formula, origin=origin,
+                      operator=operator.strip() if operator else None,
+                      allow_blank=_true(node.get("allowBlank")), formula2=second,
+                      sqref=" ".join((sqref or "").split()))
 
 
 def _merge_spans(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:

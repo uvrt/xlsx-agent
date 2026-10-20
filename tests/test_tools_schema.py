@@ -52,6 +52,10 @@ X4 (guards): ``xlsx_set_cells``' address by key, each cell's ``expect`` (a type)
 -> 533 (deferred: the core unchanged, 4,096); every definition 4,686 -> 4,840, the guard
 4,690 -> 4,850.  (A first form with ``expect`` an object of typed fields, 553, was refused
 online as too complex for strict mode: see the strict complexity proxy below.)
+X5 (integrity compare, validation inspection): ``xlsx_compare``'s ``cells`` and
+``formula_text`` (330 -> 395) and ``xlsx_read``'s ``validations`` (556 -> 593): the core
+4,096 -> 4,198 estimated, about 6,062 -> 6,213 counted by the proxy, under 6,500; every
+definition 4,840 -> 4,942, the guard 4,850 -> 4,950.  No strict tool changed.
 """
 
 from __future__ import annotations
@@ -70,7 +74,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
-ALL_GUARD = 4850
+ALL_GUARD = 4950
 
 
 @pytest.fixture(scope="module")

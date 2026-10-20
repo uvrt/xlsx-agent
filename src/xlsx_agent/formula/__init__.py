@@ -22,6 +22,19 @@ and errors.  A reference that would move off the grid, and text the lexer cannot
 an unclosed string, quote or bracket -- are refused (:class:`ShiftError`), never guessed:
 the caller's edit is then refused before anything changes.
 
+**What is the same formula** (:func:`normalise`, X5's formula-aware compare): two texts
+that differ only where the grammar gives them no meaning are one formula.  Case: defined
+names "are not case-sensitive" (ECMA-376 Part 1, §18.17, "Names"), nor are function names,
+error literals, column letters and sheet names as this lexer reads them (``column_index``
+reads letters case aside, :data:`ERRORS` are matched case aside, sheets are matched case
+aside as Excel matches them), so those tokens are compared in capitals; string literals,
+structured references and whatever the lexer leaves as it is keep their case.  Whitespace:
+outside a string literal, a space between two operands is the intersection operator
+(``A1:B5 B2:C3``, the space operator of §18.17's grammar) and is kept, as one space; any
+other run of spaces, tabs and line breaks -- around an operator, a parenthesis or a comma
+-- only separates tokens and is dropped.  A leading ``=`` is not part of what a cell stores
+(§18.17).  Text the lexer cannot read is compared exactly.
+
 This is the subset E3's shared-formula split needs; E2 adds renaming sheets in references
 and the rest of the grammar on this lexer.
 """
@@ -356,4 +369,48 @@ def is_external(text: str, names: "frozenset[str] | set[str]" = frozenset()) -> 
     return False
 
 
-__all__ = ["ERRORS", "KINDS", "ShiftError", "Token", "is_external", "shift", "tokens"]
+# -- the same formula ---------------------------------------------------------------------------
+
+#: The whitespace a formula's text may hold between tokens.
+_SPACES = frozenset(" \t\r\n\xa0")
+#: Tokens compared in capitals (see the module's notes).
+_CASELESS = ("ref", "name", "function", "error", "number")
+#: Tokens an operand ends or starts with: a space between two is the intersection operator.
+_OPERAND = ("ref", "name", "structured", "number", "string", "error")
+
+
+def normalise(text: str) -> str:
+    """``text`` (a formula, with or without its ``=``) as it is compared (see the module's
+    notes): the case and whitespace the grammar gives no meaning left out.  Text the lexer
+    cannot read is given back as it is, less its ``=``."""
+    body = text[1:] if text.startswith("=") else text
+    try:
+        found = tokens(body)
+    except ShiftError:
+        return body
+    out: list[str] = []
+    last: Token | None = None
+    space = False
+    for token in found:
+        if token.kind == "other" and token.text in _SPACES:
+            space = True
+            continue
+        if space and last is not None and _ends_operand(last) and _starts_operand(token):
+            out.append(" ")
+        space = False
+        out.append(token.text.upper() if token.kind in _CASELESS else token.text)
+        last = token
+    return "".join(out)
+
+
+def _ends_operand(token: Token) -> bool:
+    return token.kind in _OPERAND or (token.kind == "other" and token.text in (")", "}"))
+
+
+def _starts_operand(token: Token) -> bool:
+    return token.kind in _OPERAND or token.kind == "function" \
+        or (token.kind == "other" and token.text in ("(", "{"))
+
+
+__all__ = ["ERRORS", "KINDS", "ShiftError", "Token", "is_external", "normalise", "shift",
+           "tokens"]

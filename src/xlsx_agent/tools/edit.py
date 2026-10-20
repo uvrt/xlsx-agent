@@ -146,6 +146,10 @@ def xlsx_set_cells(call: Any, doc: str, cells: list[dict],
         warnings.append(f"{len(written.fixed_height)} cell(s) with line breaks are in rows of "
                         "a fixed height (fixed_height): Excel keeps the height, so lines past "
                         "it are hidden until the row is fitted")
+    if written.invalid:
+        warnings.append(f"{len(written.invalid)} cell(s) now hold a value their data "
+                        "validation does not allow (invalid): written as asked; Excel marks "
+                        "such cells only when asked to circle invalid data")
     return Result(summary=summary, data=data, changed=[doc] if written.changed else [],
                   warnings=warnings)
 

@@ -21,6 +21,12 @@ its price (``B4``, ``[1]Prices!$B$2*2``); ``Shop(calc="manual")`` saves it with 
 calculation, ``Shop(calc="full")`` asking for a full recalculation on load;
 ``Shop(protected=True)`` protects the ``Totals`` sheet (``sheetProtection``), and
 ``Shop(locked=True)`` locks the workbook's structure (``workbookProtection``).
+``Shop(orders=True)`` adds an ``Orders`` sheet (``sheetId`` 4) of input rows under data
+validations of every kind of source (X5): a list through a defined name (``Categories``),
+an inline list, a dependent list (``INDIRECT``), a list through a name whose formula is
+``OFFSET`` (``Shelves``), a list from a table column (with ``table``), an ``x14`` list on
+another sheet and an ``x14`` whole-number rule between two bounds, a decimal, a date after
+``TODAY()``, a text length, a custom rule and a list of an unknown name.
 """
 
 from __future__ import annotations
@@ -53,6 +59,8 @@ ITEMS = [
 ]
 CATEGORIES = [("Stationery", 0.06), ("Kitchen", 0.21), ("Hardware", 0.21), ("Garden", 0.21)]
 FIRST_INPUT = 10  # headers on row 9
+#: The last input row of the ``Orders`` sheet (``orders=True``), its rules' last row.
+ORDER_ROWS = 50
 
 
 @dataclass
@@ -67,6 +75,7 @@ class Shop:
     calc: str | None = None
     protected: bool = False
     locked: bool = False
+    orders: bool = False
 
     # -- strings ---------------------------------------------------------------------------
 
@@ -227,6 +236,55 @@ class Shop:
                 + '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" '
                 'footer="0.3"/></worksheet>')
 
+    def orders_sheet(self) -> str:
+        headers = ["Item", "Category", "Size", "Quantity", "Due", "Note", "Shelf", "Rate",
+                   "Code", "Bin"]
+        cells = "".join(self._text(f"{chr(65 + i)}1", h, 4) for i, h in enumerate(headers))
+        rows = [f'<row r="1">{cells}</row>',
+                f'<row r="2">{self._text("A2", "Pencil", 5)}{self._text("B2", "Stationery", 5)}'
+                f'{self._text("C2", "M", 5)}<c r="D2" s="5"><v>12</v></c>'
+                f'<c r="E2" s="2"><v>46100</v></c></row>']
+        table = (f'<dataValidation type="list" allowBlank="1" sqref="H2:H{ORDER_ROWS}">'
+                 '<formula1>Rates[Tax]</formula1></dataValidation>' if self.table else '')
+        standard = (
+            f'<dataValidation type="list" allowBlank="1" showErrorMessage="1" '
+            f'sqref="B2:B{ORDER_ROWS}"><formula1>Categories</formula1></dataValidation>'
+            f'<dataValidation type="list" sqref="C2:C{ORDER_ROWS}">'
+            '<formula1>"S,M,L"</formula1></dataValidation>'
+            f'<dataValidation type="list" allowBlank="1" sqref="A2:A{ORDER_ROWS}">'
+            '<formula1>INDIRECT($B2)</formula1></dataValidation>'
+            f'<dataValidation type="date" operator="greaterThan" sqref="E2:E{ORDER_ROWS}">'
+            '<formula1>TODAY()</formula1></dataValidation>'
+            f'<dataValidation type="textLength" operator="lessThanOrEqual" '
+            f'sqref="F2:F{ORDER_ROWS}"><formula1>40</formula1></dataValidation>'
+            f'<dataValidation type="list" sqref="G2:G{ORDER_ROWS}">'
+            '<formula1>Shelves</formula1></dataValidation>'
+            + table +
+            f'<dataValidation type="custom" sqref="I2:I{ORDER_ROWS}">'
+            '<formula1>ISNUMBER(I2)</formula1></dataValidation>'
+            f'<dataValidation type="list" sqref="J2:J{ORDER_ROWS}">'
+            '<formula1>Bins</formula1></dataValidation>')
+        count = standard.count("<dataValidation ")
+        return (_DECL + f'<worksheet xmlns="{X}" xmlns:r="{R}" xmlns:mc="{MC}" '
+                f'mc:Ignorable="x14ac" xmlns:x14ac="{X14AC}">'
+                '<dimension ref="A1:J2"/>'
+                f'<sheetData>{"".join(rows)}</sheetData>'
+                f'<dataValidations count="{count}">{standard}</dataValidations>'
+                '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" '
+                'footer="0.3"/>'
+                '<extLst>'
+                f'<ext uri="{{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}}" xmlns:x14="{X14}">'
+                f'<x14:dataValidations count="2" xmlns:xm="{XM}">'
+                '<x14:dataValidation type="whole" operator="between" allowBlank="1" '
+                'showErrorMessage="1"><x14:formula1><xm:f>1</xm:f></x14:formula1>'
+                '<x14:formula2><xm:f>500</xm:f></x14:formula2>'
+                f'<xm:sqref>D2:D{ORDER_ROWS}</xm:sqref></x14:dataValidation>'
+                '<x14:dataValidation type="decimal" allowBlank="1">'
+                '<x14:formula1><xm:f>0</xm:f></x14:formula1>'
+                '<x14:formula2><xm:f>Lists!$B$5</xm:f></x14:formula2>'
+                f'<xm:sqref>K2:K{ORDER_ROWS} M2</xm:sqref></x14:dataValidation>'
+                '</x14:dataValidations></ext></extLst></worksheet>')
+
     def external_link(self) -> str:
         return (_DECL + f'<externalLink xmlns="{X}"><externalBook xmlns:r="{R}" r:id="rId1">'
                 '<sheetNames><sheetName val="Prices"/></sheetNames><sheetDataSet>'
@@ -248,7 +306,9 @@ class Shop:
             'windowHeight="12300"/></bookViews>'
             '<sheets><sheet name="Stock" sheetId="1" r:id="rId1"/>'
             '<sheet name="Lists" sheetId="2" state="hidden" r:id="rId2"/>'
-            '<sheet name="Totals" sheetId="3" r:id="rId3"/></sheets>'
+            '<sheet name="Totals" sheetId="3" r:id="rId3"/>'
+            + ('<sheet name="Orders" sheetId="4" r:id="rId8"/>' if self.orders else '')
+            + '</sheets>'
             + ('<externalReferences><externalReference r:id="rId7"/></externalReferences>'
                if self.external else '')
             + '<definedNames>'
@@ -258,7 +318,9 @@ class Shop:
             '<definedName name="Categories">Lists!$A$2:$A$5</definedName>'
             '<definedName name="TaxRates">Lists!$B$2:$B$5</definedName>'
             '<definedName name="Markup">1.4</definedName>'
-            '</definedNames>'
+            + ('<definedName name="Shelves">OFFSET(Lists!$A$2,0,0,COUNTA(Lists!$A:$A)-1,1)'
+               '</definedName>' if self.orders else '')
+            + '</definedNames>'
             + {None: '<calcPr calcId="191029"/>',
                "manual": '<calcPr calcId="191029" calcMode="manual"/>',
                "full": '<calcPr calcId="191029" fullCalcOnLoad="1"/>'}[self.calc]
@@ -343,6 +405,10 @@ class Shop:
             overrides.append(("/xl/calcChain.xml", "spreadsheetml.calcChain+xml"))
         if self.table:
             overrides.append(("/xl/tables/table1.xml", "spreadsheetml.table+xml"))
+        if self.orders:
+            sheets["xl/worksheets/sheet4.xml"] = self.orders_sheet()
+            rels.append(("rId8", "worksheet", "worksheets/sheet4.xml"))
+            overrides.append(("/xl/worksheets/sheet4.xml", "spreadsheetml.worksheet+xml"))
         if self.external:
             rels.append(("rId7", "externalLink", "externalLinks/externalLink1.xml"))
             overrides.append(("/xl/externalLinks/externalLink1.xml",
