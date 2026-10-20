@@ -489,7 +489,8 @@ class Span:
         return out
 
     def read(self, workbook: "Workbook", area: Area, *, formats: bool = False,
-             columns: "set[int] | None" = None) -> Iterator[list[Value]]:
+             columns: "set[int] | None" = None,
+             markdown: bool = False) -> Iterator[list[Value]]:
         """The rows of ``area`` (its own rows and columns), each read from its sheet and
         given in its own place, its cell's address kept (:attr:`Value.origin
         <xlsx_agent.read.types.Value.origin>`).  ``columns``: its own columns to type."""
@@ -506,7 +507,8 @@ class Span:
         for part, top, bottom, first in self.runs(area.first.row, area.last.row):
             cells = RangeAddress(SheetRef(name=part.sheet), Area(Cell(top, left),
                                                                  Cell(bottom, right)))
-            for row in workbook._read(cells, formats=formats, columns=typed):
+            for row in workbook._read(cells, formats=formats, columns=typed,
+                                      markdown=markdown):
                 at = first + row[0].row - top
                 out = []
                 for column, sheet_column in zip(own, real):

@@ -12,7 +12,10 @@ each item of ``cells`` is an ``address`` (``Stock!D10``, ``#1!D10``) and exactly
   code, ``yyyy-mm-dd``) that the cell is given;
 * ``formula`` -- ``=D10*2``: the only way to write one, with no cached value (it reads
   ``cache: absent`` until Excel calculates it);
-* ``blank: true`` -- the value goes, the cell's format stays; never a 0.
+* ``blank: true`` -- the value goes, the cell's format stays; never a 0;
+* ``markdown`` -- rich text: ``**bold**``, ``*italic*``, ``~~struck~~``, each line a line
+  of the cell, ``-`` and ``1.`` items shown as ``•`` and numbers
+  (:mod:`xlsx_agent.markdown`); ``text`` never reads Markdown.
 
 The model's types are separate fields because a type union is outside the definitions'
 common subset: a value is never inferred from its spelling.  ``replace_formulas: true``
@@ -29,7 +32,9 @@ each with its ``old`` type (``text``, ``number``, ``bool``, ``error``, ``blank``
 ``formula``; at most ``Limits.max_list_items``, the rest counted), ``released`` (shared
 formula groups whose master was written, handed to their next member), ``calculation``
 (``invalidated``: every formula's cached value in the workbook may now be stale -- reads
-say ``cache: invalidated`` -- until Excel recalculates; there is no calculator here).  Never a value: the summary and the log carry counts, codes and
+say ``cache: invalidated`` -- until Excel recalculates; there is no calculator here),
+``fixed_height`` (cells given line breaks in a row of a fixed height, which Excel does not
+grow: a warning says so).  Never a value: the summary and the log carry counts, codes and
 addresses only.
 """
 
@@ -49,7 +54,7 @@ from .read import DOC
 MAX_CELLS = 5_000
 
 #: The value fields of a cell, exactly one of which an item gives.
-VALUE_FIELDS = ("text", "number", "bool", "date", "formula", "blank")
+VALUE_FIELDS = ("text", "number", "bool", "date", "formula", "blank", "markdown")
 
 GROUP = "xlsx_edit"
 
@@ -57,8 +62,8 @@ GROUP = "xlsx_edit"
 @tool("xlsx_set_cells",
       "Write cells, typed: each item an address and exactly one of text (always literal, "
       "=x too), number, bool, date (YYYY-MM-DD; the cell must show dates, or give format), "
-      "formula (=D10*2) or blank. One step; any refusal changes nothing. Afterwards every "
-      "formula value reads cache invalidated: Excel recalculates on open.",
+      "formula (=D10*2), blank or markdown. One step; any refusal changes nothing. "
+      "Afterwards every formula value reads cache invalidated: Excel recalculates on open.",
       {"doc": DOC,
        "cells": array(obj({
            "address": string("A cell with its sheet: Stock!D10."),
@@ -68,7 +73,9 @@ GROUP = "xlsx_edit"
            "date": string(optional=True),
            "format": string("A date format to give the cell: yyyy-mm-dd.", optional=True),
            "formula": string(optional=True),
-           "blank": boolean("true: remove the value, keep the format.", optional=True)}),
+           "blank": boolean("true: remove the value, keep the format.", optional=True),
+           "markdown": string("**bold**, *italic*, ~~strike~~, lines, - and 1. lists.",
+                              optional=True)}),
            f"At most {MAX_CELLS:,}.", min_items=1),
        "replace_formulas": boolean("Write over cells holding a formula. Default false.",
                                    optional=True)},
@@ -95,7 +102,13 @@ def xlsx_set_cells(call: Any, doc: str, cells: list[dict],
     summary = f"Wrote {len(written.cells)} cell(s) ({written.changed} changed)"
     if written.changed:
         summary += "; formula caches invalidated"
-    return Result(summary=summary, data=data, changed=[doc] if written.changed else [])
+    warnings = []
+    if written.fixed_height:
+        warnings.append(f"{len(written.fixed_height)} cell(s) with line breaks are in rows of "
+                        "a fixed height (fixed_height): Excel keeps the height, so lines past "
+                        "it are hidden until the row is fitted")
+    return Result(summary=summary, data=data, changed=[doc] if written.changed else [],
+                  warnings=warnings)
 
 
 def _address(item: dict, index: int) -> str:
@@ -123,6 +136,8 @@ def _value(item: dict, index: int) -> Any:
         return None
     if name == "formula":
         return {"formula": item["formula"]}
+    if name == "markdown":
+        return {"markdown": item["markdown"]}
     if name == "date":
         value = {"date": item["date"]}
         if item.get("format") is not None:

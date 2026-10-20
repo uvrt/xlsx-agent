@@ -44,7 +44,8 @@ classifiers = [
 # ooxml-edit 0.47.0: DocumentFormat.tool_hints, which TOOL_HINTS fills (round 9, N5).
 # ooxml-edit 0.51.0: ooxml_edit.sheets (O4), the lossless cell writer 0.2's edits are built
 # on and where Cell, Area and the grid's limits are imported from (charts.workbook before).
-dependencies = ["lxml>=4.9", "ooxml-edit>=0.51.0", "ooxml-common>=0.15.0"]
+# ooxml-edit 0.54.0: ooxml_edit.markdown and sheets.RichText, the Markdown cells (X3b).
+dependencies = ["lxml>=4.9", "ooxml-edit>=0.54.0", "ooxml-common>=0.15.0"]
 
 [project.optional-dependencies]
 # pptx-agent (and pptx2svg, which its layout checks measure text with) for the tests only:

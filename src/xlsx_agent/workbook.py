@@ -970,7 +970,8 @@ class Workbook:
                              f"is a {found.type or 'sheet of no known type'} and holds no cells")
         return found
 
-    def _reader(self, sheet: Sheet, *, formats: bool = False) -> SheetReader:
+    def _reader(self, sheet: Sheet, *, formats: bool = False,
+                markdown: bool = False) -> SheetReader:
         data = self.package.read(sheet.part) if sheet.part is not None else None
         name = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
         return SheetReader(data or b"", sheet=name, hidden=not sheet.visible,
@@ -978,7 +979,7 @@ class Workbook:
                            locale=self.locale, formats=formats, grouping=self.grouping,
                            local_dates=self.local_dates, redaction=self._redaction,
                            cache=self.calculation_status,
-                           external_names=self._external_names)
+                           external_names=self._external_names, markdown=markdown)
 
     def _stream(self, sheet: Sheet, run):
         """``run()`` over a sheet's part, with the parser's refusal turned into
@@ -1059,15 +1060,18 @@ class Workbook:
             self._comments[key] = found
         return list(self._comments[key])
 
-    def cells(self, sheet: "Sheet | str | SheetRef", *, formats: bool = False) -> Iterator[Value]:
+    def cells(self, sheet: "Sheet | str | SheetRef", *, formats: bool = False,
+              markdown: bool = False) -> Iterator[Value]:
         """Every cell the sheet stores, typed, in the order of the file, streamed (a cell
         with only a style comes as ``blank``).  ``formats`` puts each value's format code on
-        it."""
+        it; ``markdown`` gives text as Markdown (as :meth:`read`)."""
         sheet = self._cell_sheet(sheet)
-        return self._stream(sheet, lambda: self._reader(sheet, formats=formats).values())
+        values = self._stream(sheet, lambda: self._reader(sheet, formats=formats,
+                                                          markdown=markdown).values())
+        return (_as_markdown(value) for value in values) if markdown else values
 
     def read(self, address: "str | RangeAddress | TableAddress", *,
-             formats: bool = False) -> Iterator[list[Value]]:
+             formats: bool = False, markdown: bool = False) -> Iterator[list[Value]]:
         """The rows of a cell or range (``Stock!A1:H40``, ``#3!B2``), each a list of
         values from the range's first column to its last, blanks filled in; whole columns
         and rows (``Stock!A:A``, ``Stock!2:5``) clipped to the used range.  A ``t:``
@@ -1082,11 +1086,19 @@ class Workbook:
         from the model (:mod:`xlsx_agent.declare`) is given blank: every read of the
         sheet's cells goes through here.  Text comes with the workbook's redacted terms
         replaced (:meth:`redact`), as from :meth:`cells`.  A dataset or ref address is not a range:
-        ``ValueError``."""
-        return self._read(address, formats=formats)
+        ``ValueError``.
+
+        ``markdown``: every text value is given as Markdown (:mod:`xlsx_agent.markdown`):
+        rich text's bold, italic and strikethrough runs as ``**``, ``*`` and ``~~``, lines
+        of bullets and numbers as list items, every other character escaped (``*`` as
+        ``\\*``) -- what ``set_cells``' ``{"markdown": ...}`` writes back as the same cell.
+        A value a declared column's rule cleaned stays as cleaned."""
+        rows = self._read(address, formats=formats, markdown=markdown)
+        return _markdown_rows(rows) if markdown else rows
 
     def _read(self, address: "str | RangeAddress | TableAddress", *, formats: bool = False,
-              columns: "set[int] | None" = None) -> Iterator[list[Value]]:
+              columns: "set[int] | None" = None,
+              markdown: bool = False) -> Iterator[list[Value]]:
         """:meth:`read`, typing the cells of ``columns`` (sheet columns) only, for a pass
         that looks at no other (:func:`~xlsx_agent.read.stream.read_area`)."""
         if isinstance(address, str):
@@ -1094,7 +1106,8 @@ class Workbook:
         if isinstance(address, TableAddress):
             selection = self.resolve(address)
             if selection.positions:
-                return self._read_rows(selection.areas, formats=formats, columns=columns)
+                return self._read_rows(selection.areas, formats=formats, columns=columns,
+                                       markdown=markdown)
             selected = selection.range
             if selected is None:
                 return iter(())
@@ -1104,7 +1117,8 @@ class Workbook:
                              "give a cell or range, as Stock!A1:H40")
         span = self.regions.span(address.sheet)
         if span is not None:   # a declared table read as one: its own rows and columns
-            return span.read(self, address.area, formats=formats, columns=columns)
+            return span.read(self, address.area, formats=formats, columns=columns,
+                             markdown=markdown)
         sheet = self._cell_sheet(self.sheet_of(address))
         found = self.scan(sheet)
         area = address.clipped(found.used)
@@ -1113,7 +1127,7 @@ class Workbook:
         readers: list[SheetReader] = []
 
         def run() -> Iterator[list[Value]]:
-            readers.append(self._reader(sheet, formats=formats))
+            readers.append(self._reader(sheet, formats=formats, markdown=markdown))
             return read_area(readers[0], area, found.ordered, found.index, columns)
 
         rows = self._stream(sheet, run)
@@ -1155,7 +1169,8 @@ class Workbook:
             yield row
 
     def _read_rows(self, areas: "list[RangeAddress]", *, formats: bool = False,
-                   columns: "set[int] | None" = None) -> Iterator[list[Value]]:
+                   columns: "set[int] | None" = None,
+                   markdown: bool = False) -> Iterator[list[Value]]:
         """The rows of ``areas`` (one row each, on one sheet, alike in columns), in their
         order: one read through the rows they span, keeping theirs."""
         wanted = {a.area.first.row for a in areas}
@@ -1163,7 +1178,7 @@ class Workbook:
         span = RangeAddress(areas[0].sheet, Area(Cell(min(wanted), first.column),
                                                  Cell(max(wanted), last.column)))
         found = {}
-        for row in self._read(span, formats=formats, columns=columns):
+        for row in self._read(span, formats=formats, columns=columns, markdown=markdown):
             if row and row[0].row in wanted:
                 found[row[0].row] = row
         return iter([found[a.area.first.row] for a in areas])
@@ -1179,7 +1194,7 @@ class Workbook:
         return index is not None and not index.shared_formulas
 
     def cell(self, address: "str | RangeAddress | TableAddress", *,
-             formats: bool = False) -> Value:
+             formats: bool = False, markdown: bool = False) -> Value:
         """One cell's value (``Stock!F2``, or a ``t:`` value such as
         ``t:Products/SKU-0042/Price``); ``blank`` when the sheet stores nothing there."""
         if isinstance(address, str):
@@ -1188,7 +1203,7 @@ class Workbook:
             address = self.resolve(address).range
         if not isinstance(address, RangeAddress) or address.kind != "cell":
             raise ValueError("a cell address names one cell, as Stock!F2")
-        return next(iter(self.read(address, formats=formats)))[0]
+        return next(iter(self.read(address, formats=formats, markdown=markdown)))[0]
 
     def _read_sheets(self) -> list[Sheet]:
         holder = self._child("sheets")
@@ -1222,6 +1237,18 @@ class Workbook:
             return False  # the element's name is spelt out in any 8-bit encoding
         attribute = "content" if kind == "chartsheet" else "sheet"
         return _parsed(part, lambda: _scan_protection(data, attribute))
+
+
+def _as_markdown(value: Value) -> Value:
+    """``value`` with its Markdown as ``v`` (a text value no rule cleaned)."""
+    if value.t == "text" and value.markdown is not None and not value.cleaned:
+        value.v = value.markdown
+    return value
+
+
+def _markdown_rows(rows: Iterator[list[Value]]) -> Iterator[list[Value]]:
+    for row in rows:
+        yield [_as_markdown(value) for value in row]
 
 
 #: The sheet types that hold cells (a chart sheet and a dialog sheet hold none).

@@ -10,7 +10,9 @@ back typed with its address (:meth:`Value.as_dict <xlsx_agent.read.types.Value.a
 row by row; on request with its number format's code (``formats``), its formula's text
 (``formulas``: ``f``; a shared group's other cells say ``shared_from``), its comment
 (``comments``) and its hyperlink (``hyperlinks``), and with the merged areas over the rows
-(``merges``).  The blocks array formulas and dynamic arrays fill that cross the rows are
+(``merges``); its text as Markdown (``markdown``: bold, italic and strikethrough runs,
+list lines, the rest escaped -- what ``xlsx_set_cells``' ``markdown`` writes back as the
+same cell; :meth:`Workbook.read <xlsx_agent.Workbook.read>`).  The blocks array formulas and dynamic arrays fill that cross the rows are
 always listed (``arrays``): a cell inside one says nothing of it by itself.
 
 **A row by key** is a target, ``t:Parts/BX-17`` (the one way every tool names it);
@@ -78,6 +80,7 @@ from ..address import (NameNotFound, RangeAddress, RefAddress, SheetRef, TableAd
                        parse_address, quote_sheet)
 from ..read.regions import RegionError
 from ..read.types import Value
+from ..workbook import _markdown_rows
 from .docformat import KIND, handler, tool_error
 
 #: The most rows a page of ``xlsx_read`` holds (ROADMAP.md, "Tools": "at most 500").
@@ -126,6 +129,8 @@ CURSOR = string("next_cursor of the previous page, with the same target.", optio
        "comments": boolean("Add comment (author, text). Default false.", optional=True),
        "hyperlinks": boolean("Add link (url or location). Default false.", optional=True),
        "merges": boolean("List the merged areas over the rows. Default false.", optional=True),
+       "markdown": boolean("Text as Markdown (**bold**, lists). Default false.",
+                           optional=True),
        "sources": boolean("d: only: add each value's source cells (8, more counted); "
                           "for one value, all, paged.", optional=True),
        "key": string("Column holding target's key (Code for t:Parts/BX-17) if "
@@ -141,7 +146,8 @@ CURSOR = string("next_cursor of the previous page, with the same target.", optio
 @handler
 def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = False,
               formulas: bool = False, comments: bool = False, hyperlinks: bool = False,
-              merges: bool = False, sources: bool = False, key: str | None = None,
+              merges: bool = False, markdown: bool = False, sources: bool = False,
+              key: str | None = None,
               columns: list[str] | None = None, limit: int | None = None,
               max_chars: int | None = None, cursor: str | None = None) -> Result:
     """``xlsx_read``'s handler: a workbook's cells, or a dataset's values (see the
@@ -196,14 +202,17 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     if found.rows is not None:
         pages = found.rows[start_row:start_row + rows_limit]
         rows = workbook._read_rows([RangeAddress(found.ref, a) for a in pages],
-                                   formats=formats)
+                                   formats=formats, markdown=bool(markdown))
+        if markdown:
+            rows = _markdown_rows(rows)
         more = start_row + len(pages) < total
         single = False
     else:
         top = area.first.row + start_row
         bottom = min(area.last.row, top + rows_limit - 1)
         pages = [Area(Cell(top, area.first.column), Cell(bottom, area.last.column))]
-        rows = workbook.read(RangeAddress(found.ref, pages[0]), formats=formats)
+        rows = workbook.read(RangeAddress(found.ref, pages[0]), formats=formats,
+                             markdown=bool(markdown))
         more = bottom < area.last.row
         single = area.first == area.last
     if found.pick is not None:          # the columns asked for, in their order
