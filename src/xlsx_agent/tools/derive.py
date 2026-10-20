@@ -16,7 +16,9 @@ What the result gives: the dataset's id and source, its columns, types and key c
 the rounding, the counts (``matched``, ``used``, ``groups``), what was left out and why
 (``excluded`` per measure, ``left_out`` per column, by reason, with first addresses),
 ``coerced``, ``not_compared``, ``hidden``, the ``totals`` shares are fractions of, the
-``pivot_columns``; and its first rows, each value typed with its address
+``pivot_columns``, ``cache`` (the formula cells read, by cache status and ``external``:
+a result computed from ``invalidated`` caches is a stale dataset from the start, and the
+toolbox warns); and its first rows, each value typed with its address
 (``d:by_region/#2/total``) and its sources -- by key when the table has a key column
 (``t:Sales/{S-01,S-04}/Amount``), else ranges (:mod:`xlsx_agent.derive`) -- **at most**
 :data:`SOURCES_SHOWN` **a value**, counted in units (a range, or one key of a key set),
@@ -29,8 +31,9 @@ gives the target and cursor that continue it there.
 ``d:by_region/North/total``, paged as cells are, with ``sources`` adding each value's
 first :data:`SOURCES_SHOWN` units; one value with ``sources`` pages through all of its
 units instead, ``limit`` a page, a page's keys of one column written as one key set.  A dataset outlives its workbook: no ``doc`` is needed.  ``dataset`` says
-where it came from and whether it is ``stale`` (its source has changed since; it is never
-refreshed) or its source ``closed``; the toolbox adds a warning when it is stale.
+where it came from and whether it is ``stale`` (its source has changed since, or it was
+computed from invalidated formula caches; it is never refreshed) or its source ``closed``,
+and its ``cache`` counts; the toolbox adds a warning when it is stale.
 
 **Content.**  Values, keys and pivot values are in results only; summaries name the
 dataset and count, errors name columns, functions and types.
@@ -87,6 +90,8 @@ def _about(entry: Any) -> dict[str, Any]:
     out: dict[str, Any] = {"id": entry.address, "doc": entry.doc, "stale": entry.stale}
     if entry.closed:
         out["closed"] = True
+    if entry.dataset.cache:
+        out["cache"] = dict(entry.dataset.cache)
     return out
 
 
@@ -181,6 +186,8 @@ def _derived_result(call: Any, name: str, derived: Any, table: DatasetTable) -> 
         data["pivot_columns"] = {k: dict(v) for k, v in derived.pivot_columns.items()}
     if derived.totals:
         data["totals"] = {k: _shown(t.as_dict()) for k, t in derived.totals.items()}
+    if derived.cache:
+        data["cache"] = dict(derived.cache)
     total = len(derived.rows)
     cut: dict[str, Any] = {}
     chars = call.limits.max_result_chars

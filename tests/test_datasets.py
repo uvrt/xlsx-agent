@@ -232,7 +232,7 @@ def xlsx_touch(call, doc):
     sheet = workbook.sheets[0]
     cell = f"{quote_sheet(sheet.name)}!XFD1048576"
     current = workbook.cell(cell).v
-    workbook._write(cell, (current or 0) + 1)
+    workbook.set_cells({cell: (current or 0) + 1})
     return Result(summary="touched")
 
 
@@ -310,7 +310,7 @@ def test_a_dataset_survives_closing_its_workbook_and_is_read_back_by_address(box
     read = call(box, session, "xlsx_read", target="d:by_rep[total]")
     assert read.ok, read.error
     assert read.data["dataset"] == {"id": "d:by_rep", "doc": "d1", "stale": False,
-                                    "closed": True}
+                                    "closed": True, "cache": {"absent": 1}}
     assert [row[0]["v"] for row in read.data["rows"]] == [3.7, 0.0, None, 0.1, None, 0.0]
     assert read.warnings == []
     # derived from after its workbook closed: no doc needed, provenance carried through

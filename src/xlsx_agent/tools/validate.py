@@ -14,7 +14,9 @@ rather than in its place.  A schema that is not one is refused (``invalid_argume
 
 **The result.**  ``ok`` (no problem at all); ``counts``: the problem cells by code, always,
 over all of them; ``tables``: each table checked, its address, range, data rows and the
-columns checked; ``problems``: the problems in order, each with its code, ``at`` (a cell,
+columns checked; ``cache``, when any cell checked holds a formula: those cells by cache
+status (``cached_unverified``, ``invalidated``, ``absent``) and ``external`` -- an
+``invalidated`` value checked is the one last saved; ``problems``: the problems in order, each with its code, ``at`` (a cell,
 a range of cells next to each other in one column with the same problem, a table, or a
 sheet as ``Stock!``), ``cells`` when more than one, ``table``, ``column``, what was
 expected, and ``message``, the problem in a line for a person fixing the file.
@@ -96,6 +98,8 @@ def xlsx_validate_data(call: Any, doc: str, schema: dict,
     limit = call.limits.max_list_items
     data: dict[str, Any] = {"doc": doc, "ok": report.ok, "counts": dict(report.counts)}
     data["tables"] = [t.as_dict() for t in report.tables[:limit]]
+    if report.cache:
+        data["cache"] = dict(report.cache)
     data["problems"] = []
     budget = chars - _MARGIN - _size({**data, "cut": _CUT_ROOM}) \
         - len(_summary(doc, report, 1, total, total, True))

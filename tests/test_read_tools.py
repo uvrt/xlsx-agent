@@ -119,7 +119,7 @@ def test_a_table_reads_typed_with_addresses_and_its_columns(box):
                                {"a": "Stock!D2", "v": "2026-01-05", "t": "date",
                                 "serial": 46027.0}]
     assert data["rows"][3][2] == {"a": "Stock!C5", "v": None, "t": "blank", "formula": True,
-                                  "issue": "no_cached_value"}
+                                  "cache": "absent", "issue": "no_cached_value"}
     assert "cut" not in data and result.summary == "t:Products: rows 1-4 of 4"
 
 

@@ -248,7 +248,12 @@ def test_cached_formula_values_and_no_cached_value():
         ("#DIV/0!", "error", True, None), (None, "blank", True, "no_cached_value"),
         ("", "text", True, None), (46027, "number", True, None)]
     assert column[4].as_dict() == {"a": "Calc!D5", "v": None, "t": "blank", "formula": True,
-                                   "issue": "no_cached_value"}
+                                   "cache": "absent", "issue": "no_cached_value"}
+    # As last saved: never checked to be current, but nothing known to have changed them.
+    assert [v.cache for v in column] == ["cached_unverified"] * 4 + ["absent"] \
+        + ["cached_unverified"] * 2
+    assert column[0].as_dict()["cache"] == "cached_unverified"
+    assert wb.cell("Calc!A1").cache is None and "cache" not in wb.cell("Calc!A1").as_dict()
     assert column[0].formula_text == "SUM(A1:C1)"
     assert not wb.cell("Calc!A1").formula
 

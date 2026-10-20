@@ -8,7 +8,11 @@ An agent learns a workbook from this before it reads a row (ROADMAP.md, "Tools")
 
 **What it lists.**  The workbook: its kind, date system, protection and ``flags`` (cached
 values that may be stale -- ``full_calc_on_load``, ``manual_calculation`` -- external
-links, a VBA project, data connections: listed, never followed or run).  Every sheet: its
+links, a VBA project, data connections: listed, never followed or run), and ``cache``:
+``"invalidated"`` once the workbook has been written (or when it arrived asking for a
+recalculation, or saved with manual calculation): every formula value then reads cache
+``invalidated``.  A formula that refers to another workbook is counted in the problems
+(``external_formula``) and flagged on its column.  Every sheet: its
 name and id (both forms of its address), its state when not visible, protection, type
 when not a worksheet, and the used range.  Every region -- Excel tables, defined names over
 a range, declared regions, and the regions header detection finds on each sheet -- with its
@@ -269,6 +273,9 @@ def _head(workbook: "Workbook") -> dict:
             flags[flag] = True
     if flags:
         out["flags"] = flags
+    if workbook.calculation_status == "invalidated":
+        # Every formula value reads cache "invalidated": said once, not per column.
+        out["cache"] = "invalidated"
     return out
 
 

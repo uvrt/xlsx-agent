@@ -67,6 +67,10 @@ FORMAT_LANGUAGES = ("zh-TW", "zh-CN", "ja-JP", "ko-KR", "th-TH")
 TYPES = ("number", "percent", "date", "time", "datetime", "text", "bool", "error", "blank",
          "list")
 
+#: A formula's cached value: as last saved with no known invalidation (never checked to be
+#: current), invalidated since, or absent (ooxml-edit's ``CACHE_STATUSES``).
+CACHE_STATUSES = ("cached_unverified", "invalidated", "absent")
+
 #: The most characters a cell holds in Excel; text this long was probably cut by the
 #: program that wrote it (ROADMAP.md, "Messy workbooks": ``at_limit``).
 TEXT_LIMIT = 32767
@@ -155,7 +159,14 @@ class Value:
     first cell), ``shared_from`` (a shared group's other cells: the address of the cell
     that holds the text), ``array`` (the range an array formula or a spill fills),
     ``volatile`` (the formula calls ``NOW``, ``TODAY``, ``RAND``, ``OFFSET`` or
-    ``INDIRECT``: its value is as of the last save).  ``formula_withheld``: the formula
+    ``INDIRECT``: its value is as of the last save).  ``cache``: a formula's cached value's
+    status (:data:`CACHE_STATUSES`; ``None`` for a cell without a formula):
+    ``cached_unverified`` as last saved, with no known invalidation -- never checked to be
+    current; ``invalidated`` when the workbook has been written since it was opened, or
+    arrived asking for a recalculation or saved with manual calculation; ``absent`` when
+    there is none (``issue="no_cached_value"``).  ``external``: the formula refers to another
+    workbook (a workbook index, ``[1]Prices!B2``, or a defined name that does), whose
+    values may have changed without any change here.  ``formula_withheld``: the formula
     reaches a cell hidden from the model by a declared table, so its text is not given
     (``formula_text`` is ``None``; ``v`` is its cached value, as for any formula:
     :mod:`xlsx_agent.declare`).  ``origin``: the cell's own sheet (as
@@ -182,6 +193,8 @@ class Value:
     shared_from: str | None = None
     array: str | None = None
     volatile: bool = False
+    cache: str | None = None
+    external: bool = False
     origin: "tuple[str, int, int] | None" = None
     cleaned: bool = False
     original: str | None = field(default=None, repr=False)
@@ -214,11 +227,11 @@ class Value:
         out = {"a": self.a, "v": list(self.v) if self.t == "list" else self.v, "t": self.t}
         if self.formula:
             out["formula"] = True
-        for name in ("issue", "serial", "format", "shared_from", "array"):
+        for name in ("cache", "issue", "serial", "format", "shared_from", "array"):
             value = getattr(self, name)
             if value is not None:
                 out[name] = value
-        for name in ("hidden", "at_limit", "volatile", "cleaned"):
+        for name in ("hidden", "at_limit", "volatile", "external", "cleaned"):
             if getattr(self, name):
                 out[name] = True
         return out
