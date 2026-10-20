@@ -47,6 +47,9 @@ X3b (ooxml-edit 0.54.0): ``xlsx_read``'s ``markdown`` (text as Markdown) and
 ``xlsx_set_cells``' ``markdown`` value: ``xlsx_read`` 528 -> 556, the core 4,069 -> 4,096
 estimated, about 6,022 -> 6,062 counted by the proxy; ``xlsx_set_cells`` 347 -> 378;
 every definition 4,627 -> 4,686, the guard 4,650 -> 4,690.
+X4 (guards): ``xlsx_set_cells``' address by key, each cell's ``expect`` (a type and a typed
+value), ``new_rows`` and ``revision``: ``xlsx_set_cells`` 378 -> 553 (deferred: the core
+unchanged, 4,096); every definition 4,686 -> 4,861, the guard 4,690 -> 4,870.
 """
 
 from __future__ import annotations
@@ -65,7 +68,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
-ALL_GUARD = 4690
+ALL_GUARD = 4870
 
 
 @pytest.fixture(scope="module")

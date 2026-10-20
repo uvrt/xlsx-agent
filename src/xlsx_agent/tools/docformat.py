@@ -62,6 +62,7 @@ from ..clean import CleanedWarning
 from ..dataset import merge_sources, table_dataset
 from ..declare import DeclarationError, parse_declarations
 from ..edit import EditError, undo_scope, undo_shared
+from ..edit.policy import PolicyError, as_policy
 from ..package import (BIFF_BOF, CFB_SIGNATURE, KindMismatchWarning, OpenError,
                        compound_file_refusal)
 from ..query import QueryError
@@ -168,6 +169,7 @@ ERRORS: dict[type[BaseException], Any] = {
     QueryError: ("invalid_arguments", _options),
     SchemaError: ("invalid_arguments", _options),
     DeclarationError: ("refused", _options),
+    PolicyError: ("refused", _options),
     EditError: "refused",
 }
 
@@ -210,7 +212,7 @@ def tool_error(error: BaseException) -> ToolError | None:
     if isinstance(error, SchemaError):
         return ToolError("invalid_arguments", error.message, valid_options=_options(error),
                          field="schema", details={"code": error.code, "path": error.path})
-    if isinstance(error, DeclarationError):     # the application's configuration
+    if isinstance(error, (DeclarationError, PolicyError)):  # the application's configuration
         return ToolError("refused", error.message, valid_options=_options(error),
                          details={"code": error.code, "path": error.path})
     if isinstance(error, NameNotFound):
@@ -329,6 +331,50 @@ def declare(session: Any, tables: Any) -> None:
     _SESSION_TABLES[session] = parse_declarations(tables) if tables else []
 
 
+#: The write policies each session gives the workbooks it opens (:func:`policy`,
+#: :func:`narrow`), in the order given.
+_SESSION_POLICIES: "weakref.WeakKeyDictionary[Any, tuple]" = weakref.WeakKeyDictionary()
+
+
+def _own(session: Any) -> Any:
+    """The session itself, for a view of it (:class:`ooxml_edit.tools.SessionView`)."""
+    return getattr(session, "session", session)
+
+
+def policy(session: Any, config: Any) -> None:
+    """Give every workbook ``session`` opens from then on the host's write policy
+    ``config`` (:mod:`xlsx_agent.edit.policy`: a
+    :class:`~xlsx_agent.edit.policy.WritePolicy` or its plain data; ``{"cells": []}`` lets
+    nothing be written), fixed for the session: set once, before a workbook is opened
+    (a second call, or one after a workbook joined, is a ``ValueError``: :func:`narrow`
+    narrows).  Its form is checked now (:class:`~xlsx_agent.edit.policy.PolicyError`), its
+    sheets and tables as each workbook opens (``open_document`` refused, with the entry's
+    ``path``).  Without one, a session writes as its ``edit`` role allows.  The
+    application's configuration, never a model's."""
+    own = _own(session)
+    if own in _SESSION_POLICIES:
+        raise ValueError("the session has its write policy; narrow it with narrow()")
+    if any(entry.kind == KIND for entry in getattr(own, "documents", {}).values()):
+        raise ValueError("a workbook is open in the session already: give the policy first")
+    _SESSION_POLICIES[own] = (as_policy(config),)
+
+
+def narrow(session: Any, config: Any) -> None:
+    """Narrow what ``session`` writes: the policy ``config`` is added to the session's
+    and to every workbook open in it, so a write must pass it too -- never widening
+    (:meth:`Workbook.narrow_policy <xlsx_agent.Workbook.narrow_policy>`)."""
+    own = _own(session)
+    added = as_policy(config)
+    for entry in getattr(own, "documents", {}).values():
+        if entry.kind == KIND:
+            entry.document.narrow_policy(added)
+            try:
+                entry.document.check_policy()
+            except PolicyError as error:
+                raise tool_error(error) from None
+    _SESSION_POLICIES[own] = _SESSION_POLICIES.get(own, ()) + (added,)
+
+
 def configure(workbook: Workbook, session: Any, tables: "list | None" = None) -> None:
     """A workbook joining a session is read in the session's locale (``Toolbox(locale=...)``
     or ``toolbox.session(locale=...)``: an :class:`ooxml_common.locales.Locale` or any
@@ -349,6 +395,16 @@ def configure(workbook: Workbook, session: Any, tables: "list | None" = None) ->
             workbook.declare_tables(declared)
         except DeclarationError as error:   # refused, with its code and path: not the
             raise tool_error(error) from None   # blob's invalid_arguments
+    try:
+        policies = _SESSION_POLICIES.get(_own(session), ())
+    except TypeError:            # a session that cannot be weakly referred to gives none
+        policies = ()
+    if policies:
+        workbook._policies = tuple(policies)
+        try:
+            workbook.check_policy()
+        except PolicyError as error:
+            raise tool_error(error) from None
 
 
 def resolve_table(workbook: Workbook, address: str) -> Any:

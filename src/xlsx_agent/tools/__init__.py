@@ -63,7 +63,12 @@ workbook has changed since is marked stale, never refreshed (ooxml-edit's datase
 ``xlsx_validate_data`` (:mod:`.validate`), a workbook checked against a declared schema.
 From 0.2 (E1, E3) the shared ``save_document``, ``undo`` and ``batch`` are in the core, and
 the deferred ``xlsx_edit`` group holds ``xlsx_set_cells`` (:mod:`.edit`): cells written
-typed and guarded, in one step (the ``edit`` role's).  Every formula value read carries
+typed and guarded, in one step (the ``edit`` role's).  Where the model may write is the
+application's (X4): ``policy(session, {"cells": [...], "tables": [...]})`` before the
+session opens a workbook (:mod:`xlsx_agent.edit.policy`; ``{"cells": []}`` lets nothing be
+written), ``narrow(session, ...)`` to narrow it later; ``describe`` shows it
+(``writable``).  Without one, the session writes as its ``edit`` role allows; a protected
+sheet is never written.  Every formula value read carries
 its cache status (``cache``: ``cached_unverified``, ``invalidated`` once the workbook was
 written, ``absent``).  The library's address and query errors become tool errors with
 their valid options (:mod:`.docformat`).
@@ -76,7 +81,7 @@ from typing import Any
 from ooxml_edit.tools import CORE, DocumentFormat, ToolGroup, shared as _shared
 
 from .docformat import (ERRORS, KIND, PROMPT, QUERY_CODES, REGION_CODES, STRICT_FIRST, FORMAT,
-                        declare, detect, tool_error, workbook_format)
+                        declare, detect, narrow, policy, tool_error, workbook_format)
 from .compare import TOOLS as COMPARE_TOOLS
 from .derive import TOOLS as DERIVE_TOOLS
 from .edit import TOOLS as EDIT_TOOLS
@@ -106,4 +111,5 @@ def format(*, grouping: bool = True, local_dates: bool = False,  # noqa: A001
 
 __all__ = ["CORE_TOOLS", "ERRORS", "FORMAT", "GROUPS", "KIND", "PROMPT", "QUERY_CODES",
            "REGION_CODES",
-           "STRICT_FIRST", "TOOLS", "declare", "detect", "format", "tool_error"]
+           "STRICT_FIRST", "TOOLS", "declare", "detect", "format", "narrow", "policy",
+           "tool_error"]
