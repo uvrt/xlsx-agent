@@ -5,7 +5,7 @@ needed): ooxml-edit's :class:`~ooxml_edit.history.History` over the workbook's p
 ooxml-edit's lossless cell writer (:mod:`ooxml_edit.sheets`) on the same package::
 
     with wb.batch() as edit:          # one step: all of it, or none of it
-        ...                           # the writes (E3's set_cells; tests use wb._write)
+        wb.set_cells({...})           # the writes (E3: xlsx_agent.edit.cells)
     edit.report                       # EditReport: cells by range, parts, calculation, issues
     wb.undo(); wb.to_bytes() == original      # True: undo to the start is the bytes opened
     wb.redo(); wb.to_bytes() == edited        # True

@@ -5,6 +5,61 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **Typed, guarded cell writes** (0.2's E3; lane X, X3; ooxml-edit 0.53.0):
+  `wb.set_cells({address: value, ...}, replace_formulas=False)` (`xlsx_agent.edit.cells`),
+  replacing the internal hook `Workbook._write`. Text is always literal (`"=x"` too);
+  `int`/`float` finite, a whole number past 2^53 refused (write it as text); `bool`;
+  `None` a blank that keeps the cell's format (empty text refused: never a 0 or a "");
+  `{"formula": "=..."}` (or a `Formula`) the only formula, written with no cached value;
+  `{"value": v}`; dates as `{"date": "YYYY-MM-DD"}` or a Python `date` in the workbook's
+  1900 or 1904 system, a date string otherwise in the workbook locale's date order with a
+  four-digit year (ambiguous ones refused), into a cell whose format shows a day (its
+  own, or a new cell's row or column format, ECMA-376 18.3.1.73/18.3.1.13; ooxml-edit's
+  `Styles.is_date` and the reader's language-dependent built-in ids), else refused unless
+  the call gives `"format"`; a time zone, a time of day, a `time` or a `timedelta`
+  refused (a midnight `datetime` is its date). Text over 32,767 characters refused,
+  never cut. Guards: a formula cell written over only with `replace_formulas`; a cell of
+  an array formula or a data table, a merged area's cell other than its first, an Excel
+  table's header cell, a cell named twice refused. A shared formula group's master
+  written over hands the group to its next member not written in the same call (its
+  formula moved by the new lexer; the group's `ref` the rest), so every other member keeps
+  its formula; a master whose formula cannot be moved safely is refused
+  (`shared_formula`). Every refusal is checked before anything changes, every refused
+  cell listed (`EditError.problems`, the first code's cells in `addresses`), and the
+  writes are one step (a refusal caught inside a batch still rolls it back). Returns
+  `Written`: the cells, their old types, the groups handed on, the calculation status.
+- **`xlsx_set_cells`** in a deferred `xlsx_edit` group, the `edit` role's: `doc`, `cells`
+  (an `address` and exactly one of `text`, `number`, `bool`, `date` (with `format`),
+  `formula`, `blank` -- typed fields, since the definitions' common subset has no type
+  union), `replace_formulas`; at most 5,000 cells a call; a column the application
+  withholds from the model refused (`withheld`). The result: `written`, `changed`, each
+  cell's `old` type (at most 50 listed), `released`, `calculation`; refusals with every
+  problem by code and address in `details`; never a value. Definitions: the core
+  unchanged (4,069 estimated, about 6,022 counted by the proxy), every definition 4,280
+  -> 4,627 (the guard 4,300 -> 4,650). The prompt's values line says what `cache`
+  `invalidated` means (one sentence).
+- **Formula freshness** (P0-4): every formula value read carries `cache`:
+  `cached_unverified` (as last saved, no known invalidation, never checked to be current),
+  `invalidated` (the workbook was written since it was opened -- every formula, workbook
+  wide -- or arrived with `fullCalcOnLoad` or manual calculation) or `absent` (no cached
+  value); and `external` when it refers to another workbook (`[1]Prices!B2`, `[1]!Rate`,
+  or a defined name that does). In `xlsx_read` and `xlsx_query` per value; `xlsx_compare`'s
+  cells; `xlsx_derive`'s result and `xlsx_validate_data`'s report and `xlsx_profile`'s
+  columns as counts by status (`cache`); `describe`'s workbook `cache: "invalidated"`,
+  and `external_formula` among the problems and a column's flags (beside the existing
+  `external_links` count). A dataset or a `t:` source read from an invalidated cache is
+  stale from the start (ooxml-edit's `Dataset.cache`), whatever the versions say: the deck
+  and Word tools place it `stale`, with the counts in their `from`; a dataset derived
+  before an edit is current again once it is undone. No evaluator: nothing is
+  recalculated.
+- Formula references (a part of E2): `xlsx_agent.formula`, a lexer of references only --
+  strings, quoted and unquoted sheets, workbook indexes, cells and ranges with `$`, whole
+  columns and rows, structured references, errors, functions and names -- with `shift`
+  (the relative parts moved; names, structured references and strings untouched; off the
+  grid or unreadable refused) and `is_external`.
+- Tests: `tests/test_set_cells.py`; the shop fixture gains `array`, `external` and `calc`
+  variants. Oracle: see the ROADMAP's E3 row.
+
 - **The edit foundation** (0.2's E1; lane X, X2; ooxml-edit 0.51.0): `xlsx_agent.edit`.
   `with wb.batch() as edit:` is one step of ooxml-edit's `History` over the workbook's
   package: an error anywhere in it rolls everything back -- cells, shared strings, styles,
