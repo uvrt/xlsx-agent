@@ -282,6 +282,47 @@ def test_xlsx_derive_keeps_a_dataset_and_shows_its_rows_with_their_sources(box):
     assert (entry.doc, entry.stale, entry.closed) == ("d1", False, False)
 
 
+def test_xlsx_query_takes_a_dataset_as_it_takes_a_table(box):
+    """Round 10, O5: a dataset's rows filtered and sorted as a table's, each value with its
+    d: address; no doc needed; the refusals a table's are."""
+    session = _session(box, sales())
+    derive_by_rep(box, session)
+    found = call(box, session, "xlsx_query", table="d:by_rep", columns=["Rep", "total"],
+                 where=[{"column": "Region", "op": "eq", "value": "North"}],
+                 sort=[{"column": "total", "desc": True}])
+    assert found.ok, found.error
+    data = found.data
+    assert (data["target"], data["columns"], found.total) == ("d:by_rep", ["Rep", "total"], 2)
+    assert data["dataset"]["id"] == "d:by_rep" and data["dataset"]["stale"] is False
+    assert data["types"] == {"Region": "text", "total": "number"}
+    assert data["rows"] == [
+        [{"a": "d:by_rep/#1/Rep", "v": "Ann", "t": "text"},
+         {"a": "d:by_rep/#1/total", "v": 3.7, "t": "number"}],
+        [{"a": "d:by_rep/#2/Rep", "v": "Bob", "t": "text"},
+         {"a": "d:by_rep/#2/total", "v": 0.0, "t": "number"}]]
+    assert found.summary == "d:by_rep: matching rows 1-2 of 2 (of 6)"
+    # Filters compare what the dataset reports (3.7, its derive's rounding).
+    shown = call(box, session, "xlsx_query", table="d:by_rep", where=[
+        {"column": "total", "op": "gte", "value": "3.7"}])
+    assert shown.total == 1 and shown.data["rows"][0][1]["v"] == "Ann"
+    # Paged as a table's query is, the cursor of one query only.
+    first = call(box, session, "xlsx_query", table="d:by_rep", columns=["Rep"], limit=4)
+    assert first.total == 6 and len(first.data["rows"]) == 4 and first.next_cursor
+    rest = call(box, session, "xlsx_query", table="d:by_rep", columns=["Rep"], limit=4,
+                cursor=first.next_cursor)
+    assert [row[0]["a"] for row in rest.data["rows"]] == ["d:by_rep/#5/Rep", "d:by_rep/#6/Rep"]
+    other = call(box, session, "xlsx_query", table="d:by_rep", columns=["Region"],
+                 cursor=first.next_cursor)
+    assert not other.ok and err(other)["field"] == "cursor"
+    part = call(box, session, "xlsx_query", table="d:by_rep[total]")
+    assert err(part)["code"] == "invalid_arguments" and err(part)["valid_options"] == ["d:by_rep"]
+    wrong = call(box, session, "xlsx_query", table="d:by_rep",
+                 where=[{"column": "Rep", "op": "gte", "value": "3"}])
+    assert err(wrong)["details"]["code"] == "wrong_type"
+    assert err(call(box, session, "xlsx_query", table="d:none"))["code"] == "not_found"
+    assert err(call(box, session, "xlsx_query", table="t:Sales"))["field"] == "doc"
+
+
 def test_describe_of_any_workbook_lists_the_datasets_and_where_they_came_from(box):
     """Round 5, T11: a dataset's id, columns, types, rows and source, never its values."""
     session = _session(box, sales(), sales())

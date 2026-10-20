@@ -63,6 +63,10 @@ they are at most :data:`KEEP_CELLS`; :func:`read_rows` gives a page of rows from
 reads them again once they are known (:func:`query` does both, ``offset`` and ``limit``
 giving the page).  ``xlsx_query`` pages through them as ``xlsx_read`` pages through cells.
 
+**A dataset** (``d:by_region``, :func:`dataset_matches`; round 10, O5) is queried as a
+table is: the same filters, types and sort, over its values as it reports them, its rows
+named by position.
+
 **Content** (ROADMAP.md, "Design rules", 7).  A query's rows are a result.  An error says
 which column, which test and which type, never a filter's value (a value may be a cell's,
 as a key may).
@@ -84,6 +88,7 @@ from .read.stream import CHECKPOINT_ROWS
 from .read.types import Value, day_serial
 
 if TYPE_CHECKING:  # pragma: no cover
+    from .dataset import DatasetTable
     from .workbook import Workbook
 
 #: Every test a filter can make.
@@ -147,12 +152,12 @@ class QueryError(ValueError):
 @dataclass(frozen=True)
 class Matches:
     """What :func:`matches` found: ``rows`` the sheet rows of the matching data rows, in
-    the result's order; ``types`` each filtered or sorted column's type;
+    the result's order (of a dataset, :func:`dataset_matches`, their positions); ``types`` each filtered or sorted column's type;
     ``not_compared`` per filtered column, the cells a comparing test met of another type
     than the column's (never matched).  ``values``: the cells of the columns asked for, by
     sheet row, when the pass kept them (:data:`KEEP_CELLS`); ``None`` when it did not."""
 
-    region: Region
+    region: "Region | DatasetTable"
     rows: tuple[int, ...]
     types: dict[str, str]
     not_compared: dict[str, Count] = field(default_factory=dict)
@@ -272,6 +277,48 @@ def matches(workbook: "Workbook", region: Region, *,
             else:
                 kept[number] = [row[first + o - left] for o in wanted_offsets]
 
+    rows, types, not_compared = _settled(region, tests, keys, offsets, counted, found, date1904)
+    return Matches(region, rows, types, not_compared, kept)
+
+
+def dataset_matches(table: "DatasetTable", *,
+                    where: "Mapping[str, Mapping[str, Any]] | Sequence[Mapping[str, Any]] | None" = None,
+                    sort: "Sequence[str | tuple[str, str]] | None" = None) -> Matches:
+    """:func:`matches` of a dataset (:class:`~xlsx_agent.dataset.DatasetTable`, round 10,
+    O5): its rows that pass ``where``, ordered by ``sort``, by position (from 1).  The
+    values tested are the dataset's as it reports them -- what ``xlsx_read`` shows of it,
+    rounded where its derive rounded -- each typed as a dataset's values are (a column's
+    label first); the filters, types and sort are a table's."""
+    tests = _tests(table, where)
+    keys = _sort_keys(table, sort)
+    if not tests and not keys:
+        return Matches(table, tuple(range(1, table.rows + 1)), {})
+    date1904 = table.date1904
+    offsets = sorted({t.offset for t in tests} | {k.offset for k in keys})
+    counted: dict[int, dict] = {o: {} for o in offsets}
+    typed = [t for t in tests if t.compares]
+    found: list[tuple] = []
+    for position in range(1, table.rows + 1):
+        cells = {o: table.value(position, o) for o in offsets}
+        for o, value in cells.items():
+            if value.t != "blank":
+                entry = counted[o].setdefault(value.t, [0, []])
+                entry[0] += 1
+                if len(entry[1]) < FIRST_ADDRESSES:
+                    entry[1].append(value)
+        if all(t.passes(cells[t.offset], date1904) for t in tests):
+            found.append((position, tuple(cells[t.offset].t for t in typed),
+                          tuple(k.key(cells[k.offset], date1904) for k in keys)))
+    rows, types, not_compared = _settled(table, tests, keys, offsets, counted, found, date1904)
+    return Matches(table, rows, types, not_compared)
+
+
+def _settled(region: Any, tests: list, keys: list, offsets: list[int], counted: dict,
+             found: list[tuple], date1904: bool) -> tuple[tuple[int, ...], dict, dict]:
+    """The pass's end, for a sheet's region and a dataset alike: each column's type, the
+    tests checked against it, the rows of that type that passed, in order, and the cells
+    of other types the comparing tests met."""
+    typed = [t for t in tests if t.compares]
     types = {region.columns[o]: majority_type({t: n for t, (n, _) in counted[o].items()})
              for o in offsets}
     for test in tests:
@@ -290,7 +337,7 @@ def matches(workbook: "Workbook", region: Region, *,
             values = sorted((v for _, vs in others for v in vs), key=lambda v: v.row)
             not_compared[test.column] = Count(sum(n for n, _ in others),
                                               tuple(v.a for v in values[:FIRST_ADDRESSES]))
-    return Matches(region, tuple(entry[0] for entry in rows), types, not_compared, kept)
+    return tuple(entry[0] for entry in rows), types, not_compared
 
 
 def read_rows(workbook: "Workbook", region: Region, columns: Sequence[str],
