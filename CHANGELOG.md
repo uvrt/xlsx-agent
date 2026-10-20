@@ -5,6 +5,30 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **Markdown rich text in cells** (lane X, X3b; ooxml-edit 0.54.0): `wb.set_cells({address:
+  {"markdown": "**Total** due *now*"}})` writes a shared string of runs (`<si><r><rPr>`)
+  -- `**bold**`, `*italic*`/`_italic_`, `***both***`, `~~strike~~`, backslash escapes, code
+  spans as text, by ooxml-edit's `ooxml_edit.markdown` (CommonMark's delimiter rules;
+  links, HTML and every other block stay text). Each run's `rPr` is the cell's whole font
+  with its marks (measured in Excel for Mac 16.106: a run with only `<b/>` shows in
+  Excel's default font, not the cell's; ROADMAP *X3b*). Markdown without marks is plain
+  text; text values never read Markdown. Each line given is a line of the cell (not
+  CommonMark's paragraph joining); one empty line kept between lines; `-`/`*`/`+` items
+  show as `• `, `1.`/`1)` items as their number renumbered from the list's first, nested
+  items 4 spaces further in per level (`xlsx_agent.markdown`). Text with a line break
+  gives the cell its format with `wrapText` (reused or appended); a row with
+  `customHeight` keeps its height and the cell is listed in `Written.fixed_height`
+  (measured: Excel grows every other row to its wrapped lines on open). Every guard and
+  the call's atomicity apply; the footprint is shared strings and cell formats appended.
+- **Markdown reads**: `wb.read(..., markdown=True)` (and `cell`, `cells`) give every text
+  value as Markdown (`Value.markdown`): rich runs as `**`, `*`, `~~`, `•` and numbered
+  lines as list items, every other character escaped, so that `{"markdown": ...}` writes
+  the same cell back; plain text stays plain by default; with a redaction each run is
+  redacted (a term across runs: the item's redacted text, unmarked). `xlsx_read` takes
+  `markdown`; `xlsx_set_cells` a `markdown` value field and says `fixed_height` with a
+  warning. Definitions: `xlsx_read` 528 -> 556, the core 4,069 -> 4,096 estimated (about
+  6,022 -> 6,062 counted by the proxy); `xlsx_set_cells` 347 -> 378; every definition
+  4,627 -> 4,686 (the guard 4,650 -> 4,690).
 - **Typed, guarded cell writes** (0.2's E3; lane X, X3; ooxml-edit 0.53.0):
   `wb.set_cells({address: value, ...}, replace_formulas=False)` (`xlsx_agent.edit.cells`),
   replacing the internal hook `Workbook._write`. Text is always literal (`"=x"` too);

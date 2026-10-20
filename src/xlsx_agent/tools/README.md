@@ -56,8 +56,13 @@ issues (cell facts such as numbers stored as text are `describe`'s).
 **Writing cells** (`xlsx_set_cells`, E3). Each item of `cells` is an `address` and
 exactly one of `text` (always literal, `"=x"` too), `number`, `bool`, `date` (`YYYY-MM-DD`,
 or the session locale's order with a four-digit year, into a cell whose format shows a
-date, or with `format`), `formula` (`=D10*2`, the only way to write one) or `blank: true`
-(the value goes, the format stays). `replace_formulas: true` writes over formula cells.
+date, or with `format`), `formula` (`=D10*2`, the only way to write one), `blank: true`
+(the value goes, the format stays) or `markdown` (rich text: `**bold**`, `*italic*`,
+`~~strike~~`, each line a line of the cell, `-` and `1.` items shown as `•` and numbers;
+`xlsx_agent.markdown`). `xlsx_read`'s `markdown: true` gives text as that Markdown --
+rich runs marked, list lines as items, the rest escaped -- so that writing it back gives
+the same cell; a cell given line breaks in a row of a fixed height is listed in
+`fixed_height`, with a warning. `replace_formulas: true` writes over formula cells.
 Every refusal -- a value refused, a formula cell without `replace_formulas`, an array
 formula or merged cell, a table's header, a column the application withholds from the
 model -- comes before anything changes, each by code and address in the error's
