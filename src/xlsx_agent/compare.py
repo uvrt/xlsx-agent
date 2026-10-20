@@ -73,6 +73,12 @@ characters, longer text cut with ``…``.  A row whose label cell is blank, not 
 hidden (on a hidden row or column) has none, and a column hidden from the model is no
 column, so never the label column.  Declarations name no label column of their own.
 
+**Cells by address** (X5, ``cells=True``): every cell of every sheet both workbooks have,
+by address, formulas by their text -- a formula changed, become a value, a value become a
+formula, a formula removed or added, even where the cached values agree -- and the changes
+a write policy does not allow (:mod:`xlsx_agent.integrity`, :attr:`Diff.cells`).  Tables
+are then compared only when ``tables`` names them.
+
 **Content** (ROADMAP.md, "Design rules", 7).  Keys and values are cell content: they are in
 the :class:`Diff`, a result, and never in a message; errors name tables, columns and
 codes only.
@@ -88,6 +94,7 @@ from typing import TYPE_CHECKING, Any, Iterator, Mapping, Sequence
 from ooxml_edit.sheets import Area, Cell
 
 from .address import NameNotFound, RangeAddress, TableAddress, nearest
+from .integrity import CellsDiff, compare_cells
 from .profile import FIRST_ADDRESSES, Count
 from .read.regions import Region, RegionError, key_text
 from .read.types import Value
@@ -277,14 +284,18 @@ class Diff:
     tables: tuple[TableDiff, ...]
     tables_added: tuple[str, ...] = ()
     tables_removed: tuple[str, ...] = ()
+    cells: "CellsDiff | None" = None
 
     def totals(self) -> dict[str, int]:
-        """Every change counted by kind, over every table (zeros left out)."""
+        """Every change counted by kind, over every table, and with ``cells`` every cell
+        change by kind (:data:`~xlsx_agent.integrity.KINDS`; zeros left out)."""
         out = {"sheets": len(self.sheets),
                "unmatched_tables": len(self.tables_added) + len(self.tables_removed)}
         for table in self.tables:
             for name, n in table.totals().items():
                 out[name] = out.get(name, 0) + n
+        if self.cells is not None:
+            out.update(self.cells.counts())
         return {name: n for name, n in out.items() if n}
 
     @property
@@ -296,17 +307,28 @@ class Diff:
 def compare(a: "Workbook", b: "Workbook", *,
             tables: "str | Sequence[str | tuple[str, str]] | None" = None,
             key: "str | Mapping[str, str] | None" = None,
-            columns: "Sequence[str] | None" = None) -> Diff:
-    """``a`` (the older) against ``b`` (the newer); see the module's notes."""
+            columns: "Sequence[str] | None" = None, cells: bool = False,
+            formula_text: bool = False, policy: Any = None) -> Diff:
+    """``a`` (the older) against ``b`` (the newer); see the module's notes.  ``cells``
+    adds every cell compared by address, formulas by their text (:attr:`Diff.cells`,
+    :mod:`xlsx_agent.integrity`), with ``formula_text`` their formulas, and the changes
+    outside ``policy`` (or ``a``'s own policies); tables are then compared only when
+    ``tables`` names them."""
     if isinstance(columns, str):
         columns = [columns]
-    pairs, added, removed = _pairs(a, b, tables)
+    if (formula_text or policy is not None) and not cells:
+        raise ValueError("formula_text and policy are for the cell compare: give cells=True")
     diffs = []
-    for region_a, region_b in pairs:
-        wanted = _key_for(key, region_a)
-        diffs.append(_table(a, b, region_a, region_b, wanted, columns))
+    added: list[str] = []
+    removed: list[str] = []
+    if not cells or tables is not None:
+        pairs, added, removed = _pairs(a, b, tables)
+        for region_a, region_b in pairs:
+            wanted = _key_for(key, region_a)
+            diffs.append(_table(a, b, region_a, region_b, wanted, columns))
+    by_cell = compare_cells(a, b, formula_text=formula_text, policy=policy) if cells else None
     return Diff(sheets=tuple(_sheets(a.sheets, b.sheets)), tables=tuple(diffs),
-                tables_added=tuple(added), tables_removed=tuple(removed))
+                tables_added=tuple(added), tables_removed=tuple(removed), cells=by_cell)
 
 
 # -- sheets ------------------------------------------------------------------------------------

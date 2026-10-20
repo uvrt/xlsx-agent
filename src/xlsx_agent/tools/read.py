@@ -129,6 +129,8 @@ CURSOR = string("next_cursor of the previous page, with the same target.", optio
        "comments": boolean("Add comment (author, text). Default false.", optional=True),
        "hyperlinks": boolean("Add link (url or location). Default false.", optional=True),
        "merges": boolean("List the merged areas over the rows. Default false.", optional=True),
+       "validations": boolean("List data validations over the target (type, cells, list "
+                              "source). Default false.", optional=True),
        "markdown": boolean("Text as Markdown (**bold**, lists). Default false.",
                            optional=True),
        "sources": boolean("d: only: add each value's source cells (8, more counted); "
@@ -147,7 +149,7 @@ CURSOR = string("next_cursor of the previous page, with the same target.", optio
 def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = False,
               formulas: bool = False, comments: bool = False, hyperlinks: bool = False,
               merges: bool = False, markdown: bool = False, sources: bool = False,
-              key: str | None = None,
+              validations: bool = False, key: str | None = None,
               columns: list[str] | None = None, limit: int | None = None,
               max_chars: int | None = None, cursor: str | None = None) -> Result:
     """``xlsx_read``'s handler: a workbook's cells, or a dataset's values (see the
@@ -188,6 +190,8 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     data["range"] = found.located(area)
     if found.requested is not None:
         data["requested"] = found.requested
+    if validations and start_row == 0 and start_column == 0:
+        data.update(_validations(workbook, found, formulas, call.limits.max_list_items))
     names_cut = 0
     if found.columns is not None:
         if _size(found.columns) <= chars // 4:
@@ -327,6 +331,8 @@ class _Found:
                  workbook: Any = None, pick: list[int] | None = None,
                  first_column: int = 0) -> None:
         self.rows = rows
+        #: The area asked for, before it was clipped to the used range (``None``: ``area``).
+        self.whole: Area | None = None
         self.text = text
         #: ``columns`` asked for: each one's place in its region (from 0), in their order;
         #: ``first_column`` the region's first column, from which they count.
@@ -436,7 +442,9 @@ def _cells(workbook: Any, target: str, key: str | None, columns: list[str] | Non
             _intersect(address.area, workbook.used_range(sheet))
         if area != address.area:
             requested = address.text
-    return _Found(address.text, ref, _forms(workbook, sheet), sheet, area, requested)
+    found = _Found(address.text, ref, _forms(workbook, sheet), sheet, area, requested)
+    found.whole = address.area
+    return found
 
 
 def _keyed(workbook: Any, region: Any, address: TableAddress, key: str,
@@ -691,6 +699,41 @@ def _extras(workbook: Any, places: list[tuple[Any, SheetRef, Area]], merges: boo
         out["merges"] = list(dict.fromkeys(found))
     if blocks:
         out["arrays"] = list(dict.fromkeys(blocks))
+    return out
+
+
+def _validations(workbook: Any, found: "_Found", formulas: bool, limit: int) -> dict:
+    """The data-validation rules over the whole target (not only its first page; a range
+    as asked, before it is clipped to the used range, since input cells are often empty):
+    each as :meth:`ValidationRule.as_dict
+    <xlsx_agent.validations.ValidationRule.as_dict>` gives it, with its formulas when
+    ``formulas`` asks; ``limit`` at most, the rest counted."""
+    area = found.whole if found.whole is not None else found.area
+    if area is None and found.rows:
+        first, last = found.rows[0], found.rows[-1]
+        area = Area(Cell(min(r.first.row for r in found.rows), first.first.column),
+                    Cell(max(r.last.row for r in found.rows), last.last.column))
+    if area is None:
+        return {"validations": []}
+    shown: list[dict] = []
+    more = 0
+    seen = set()
+    for sheet, _, part in found.places([area]):
+        if sheet is None:
+            continue
+        for rule in workbook.validations(sheet):
+            if not any(_overlaps(a, part) for a in rule.areas):
+                continue
+            if (rule.sheet, rule.index) in seen:
+                continue
+            seen.add((rule.sheet, rule.index))
+            if len(shown) < limit:
+                shown.append(rule.as_dict(formulas=formulas))
+            else:
+                more += 1
+    out: dict[str, Any] = {"validations": shown}
+    if more:
+        out["more_validations"] = more
     return out
 
 

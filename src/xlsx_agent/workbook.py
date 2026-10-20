@@ -107,6 +107,7 @@ if TYPE_CHECKING:
     from .edit import Editor, EditReport, SaveReport
     from .edit.cells import Written
     from .edit.policy import Allowed, WritePolicy
+    from .validations import ValidationRule
 
 #: SpreadsheetML's main namespace, transitional and strict.
 NS_MAIN = ("http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -930,14 +931,30 @@ class Workbook:
     def compare(a: "Workbook", b: "Workbook", *,
                 tables: "str | Sequence[str | tuple[str, str]] | None" = None,
                 key: "str | Mapping[str, str] | None" = None,
-                columns: "Sequence[str] | None" = None) -> Diff:
+                columns: "Sequence[str] | None" = None, cells: bool = False,
+                formula_text: bool = False, policy: Any = None) -> Diff:
         """``a`` (the older workbook) against ``b`` (the newer): sheets by id, tables and
         regions by name (``tables``: some of them, or pairs; every table and declared region
         when ``None``), rows by key (``key``: a column name, or one per table; else the
         declared key, or the one key column both find), and cells by type and value, each
         change with both cells typed.  A key two rows share is reported, never paired; see
-        :mod:`xlsx_agent.compare`."""
-        return compare(a, b, tables=tables, key=key, columns=columns)
+        :mod:`xlsx_agent.compare`.  ``cells=True`` compares every cell by address instead,
+        formulas by their text (tables too only when ``tables`` names them), with
+        ``formula_text`` the formulas of the cells that differ and the changes outside
+        ``policy`` (or ``a``'s own write policies): :mod:`xlsx_agent.integrity`."""
+        return compare(a, b, tables=tables, key=key, columns=columns, cells=cells,
+                       formula_text=formula_text, policy=policy)
+
+    # -- data validation (X5) ---------------------------------------------------------------
+
+    def validations(self, sheet: "Sheet | str | SheetRef | None" = None) -> "list[ValidationRule]":
+        """The data-validation rules of ``sheet`` (every sheet's, by default), inspected:
+        standard or ``x14``, type, operator, the cells covered and, for a list, where its
+        values come from and whether they resolve without evaluating anything
+        (:mod:`xlsx_agent.validations`)."""
+        from .validations import inspect
+
+        return inspect(self, None if sheet is None else [self._cell_sheet(sheet)])
 
     # -- checking against a schema ---------------------------------------------------------
 
