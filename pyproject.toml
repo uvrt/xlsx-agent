@@ -60,5 +60,9 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The Excel oracle drives the real Microsoft Excel for Mac, one instance per machine; opt in
+# with `pytest -m oracle` (tests/oracle.py).
+addopts = "-m 'not oracle'"
 markers = ["slow: a long measurement, run with --run-slow",
-           "provider: calls a model provider's API online; skipped without its API key"]
+           "provider: calls a model provider's API online; skipped without its API key",
+           "oracle: drives Microsoft Excel for Mac (one instance per machine); skips when Excel is in use"]
