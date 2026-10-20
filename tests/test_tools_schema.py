@@ -39,6 +39,10 @@ L8 (round 7): ``xlsx_read``'s ``key_column`` is ``key`` (``key_column`` and ``ro
 aliases, never sent), and ``columns`` picks a ``t:`` target's columns: ``xlsx_read`` 501 ->
 528, the core 3,496 -> 3,523 estimated, about 5,174 -> 5,214 counted; every definition
 3,718 -> 3,746, the guard 3,720 -> 3,750.
+X2 of the second production lane (E1, ooxml-edit 0.51.0): the shared ``undo`` (158),
+``batch`` (202) and ``save_document`` (186) join the core, as the roadmap's 0.2 table has
+them: the core 3,523 -> 4,069 estimated, about 5,214 -> 6,022 counted by the proxy, under
+6,500; every definition 3,746 -> 4,291, the guard 3,750 -> 4,300.
 """
 
 from __future__ import annotations
@@ -57,7 +61,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
-ALL_GUARD = 3750
+ALL_GUARD = 4300
 
 
 @pytest.fixture(scope="module")
@@ -108,10 +112,11 @@ def test_the_groups_are_the_roadmaps():
     groups: dict[str, set[str]] = {}
     for tool in TOOLS:
         groups.setdefault(tool.group, set()).add(tool.name)
-    # the read tools are the core; edits (0.2) will be deferred groups of their own
+    # the read tools, save_document, undo and batch are the core; edits (0.2) will be
+    # deferred groups of their own
     assert groups == {"core": {"open_document", "describe", "find_text", "xlsx_read",
                                "xlsx_profile", "xlsx_query", "xlsx_derive", "xlsx_compare",
-                               "xlsx_validate_data"},
+                               "xlsx_validate_data", "save_document", "undo", "batch"},
                       "shared_misc": {"close_document", "read_blob"}}
 
 
