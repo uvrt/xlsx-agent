@@ -512,6 +512,22 @@ wb.set_cells({"Stock!F10": 50}, replace_formulas=True)   # over a formula: only 
   (`shift("D10*E10", 1, 0) == "D11*E11"`; `$` parts, names, structured references and
   strings untouched); a member written leaves its group alone. Neighbours' formulas are
   never touched.
+- **Markdown** (X3b). `{"markdown": "**Total** due *now*"}` writes rich text: `**bold**`,
+  `*italic*`, `~~struck~~`, escapes, code spans as text; each run carries the cell's whole
+  font with its marks (Excel shows a run with only `<b/>` in its default font: measured).
+  Each line is a line of the cell (not CommonMark's joined paragraphs); `- item` shows as
+  `• item`, `1. item` as its number, a nested item four spaces further in; a cell given a
+  line break gets a wrapping format (reused or appended), and a row with a height of its
+  own is named in `fixed_height` (Excel grows any other row to its lines on open). Text is
+  never Markdown: `"**"` stays two stars.
+
+```python
+wb.set_cells({"Stock!B16": {"markdown": "**Fans**\n- desk\n- *floor*"}})
+wb.cell("Stock!B16").v                   # 'Fans\n• desk\n• floor'
+wb.cell("Stock!B16", markdown=True).v    # '**Fans**\n- desk\n- *floor*': writes back the same
+wb.cell("Stock!B10", markdown=True).v    # plain text escaped: 'a\\*b' for a*b
+```
+
 - **Freshness.** Every formula value says `cache`: `cached_unverified` (as last saved,
   never checked), `invalidated` (after any write, workbook-wide, or when the file arrived
   with `fullCalcOnLoad` or manual calculation) or `absent` (no cached value); `external`

@@ -60,7 +60,7 @@ from typing import Any, Iterable, Iterator
 
 from ooxml_common.kinds import KINDS, REL_VBA_PROJECT, main_content_type
 from ooxml_edit.history import History
-from ooxml_edit.sheets import Cell, Formula, date_serial
+from ooxml_edit.sheets import Cell, Formula, RichText, date_serial
 from ooxml_edit.sheets import Workbook as CellWriter
 
 from ..read.types import Problem, _letters
@@ -356,6 +356,8 @@ def _holds(content: Any, value: Any, date1904: bool) -> bool:
         value = date_serial(value, date1904=date1904)
     if isinstance(value, (int, float)):
         return content.kind == "number" and float(content.value) == float(value)
+    if isinstance(value, RichText):
+        value = value.text
     if isinstance(value, str):
         return content.kind == "text" and content.value == value
     return False

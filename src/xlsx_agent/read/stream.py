@@ -40,7 +40,9 @@ from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell
 
 from ..formula import is_external
 from ..xml import iterparse_xml
-from .strings import SharedStrings, item_text
+from ooxml_edit.markdown import Run
+
+from .strings import SharedStrings, item_runs, item_text, text_markdown
 from .styles import DATE_KINDS, Styles
 from .types import (TEXT_LIMIT, Problem, Value, _letters, looks_like_date, looks_like_number,
                     serial_text)
@@ -283,7 +285,8 @@ class SheetReader:
                  styles: Styles, date1904: bool, locale: Any, formats: bool = False,
                  grouping: bool = True, local_dates: bool = False,
                  redaction: Any = None, cache: str = "cached_unverified",
-                 external_names: "frozenset[str]" = frozenset()) -> None:
+                 external_names: "frozenset[str]" = frozenset(),
+                 markdown: bool = False) -> None:
         self.data = data
         self.sheet = sheet
         self.hidden = hidden
@@ -294,6 +297,9 @@ class SheetReader:
         self.grouping = grouping
         self.local_dates = local_dates
         self.formats = formats
+        #: Give each text value its Markdown too (:attr:`Value.markdown
+        #: <xlsx_agent.read.types.Value.markdown>`, :mod:`xlsx_agent.markdown`).
+        self.markdown = markdown
         #: The workbook's redaction (:mod:`xlsx_agent.redact`): applied to every text (the
         #: shared strings come redacted), a number format's code, and a formula's text,
         #: which is withheld when it holds a match.
@@ -480,7 +486,8 @@ class SheetReader:
             self._shared_string(value, v_text)
         elif kind == "inlineStr":
             if is_node is not None:
-                self._text(value, item_text(is_node))
+                self._text(value, item_text(is_node),
+                           item_runs(is_node) if self.markdown else None)
             elif v_text is not None:
                 self._text(value, v_text)
         elif kind == "str":
@@ -532,6 +539,8 @@ class SheetReader:
         value.v, value.t, value.at_limit = cached[0], "text", cached[2]
         if not value.formula:
             value.issue = cached[1]
+        if self.markdown:
+            value.markdown = self.strings.markdown(index)
 
     def _looks(self, text: str) -> str | None:
         """``"number_as_text"`` or ``"date_as_text"`` when text looks like one, in the
@@ -542,7 +551,11 @@ class SheetReader:
             return "date_as_text"
         return None
 
-    def _text(self, value: Value, text: str) -> None:
+    def _text(self, value: Value, text: str, runs: "tuple[Run, ...] | None" = None) -> None:
+        if self.markdown:
+            redact = self.redaction.text if self.redaction is not None else None
+            value.markdown = text_markdown(runs if runs is not None else (Run(text),),
+                                           redact) if text else ""
         if self.redaction is not None and text:
             text = self.redaction.text(text)
         value.v, value.t = text, "text"

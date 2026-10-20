@@ -175,7 +175,9 @@ class Value:
     hidden from the model: :mod:`xlsx_agent.declare`); :attr:`a` is then the cell's own
     address.  ``cleaned``: a declared column's rule changed the text (:mod:`xlsx_agent.clean`;
     ``v`` is the text cleaned, or a tuple of items for ``t="list"``), and ``original`` is
-    the text as stored."""
+    the text as stored.  ``markdown``: a text value's Markdown, when the read asked for it
+    (:mod:`xlsx_agent.markdown`: bold, italic and strikethrough runs, list lines, every
+    other character escaped); a read with ``markdown`` gives it as ``v``."""
 
     sheet: str
     row: int
@@ -198,6 +200,7 @@ class Value:
     origin: "tuple[str, int, int] | None" = None
     cleaned: bool = False
     original: str | None = field(default=None, repr=False)
+    markdown: str | None = field(default=None, repr=False)
 
     @property
     def a(self) -> str:

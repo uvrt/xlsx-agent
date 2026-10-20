@@ -9,6 +9,7 @@
         "Stock!H15": {"date": "2026-10-20"},            # a date (or a Python date)
         "Stock!B4": None,                               # a blank: the value goes, the style stays
         "Stock!J15": {"formula": "=D15*E15"},           # a formula only when given as one
+        "Stock!B16": {"markdown": "**Fan**, *spare*"},  # rich text: bold, italic, lists
     })
 
 **Values.**  Text is always text: ``"=D15"`` is stored as those four characters, and
@@ -37,6 +38,21 @@ language-dependent built-in ids in the workbook's locale, :mod:`xlsx_agent.read.
 a format that shows only a time, or none that shows a day, is refused naming the cell,
 unless the call gives one: ``{"date": "2026-10-20", "format": "yyyy-mm-dd"}`` (a code that
 shows a day), which the cell is given, reusing an identical format.
+
+**Markdown** (``{"markdown": "**Total** due *now*"}``, :mod:`xlsx_agent.markdown`): the
+cell's text as runs -- ``**bold**``, ``*italic*``, ``***both***``, ``~~struck~~``,
+backslash escapes, code spans as text -- written as a shared string of runs, each with the
+cell's whole font and its own marks (:class:`ooxml_edit.sheets.RichText`: a run with only
+``<b/>`` would show in Excel's default font, measured).  Each line is a line of the cell;
+list items show as ``•`` or their number, nested items indented.  Markdown with no
+bold, italic or strikethrough is written as plain text (``- a`` as ``• a``).  Only this
+form reads Markdown: text is always literal, ``"**"`` too.  Text with a line break gives
+the cell a format that wraps its text (:meth:`ooxml_edit.sheets.Styles.with_wrap_text`,
+the cell's own with ``wrapText``, reused or appended): Excel shows a line break only
+then, and grows a row without a height of its own to every line on open (measured, Excel
+for Mac 16.106).  A row with one (``customHeight``) keeps it: the write goes ahead, and
+the result names the cell (``fixed_height``), whose lines past the height are hidden
+until the row is fitted.
 
 **Guards** (each a refusal of the whole call, :class:`~xlsx_agent.edit.EditError` with the
 cells concerned): writing over a cell that holds a formula, unless the call says
@@ -67,9 +83,11 @@ from typing import Any, Iterable, Mapping
 
 from ooxml_common.locales import DATE_ORDERS
 from ooxml_edit.dates import is_date_code
-from ooxml_edit.sheets import MAX_TEXT, Cell, Formula
+from ooxml_edit.markdown import plain
+from ooxml_edit.sheets import MAX_TEXT, Cell, Formula, RichText
 
 from ..formula import ShiftError, shift, tokens
+from ..markdown import cell_runs
 from ..read.styles import classify_format
 from ..read.types import _letters
 
@@ -99,6 +117,8 @@ class Planned:
     format: str | None = None
     #: The cell is the master of a shared formula group, handed on before it is written.
     release: bool = False
+    #: Text with a line break: the cell is given a format that wraps it.
+    wrap: bool = False
 
 
 @dataclass(frozen=True)
@@ -107,14 +127,16 @@ class Written:
     written (``cells``, addresses, in the order given; ``changed`` how many of them changed),
     each one's type before (``old``: ``text``, ``number``, ``bool``, ``error``, ``blank``
     or ``formula``), the shared formula groups handed on (``released``: the old masters'
-    addresses), and the workbook's calculation status after (``invalidated`` once anything
-    was written).  Never a value."""
+    addresses), the cells whose text has line breaks in a row of a fixed height
+    (``fixed_height``: lines past it hidden in Excel), and the workbook's calculation
+    status after (``invalidated`` once anything was written).  Never a value."""
 
     cells: tuple[str, ...]
     changed: int
     old: dict[str, str] = field(default_factory=dict)
     released: tuple[str, ...] = ()
     calculation: str = "cached_unverified"
+    fixed_height: tuple[str, ...] = ()
 
     def as_dict(self, limit: int = MAX_LISTED) -> dict[str, Any]:
         """As plain data, at most ``limit`` cells listed (the rest counted)."""
@@ -125,6 +147,8 @@ class Written:
             out["cells_cut"] = len(self.cells) - limit
         if self.released:
             out["released"] = list(self.released[:limit])
+        if self.fixed_height:
+            out["fixed_height"] = list(self.fixed_height[:limit])
         out["calculation"] = self.calculation
         return out
 
@@ -163,11 +187,17 @@ def set_cells(workbook: Any, cells: Any, *, replace_formulas: bool = False) -> W
                 styles = editor.cells.styles
                 base = writer.style(write.cell, inherited=True)
                 style = styles.with_number_format(base, write.format)
+            if write.wrap and editor.cells.styles is not None:
+                base = style if style is not None else writer.style(write.cell, inherited=True)
+                if base < editor.cells.styles.count:
+                    style = editor.cells.styles.with_wrap_text(base)
             if editor.write(write.sheet, write.cell, write.value, style=style):
                 changed += 1
+    fixed = tuple(w.address for w in planned
+                  if w.wrap and editor.cells.sheet(w.sheet.stored_name).custom_height(w.cell.row))
     return Written(cells=tuple(w.address for w in planned), changed=changed,
                    old={w.address: w.old for w in planned}, released=tuple(released),
-                   calculation=workbook.calculation_status)
+                   calculation=workbook.calculation_status, fixed_height=fixed)
 
 
 def _translate(text: str, rows: int, columns: int) -> str:
@@ -299,13 +329,15 @@ def _value(workbook: Any, facts: _SheetFacts, label: str, sheet: Any, cell: Cell
     date_format = None
     if isinstance(given, Mapping):
         keys = set(given)
-        kinds = keys & {"value", "formula", "date"}
-        extra = keys - {"value", "formula", "date", "format"}
+        kinds = keys & {"value", "formula", "date", "markdown"}
+        extra = keys - {"value", "formula", "date", "markdown", "format"}
         if len(kinds) != 1 or extra or ("format" in keys and kinds != {"date"}):
-            refusals.add("bad_value", label, 'one of "value", "formula" or "date" (a date '
-                         'with an optional "format")')
+            refusals.add("bad_value", label, 'one of "value", "formula", "date" or '
+                         '"markdown" (a date with an optional "format")')
             return None
         (kind,) = kinds
+        if kind == "markdown":
+            return _markdown(given["markdown"], label, sheet, cell, old, refusals)
         if kind == "value":
             given = given["value"]
             if isinstance(given, Mapping):
@@ -364,6 +396,29 @@ def _value(workbook: Any, facts: _SheetFacts, label: str, sheet: Any, cell: Cell
         return None
     refusals.add("bad_value", label, f"not a value a cell holds: {type(given).__name__}")
     return None
+
+
+def _markdown(text: Any, label: str, sheet: Any, cell: Cell, old: str,
+              refusals: _Refusals) -> Planned | None:
+    """``{"markdown": text}`` as the value written (see the module): rich text, or plain
+    text when nothing in it is bold, italic or struck through."""
+    if not isinstance(text, str):
+        refusals.add("bad_value", label, "Markdown is text, as **Total** due")
+        return None
+    if len(text) > MAX_TEXT * 4:        # long before its runs are built
+        refusals.add("text_too_long", label, f"{len(text):,} characters of Markdown")
+        return None
+    runs = cell_runs(text)
+    shown = plain(runs)
+    if not shown:
+        refusals.add("bad_value", label, "the Markdown holds no text: write None for a "
+                     "blank")
+        return None
+    if len(shown) > MAX_TEXT:
+        refusals.add("text_too_long", label, f"{len(shown):,} characters")
+        return None
+    value = RichText(runs) if any(run.formatted for run in runs) else shown
+    return Planned(label, sheet, cell, value, "text", old, wrap="\n" in shown)
 
 
 def _day(given: Any, workbook: Any, label: str, refusals: _Refusals) -> _dt.date | None:

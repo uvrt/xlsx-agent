@@ -27,7 +27,7 @@ import zipfile
 
 import pytest
 
-from ooxml_edit.sheets import Formula
+from ooxml_edit.sheets import Cell, Formula
 
 from xlsx_agent import Workbook
 
@@ -156,6 +156,76 @@ def test_excel_opens_every_set_cells_fixture_and_keeps_what_was_written(excel, v
     with zipfile.ZipFile(io.BytesIO(outcome.saved.read_bytes())) as archive:
         sheet = archive.read("xl/worksheets/sheet1.xml")
     assert b"dataValidation" in sheet and b"Lists!$A$2:$A$5" in sheet
+
+
+#: What X3b's Markdown writes: rich runs on one line, lines with a list (a wrapping format
+#: given), a numbered list nested in a bullet, and a fixed-height row's cell.
+MARKDOWN = {
+    "Stock!B15": {"markdown": "**Spare** fan, *boxed* ~~old~~ ***new***"},
+    f"Stock!B{FIRST_INPUT}": {"markdown": "**Fans**\n\n- desk\n- **floor**\n  1. tall\n  2. short"},
+    f"Stock!C{FIRST_INPUT + 1}": {"markdown": "one\ntwo\nthree"},
+    "Stock!A1": {"markdown": "Corner shop *stock*\nsecond line"},
+}
+
+
+def _run_fonts(data: bytes, text: str) -> list[tuple[str, dict]]:
+    """The runs of the shared string whose text is ``text``: each run's text and its
+    properties by name."""
+    from lxml import etree
+
+    x = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        root = etree.fromstring(archive.read("xl/sharedStrings.xml"))
+    for item in root.iter(x + "si"):
+        runs = item.findall(x + "r")
+        if "".join(t.text or "" for r in runs for t in r.iter(x + "t")) == text:
+            return [("".join(t.text or "" for t in r.iter(x + "t")),
+                     {etree.QName(p).localname: p.get("val", "") for p in
+                      (r.find(x + "rPr") if r.find(x + "rPr") is not None else [])})
+                    for r in runs]
+    return []
+
+
+@pytest.mark.oracle
+@pytest.mark.parametrize("variant", ["plain", "inline"])
+def test_excel_opens_markdown_cells_and_keeps_the_runs_lines_and_wrap(excel, variant):
+    original = Shop(**VARIANTS[variant]).to_bytes()
+    wb = Workbook.open(original)
+    written = wb.set_cells(MARKDOWN)
+    assert written.fixed_height == ("Stock!A1",)
+    edited = wb.to_bytes()
+    outcome = excel.resave(edited, name=f"shop-x3b-{variant}")
+    assert outcome.ok, outcome
+    saved = outcome.saved.read_bytes()
+    again = Workbook.open(saved)
+    for address in MARKDOWN:
+        assert again.cell(address).v == wb.cell(address).v, address
+        assert again.cell(address, markdown=True).v == wb.cell(address, markdown=True).v
+    runs = _run_fonts(saved, "Spare fan, boxed old new")
+    assert [text for text, _ in runs] == ["Spare", " fan, ", "boxed", " ", "old", " ", "new"]
+    for text, props in runs:     # Excel kept the cell's font on every run, and the marks
+        assert props.get("rFont") == "Aptos" and props.get("sz") == "11", (text, props)
+    assert [("b" in p, "i" in p, "strike" in p) for _, p in runs] == [
+        (True, False, False), (False, False, False), (False, True, False),
+        (False, False, False), (False, False, True), (False, False, False),
+        (True, True, False)]
+    styles = again.editor.cells.styles
+    sheet = again.editor.cells.sheet("Stock")
+    for ref in (f"B{FIRST_INPUT}", f"C{FIRST_INPUT + 1}", "A1"):
+        assert styles.wraps_text(sheet.style(Cell.parse(ref))), ref
+    assert not styles.wraps_text(sheet.style(Cell.parse("B15")))
+    with zipfile.ZipFile(io.BytesIO(saved)) as archive:
+        rows = archive.read("xl/worksheets/sheet1.xml")
+    # Measured: Excel grows a row without a height of its own to its lines on open and
+    # saves the height; a row with customHeight keeps its own.
+    import re
+
+    heights = {int(m.group(1)): m.group(0) for m in re.finditer(
+        rb'<row r="(\d+)"[^>]*>', rows)}
+    first = heights[1].decode()
+    assert 'customHeight="1"' in first and 'ht="21"' in first
+    grown = heights[FIRST_INPUT].decode()
+    assert 'ht="' in grown and float(re.search(r'ht="([0-9.]+)"', grown).group(1)) > 40
 
 
 @pytest.mark.oracle
