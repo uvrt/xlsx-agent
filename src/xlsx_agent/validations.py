@@ -51,11 +51,12 @@ a refusal).  A cell under a rule is ``invalid`` when the value written does not 
 rule that can be read without evaluating anything: a resolved list (the value among its
 values, text matched case and surrounding spaces aside, numbers as numbers -- how Excel
 matches a list's text is not measured, so only a value no reading could match is named);
-``whole`` (a whole number), ``decimal`` (a number), ``date`` (a date, compared by serial)
-and ``textLength`` (the text's length in characters) with each bound a number, or one
-cell holding a number and no formula; a value of another type than the rule checks (text
-under ``whole``) satisfies none (ST_DataValidationType, ECMA-376 Part 1, §18.18.21: the
-rule "checks for" values of its type).  It is ``unchecked`` when the rule cannot be read so
+``whole`` (a whole number), ``decimal`` (a number) and ``date`` (a date or a number,
+compared as its serial: a date is its serial number, ECMA-376 Part 1, §18.17.4) and
+``textLength`` (the text's length in characters), with each bound a number, or one cell
+holding a number and no formula; text or a boolean under ``whole``, ``decimal`` or
+``date`` satisfies none (ST_DataValidationType, §18.18.21: the rule checks for values of
+its type).  It is ``unchecked`` when the rule cannot be read so
 (an unresolved list, a bound given by a formula such as ``TODAY()``, a ``time`` or
 ``custom`` rule, a formula written); a blank written is not checked.  Only the first rule
 covering a cell is asked, as a cell has one rule in Excel.
@@ -399,7 +400,7 @@ def check(workbook: "Workbook", rules: "list[ValidationRule]", cell: Cell, kind:
             return "unchecked"
         measured: float = len(text)
     else:
-        if kind == "bool" or kind == "text" or (rule.type == "date") != (kind == "date"):
+        if kind in ("bool", "text"):
             return "invalid"
         measured = float(serial if kind == "date" else value)
         if rule.type == "whole" and not measured.is_integer():

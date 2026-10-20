@@ -63,6 +63,7 @@ hidden from the model (``withheld``).  Nothing here is logged.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Iterable, Iterator
 
 from ooxml_edit.sheets import Area, Cell
@@ -243,8 +244,8 @@ def _outside(edit: CellEdit, allowed: Any, part: str) -> bool:
 
 # -- one sheet ---------------------------------------------------------------------------------
 
-#: A cell as read here: its formula as compared (``None`` without one), its value (its
-#: cached value, for a formula; ``None`` for none), and its formula's text as expanded.
+#: A cell as read here: its formula as stored (``None`` without one: see :func:`_cells`)
+#: and its value (its cached value, for a formula; ``None`` for none).
 _State = tuple
 
 
@@ -266,7 +267,7 @@ def _sheet(a: "Workbook", sheet_a: "Sheet", b: "Workbook", sheet_b: "Sheet", nam
         texts = []
         withheld = False
         for workbook, sheet, state in ((a, sheet_a, one), (b, sheet_b, two)):
-            text = state[2] if state is not None else None
+            text = _text(state[0]) if state is not None and state[0] is not None else None
             if text is not None and _withheld(workbook, sheet, text, row, column):
                 text, withheld = None, True
             texts.append(text)
@@ -279,7 +280,7 @@ def _kind(one: "_State | None", two: "_State | None") -> str | None:
     va = one[1] if one is not None else None
     vb = two[1] if two is not None else None
     if fa is not None and fb is not None:
-        if fa != fb:
+        if fa != fb and _compared(fa) != _compared(fb):
             return "formula_changed"
         return "cache_changed" if va != vb else None
     if fa is not None:
@@ -289,6 +290,44 @@ def _kind(one: "_State | None", two: "_State | None") -> str | None:
     return "value_changed" if va != vb else None
 
 
+@lru_cache(maxsize=4096)
+def _compared(formula: tuple) -> tuple:
+    """A formula as stored (:func:`_cells`) as it is compared: its text normalised
+    (:func:`~xlsx_agent.formula.normalise`), a shared member's as its expanded text (or,
+    when its group's text cannot be moved, by the group's text and its place in it).  Only
+    asked when two cells' stored forms differ: most formulas are compared as stored."""
+    kind = formula[0]
+    if kind == "normal":
+        return ("normal", normalise(formula[1]))
+    if kind == "member":
+        _, text, rows, columns = formula
+        try:
+            return ("normal", normalise(shift(text, rows, columns)))
+        except ShiftError:
+            return ("member", normalise(text), rows, columns)
+    if kind == "array":
+        return ("array", normalise(formula[1]), formula[2])
+    if kind == "dataTable":
+        return ("dataTable", formula[1], formula[2], normalise(formula[3]))
+    return formula
+
+
+def _text(formula: tuple) -> str | None:
+    """A formula's text as a cell holds it (a shared member's expanded); ``None`` for a
+    block's other cell or text that cannot be moved."""
+    kind = formula[0]
+    if kind in ("normal", "array"):
+        return formula[1]
+    if kind == "dataTable":
+        return formula[3] or None
+    if kind == "member":
+        try:
+            return shift(formula[1], formula[2], formula[3])
+        except ShiftError:
+            return None
+    return None
+
+
 def _withheld(workbook: "Workbook", sheet: "Sheet", text: str, row: int, column: int) -> bool:
     redaction = workbook.redaction
     if redaction is not None and redaction.holds(text):
@@ -296,16 +335,21 @@ def _withheld(workbook: "Workbook", sheet: "Sheet", text: str, row: int, column:
     return workbook.regions.formula_withheld(text, sheet.name, Cell(row, column))
 
 
-def _strings(workbook: "Workbook") -> SharedStrings:
+def _strings(workbook: "Workbook") -> list[str]:
     """The shared strings as stored: a redaction would make two texts one."""
     if workbook.redaction is None:
-        return workbook.strings
+        return workbook.strings.items
     part = workbook._related("sharedStrings")
-    return SharedStrings(workbook.package.read(part) if part else None)
+    return SharedStrings(workbook.package.read(part) if part else None).items
 
 
 def _cells(workbook: "Workbook", sheet: "Sheet") -> dict[tuple[int, int], _State]:
-    """Every cell of ``sheet`` that holds a value or a formula, as compared."""
+    """Every cell of ``sheet`` that holds a value or a formula: its formula as stored --
+    ``("normal", text)``, ``("member", group text, rows, columns)`` for a shared group's
+    member (its place from the group's first cell), ``("array", text, ref)``,
+    ``("dataTable", ref, attributes, text)``, ``("block", ref)`` for an array's or data
+    table's other cell, ``("shared", si)`` for a member whose group has no first cell --
+    and its value."""
     strings = _strings(workbook)
     reader = workbook._reader(sheet)
     out: dict[tuple[int, int], _State] = {}
@@ -328,7 +372,7 @@ def _cells(workbook: "Workbook", sheet: "Sheet") -> dict[tuple[int, int], _State
             value = _value(kind, v_text, is_node, strings)
             if f_node is None:
                 if value is not None:
-                    out[(row, column)] = (None, value, None)
+                    out[(row, column)] = (None, value)
                 continue
             text = f_node.text or ""
             form = f_node.get("t") or "normal"
@@ -336,48 +380,37 @@ def _cells(workbook: "Workbook", sheet: "Sheet") -> dict[tuple[int, int], _State
                 group = f_node.get("si") or ""
                 if text:
                     groups.setdefault(group, (row, column, text))
-                    out[(row, column)] = (("normal", normalise(text)), value, text)
+                    out[(row, column)] = (("normal", text), value)
                 else:
                     members.append((row, column, group))
-                    out[(row, column)] = (("shared", group), value, None)
-            elif form == "array":
+                    out[(row, column)] = (("shared", group), value)
+            elif form in ("array", "dataTable"):
                 ref = (f_node.get("ref") or "").upper()
-                out[(row, column)] = (("array", normalise(text), ref), value, text)
-                block = _area(ref)
-                if block is not None:
-                    blocks.append((block, (row, column), ref))
-            elif form == "dataTable":
-                ref = (f_node.get("ref") or "").upper()
-                attrs = tuple(f_node.get(n) for n in ("r1", "r2", "dt2D", "dtr", "del1",
-                                                      "del2"))
-                out[(row, column)] = (("dataTable", ref, attrs, normalise(text)), value,
-                                      text or None)
+                if form == "array":
+                    out[(row, column)] = (("array", text, ref), value)
+                else:
+                    attrs = tuple(f_node.get(n) for n in ("r1", "r2", "dt2D", "dtr", "del1",
+                                                          "del2"))
+                    out[(row, column)] = (("dataTable", ref, attrs, text), value)
                 block = _area(ref)
                 if block is not None:
                     blocks.append((block, (row, column), ref))
             else:
-                out[(row, column)] = (("normal", normalise(text)), value, text)
+                out[(row, column)] = (("normal", text), value)
 
     from .workbook import _parsed
 
     _parsed(sheet.part or f"sheet #{sheet.id}", run)
     for row, column, group in members:
-        state = out[(row, column)]
         master = groups.get(group)
-        if master is None:                    # a member whose group has no first cell
-            continue
-        first_row, first_column, text = master
-        try:
-            expanded = shift(text, row - first_row, column - first_column)
-        except ShiftError:                    # compared by its group and place instead
-            out[(row, column)] = (("shared", normalise(text), row - first_row,
-                                   column - first_column), state[1], None)
-            continue
-        out[(row, column)] = (("normal", normalise(expanded)), state[1], expanded)
+        if master is not None:
+            first_row, first_column, text = master
+            out[(row, column)] = (("member", text, row - first_row, column - first_column),
+                                  out[(row, column)][1])
     for block, anchor, ref in blocks:
         for position, state in list(_inside(out, block)):
             if position != anchor and state[0] is None:
-                out[position] = (("block", ref), state[1], None)
+                out[position] = (("block", ref), state[1])
     return out
 
 
@@ -397,7 +430,7 @@ def _inside(cells: dict, block: Area) -> Iterator[tuple[tuple[int, int], _State]
             yield position, state
 
 
-def _value(kind: str, v_text: str | None, is_node: Any, strings: SharedStrings) -> Any:
+def _value(kind: str, v_text: str | None, is_node: Any, strings: list[str]) -> Any:
     """A cell's stored value as compared: ``(kind, value)``, ``None`` for none."""
     if kind == "inlineStr":
         if is_node is not None:
@@ -407,9 +440,12 @@ def _value(kind: str, v_text: str | None, is_node: Any, strings: SharedStrings) 
         return None
     if kind == "s":
         try:
-            return ("s", strings[int(v_text)])
-        except (ValueError, IndexError, KeyError):
-            return ("bad", v_text)
+            index = int(v_text)
+            if index >= 0:
+                return ("s", strings[index])
+        except (ValueError, IndexError):
+            pass
+        return ("bad", v_text)
     if kind == "str":
         return ("s", v_text)
     if kind in ("b", "e", "d"):

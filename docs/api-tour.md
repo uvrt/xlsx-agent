@@ -454,6 +454,50 @@ which way" without paging through the differences. A date moves in days (`+7d`),
 as `+1:30`; text, booleans and lists count as changed only. A declared hidden column is
 not a column of its table, so it is never compared or named.
 
+### Every cell by address: the integrity compare (X5)
+
+A host that sends a template out and takes it back -- from a client's offline review, or
+an agent's step -- asks a stricter question than "which rows changed": did any formula
+change, or become a value, even where the cached values still agree, and did anything
+change outside what was allowed?
+
+```python
+before = Workbook.open("stock-sent.xlsx")
+after = Workbook.open("stock-returned.xlsx")
+diff = Workbook.compare(before, after, cells=True,
+                        policy={"cells": ["Stock!B4", "Stock!D10:E209"]})
+diff.cells.counts()        # {'formula_to_literal': 1, 'value_changed': 14, 'cache_changed': 3}
+diff.cells.ranges("formula_to_literal")   # ({'Stock': ['F12']}, 0, 1)
+[e.address for e in diff.cells.outside]  # ['Stock!F12']: a formula pasted over as its value
+diff.cells.as_dict()       # bounded: counts, each kind's cells as ranges (50 at most), outside
+```
+
+Formulas are compared as text, normalised: `=sum( stock!f10:f14 )` is `SUM(Stock!F10:F14)`,
+a string literal's case is not; a shared formula's member is compared as its own formula,
+so a group written out cell by cell is no change. `cache_changed` (the same formula,
+another cached value) is a recalculation, never outside a policy. `formula_text=True` puts
+each changed cell's formulas on the change; without it a change is its address and kind.
+`xlsx_compare` takes `cells` and `formula_text` and asks the session's write policy.
+
+## Data validations (X5)
+
+```python
+for rule in wb.validations("Orders"):
+    rule.as_dict()
+# {'sheet': 'Orders', 'origin': 'standard', 'type': 'list', 'allow_blank': True,
+#  'cells': 'B2:B50', 'source': 'name', 'resolved': True, 'name': 'Categories', 'range': 'Lists!A2:A5', 'count': 4}
+# {'sheet': 'Orders', 'origin': 'standard', 'type': 'list', 'allow_blank': True,
+#  'cells': 'A2:A50', 'source': 'indirect', 'resolved': False, 'reason': 'indirect', 'uses': ['$B2']}
+# {'sheet': 'Orders', 'origin': 'x14', 'type': 'whole', 'operator': 'between', ...}
+written = wb.set_cells({"Orders!C3": "XL"})
+written.invalid            # ('Orders!C3',): written, and named -- "XL" is not in the list
+```
+
+A list's values are read where they can be without evaluating anything (an inline list, a
+range, a defined name over one, a table column); a dependent or dynamic list (`INDIRECT`,
+`OFFSET`, a name over one) is reported unresolved by address. `xlsx_read`'s `validations`
+lists the rules over a target.
+
 ## Validate
 
 ```python
