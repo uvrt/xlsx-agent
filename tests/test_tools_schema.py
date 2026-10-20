@@ -43,6 +43,10 @@ X2 of the second production lane (E1, ooxml-edit 0.51.0): the shared ``undo`` (1
 ``batch`` (202) and ``save_document`` (186) join the core, as the roadmap's 0.2 table has
 them: the core 3,523 -> 4,069 estimated, about 5,214 -> 6,022 counted by the proxy, under
 6,500; every definition 3,746 -> 4,291, the guard 3,750 -> 4,300.
+X3b (ooxml-edit 0.54.0): ``xlsx_read``'s ``markdown`` (text as Markdown) and
+``xlsx_set_cells``' ``markdown`` value: ``xlsx_read`` 528 -> 556, the core 4,069 -> 4,096
+estimated, about 6,022 -> 6,062 counted by the proxy; ``xlsx_set_cells`` 347 -> 378;
+every definition 4,627 -> 4,686, the guard 4,650 -> 4,690.
 """
 
 from __future__ import annotations
@@ -61,7 +65,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
-ALL_GUARD = 4650
+ALL_GUARD = 4690
 
 
 @pytest.fixture(scope="module")
