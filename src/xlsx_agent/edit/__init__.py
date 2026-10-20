@@ -56,7 +56,7 @@ import datetime as _dt
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator
 
 from ooxml_common.kinds import KINDS, REL_VBA_PROJECT, main_content_type
 from ooxml_edit.history import History
@@ -81,6 +81,23 @@ EDIT_CODES = {
     "vba_project": "the workbook holds a VBA project, which this kind cannot carry: save "
                    "it as .xlsm (or .xltm)",
     "bad_kind": "not a workbook kind",
+    # set_cells (E3, xlsx_agent.edit.cells): each refused before anything changes
+    "bad_address": "not a cell address with its sheet, as Stock!D10",
+    "duplicate_cell": "a cell is named twice in one call",
+    "bad_value": "not a value a cell is written with",
+    "bad_number": "not a number a cell holds exactly",
+    "text_too_long": "text longer than a cell holds (32,767 characters); it is never cut",
+    "bad_formula": "not a formula that can be written",
+    "bad_date": "not a date that can be written",
+    "date_time": "a time, a duration or a time zone, which are not written yet",
+    "date_format": "the cell's number format does not show a date",
+    "formula_cell": "the cell holds a formula: pass replace_formulas to write over it",
+    "array_formula": "the cell is part of an array formula or a data table, written as a "
+                     "whole in Excel",
+    "merged_cell": "the cell is inside a merged area and not its first cell",
+    "table_header": "the cell is a table's header, whose text is its column's name",
+    "shared_formula": "the cell holds a shared formula whose references cannot be moved "
+                      "safely to the group's other cells",
 }
 
 #: The content type of a VBA project part ([MS-OFFMACRO2]; what Excel writes).
@@ -89,14 +106,18 @@ CT_VBA_PROJECT = "application/vnd.ms-office.vbaProject"
 
 class EditError(ValueError):
     """An edit or a save refused.  :attr:`code` is one of :data:`EDIT_CODES`;
-    :attr:`addresses` the cells concerned (at most 20), never their content."""
+    :attr:`addresses` the cells concerned (at most 20), never their content;
+    :attr:`problems` every refusal of a call that met several, as ``(code, address)`` (at
+    most 50; the first code's are :attr:`addresses`)."""
 
     def __init__(self, code: str, detail: str | None = None, *,
-                 addresses: "tuple[str, ...] | list[str]" = ()) -> None:
+                 addresses: "tuple[str, ...] | list[str]" = (),
+                 problems: "tuple[tuple[str, str], ...] | list[tuple[str, str]]" = ()) -> None:
         if code not in EDIT_CODES:
             raise ValueError(f"not an edit error code: {code!r}")
         self.code = code
         self.addresses = tuple(addresses)[:20]
+        self.problems = tuple(problems)[:50]
         message = EDIT_CODES[code]
         if detail:
             message = f"{message}: {detail}"
@@ -277,6 +298,18 @@ class Editor:
             if not _holds(writer.content(cell), value, self.cells.date1904):
                 raise EditError("readback", addresses=[address])
         return True
+
+    def touched(self, sheet: Any, cells: "Iterable[Cell]") -> None:
+        """Record ``cells`` of ``sheet`` as changed in the open batch (a shared formula
+        group handed on: its members' formulas), for the report and the save's read-back."""
+        edit = self._edit
+        if edit is None:
+            raise RuntimeError("cells are recorded inside a batch")
+        label = _label(sheet)
+        for cell in cells:
+            edit.cells.setdefault(label, set()).add((cell.row, cell.column))
+            self._written.setdefault(sheet.part, set()).add((cell.row, cell.column))
+        edit.sheets.add(sheet.part)
 
     # -- reports -----------------------------------------------------------------------------
 

@@ -9,6 +9,11 @@ re-saved file must keep what was written: the values, the date's serial, the for
 ``x14`` validations and the date system.  A workbook with a shared-string index out of range
 is the control: Excel must ask to repair it, or the oracle could not see a repair at all.
 
+E3 (X3): every variant edited with ``set_cells`` -- every kind of value, a date given a
+format, a shared formula group's master written over (the group handed to its next member)
+and a member given its own formula -- opens without a repair, and Excel's re-save keeps the
+values and types and computes each member's line value from the formula it kept.
+
 Without Excel, or with Excel in use or its lock held, every test here skips.  The lock tests
 at the end run in the default suite, without Excel.
 """
@@ -27,7 +32,7 @@ from ooxml_edit.sheets import Formula
 from xlsx_agent import Workbook
 
 import oracle
-from shop import Shop
+from shop import FIRST_INPUT, Shop
 
 VARIANTS = {"plain": {}, "rless": {"rless": True}, "1904": {"date1904": True},
             "inline": {"shared": False}, "table": {"table": True}}
@@ -61,7 +66,7 @@ def _edited(options: dict) -> tuple[bytes, bytes, bytes]:
     wb = Workbook.open(original)
     with wb.batch():
         for address, value in WRITES.items():
-            wb._write(address, value)
+            wb.set_cells({address: value})
     edited = wb.to_bytes()
     wb.undo()
     return original, edited, wb.to_bytes()
@@ -86,6 +91,69 @@ def test_excel_opens_every_fixture_edited_and_undone_without_a_repair(excel, var
     assert again.cell("Stock!J10").formula and again.cell("Stock!B15").v == "Torch, spare"
     assert again.date1904 == bool(options.get("date1904"))
     with zipfile.ZipFile(io.BytesIO(saved.saved.read_bytes())) as archive:
+        sheet = archive.read("xl/worksheets/sheet1.xml")
+    assert b"dataValidation" in sheet and b"Lists!$A$2:$A$5" in sheet
+
+
+#: What E3's set_cells writes on every variant: each kind of value, a date given its format
+#: in a new cell, a shared formula group's master and a member written over (the group
+#: handed to the next member), a formula replaced, "=..." text.
+SET_CELLS = {
+    "Stock!B15": "Spare fan",
+    "Stock!C11": "=still text",
+    "Stock!D15": 4,
+    "Stock!E15": 1.25,
+    "Stock!G15": False,
+    "Stock!H10": {"date": "2026-10-20"},
+    "Stock!H15": {"date": "2026-10-21", "format": "d mmm yyyy"},
+    "Stock!B4": None,
+    f"Stock!F{FIRST_INPUT}": 50,
+    f"Stock!F{FIRST_INPUT + 2}": {"formula": f"=D{FIRST_INPUT + 2}*E{FIRST_INPUT + 2}*2"},
+    "Stock!I11": {"formula": "=0.5"},
+    "Stock!J15": {"formula": "=D15*E15"},
+}
+
+X3_VARIANTS = {**VARIANTS, "array": {"array": True}}
+
+
+@pytest.mark.oracle
+@pytest.mark.parametrize("variant", X3_VARIANTS)
+def test_excel_opens_every_set_cells_fixture_and_keeps_what_was_written(excel, variant):
+    options = X3_VARIANTS[variant]
+    original = Shop(**options).to_bytes()
+    wb = Workbook.open(original)
+    written = wb.set_cells(SET_CELLS, replace_formulas=True)
+    assert written.released == (f"Stock!F{FIRST_INPUT}",)
+    edited = wb.to_bytes()
+    wb.undo()
+    assert wb.to_bytes() == original
+    outcome = excel.resave(edited, name=f"shop-x3-{variant}")
+    assert outcome.ok, outcome
+    again = Workbook.open(outcome.saved.read_bytes())
+    assert again.cell("Stock!B15").v == "Spare fan"
+    assert (again.cell("Stock!C11").v, again.cell("Stock!C11").t) == ("=still text", "text")
+    assert again.cell("Stock!D15").v == 4 and again.cell("Stock!E15").v == 1.25
+    assert again.cell("Stock!G15").v is False
+    assert again.cell("Stock!H10").v == "2026-10-20" and again.cell("Stock!H15").v \
+        == "2026-10-21"
+    assert again.cell("Stock!H15").t == "date"
+    assert again.cell("Stock!B4").t == "blank"
+    assert again.cell(f"Stock!F{FIRST_INPUT}").v == 50
+    assert not again.cell(f"Stock!F{FIRST_INPUT}").formula
+    # The group handed on: Excel (asked to recalculate on load) computes every member's
+    # own line value from the formula each kept.
+    values = {v.row: v for v in again.cells(again.sheet("Stock")) if v.column == 6}
+    for offset in (1, 3, 4):
+        row = FIRST_INPUT + offset
+        quantity, price = again.cell(f"Stock!D{row}").v, again.cell(f"Stock!E{row}").v
+        assert values[row].formula and values[row].v == pytest.approx(quantity * price), row
+    row = FIRST_INPUT + 2
+    assert values[row].v == pytest.approx(again.cell(f"Stock!D{row}").v
+                                          * again.cell(f"Stock!E{row}").v * 2)
+    assert again.cell("Stock!J15").formula and again.cell("Stock!J15").v == pytest.approx(5)
+    assert again.cell("Totals!B1").formula
+    assert again.date1904 == bool(options.get("date1904"))
+    with zipfile.ZipFile(io.BytesIO(outcome.saved.read_bytes())) as archive:
         sheet = archive.read("xl/worksheets/sheet1.xml")
     assert b"dataValidation" in sheet and b"Lists!$A$2:$A$5" in sheet
 

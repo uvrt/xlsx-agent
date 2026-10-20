@@ -14,7 +14,11 @@ extension in ``extLst`` that no application knows.
 ``Shop(rless=True)`` leaves ``r`` off the input rows and their cells, as the format allows;
 ``Shop(shared=False)`` writes inline strings and no shared-string table; ``date1904`` uses
 the 1904 date system; ``Shop(table=True)`` makes the hidden ``Lists`` sheet's rates an Excel
-table (``Rates``, ``A1:B5``).
+table (``Rates``, ``A1:B5``); ``Shop(array=True)`` adds an array formula over two cells to
+``Totals`` (``C5:D5``, the first item's quantity and price); ``Shop(external=True)`` adds a
+link to another (made-up) workbook, ``supplier.xlsx``, and a ``Totals`` formula that reads
+its price (``B4``, ``[1]Prices!$B$2*2``); ``Shop(calc="manual")`` saves it with manual
+calculation, ``Shop(calc="full")`` asking for a full recalculation on load.
 """
 
 from __future__ import annotations
@@ -56,6 +60,9 @@ class Shop:
     date1904: bool = False
     calc_chain: bool = True
     table: bool = False
+    array: bool = False
+    external: bool = False
+    calc: str | None = None
 
     # -- strings ---------------------------------------------------------------------------
 
@@ -197,10 +204,28 @@ class Shop:
                 f'<v>{sum(1 for i in ITEMS if not i[4])}</v></c></row>'
                 f'<row r="3">{self._text("A3", "Kitchen rate")}'
                 f'<c r="B3" s="7"><f>INDEX(TaxRates,2)</f><v>0.21</v></c></row>')
-        return (_DECL + f'<worksheet xmlns="{X}" xmlns:r="{R}"><dimension ref="A1:B3"/>'
+        last_row, last_column = 3, "B"
+        if self.external:
+            rows += (f'<row r="4">{self._text("A4", "Supplier price, two")}'
+                     '<c r="B4" s="3"><f>[1]Prices!$B$2*2</f><v>7</v></c></row>')
+            last_row = 4
+        if self.array:
+            first = ITEMS[0]
+            rows += (f'<row r="5">{self._text("A5", "First item")}'
+                     f'<c r="C5"><f t="array" ref="C5:D5">Stock!D{FIRST_INPUT}:E{FIRST_INPUT}'
+                     f'</f><v>{first[2]}</v></c><c r="D5"><v>{_num(first[3])}</v></c></row>')
+            last_row, last_column = 5, "D"
+        return (_DECL + f'<worksheet xmlns="{X}" xmlns:r="{R}">'
+                f'<dimension ref="A1:{last_column}{last_row}"/>'
                 f'<sheetData>{rows}</sheetData>'
                 '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" '
                 'footer="0.3"/></worksheet>')
+
+    def external_link(self) -> str:
+        return (_DECL + f'<externalLink xmlns="{X}"><externalBook xmlns:r="{R}" r:id="rId1">'
+                '<sheetNames><sheetName val="Prices"/></sheetNames><sheetDataSet>'
+                '<sheetData sheetId="0"><row r="2"><cell r="B2"><v>3.5</v></cell></row>'
+                '</sheetData></sheetDataSet></externalBook></externalLink>')
 
     def workbook(self) -> str:
         last = FIRST_INPUT + len(ITEMS) - 1
@@ -217,7 +242,9 @@ class Shop:
             '<sheets><sheet name="Stock" sheetId="1" r:id="rId1"/>'
             '<sheet name="Lists" sheetId="2" state="hidden" r:id="rId2"/>'
             '<sheet name="Totals" sheetId="3" r:id="rId3"/></sheets>'
-            '<definedNames>'
+            + ('<externalReferences><externalReference r:id="rId7"/></externalReferences>'
+               if self.external else '')
+            + '<definedNames>'
             '<definedName name="_xlnm.Print_Area" localSheetId="0">'
             f'Stock!$A$1:$I${last}</definedName>'
             '<definedName name="_xlnm.Print_Titles" localSheetId="0">Stock!$9:$9</definedName>'
@@ -225,7 +252,10 @@ class Shop:
             '<definedName name="TaxRates">Lists!$B$2:$B$5</definedName>'
             '<definedName name="Markup">1.4</definedName>'
             '</definedNames>'
-            '<calcPr calcId="191029"/>'
+            + {None: '<calcPr calcId="191029"/>',
+               "manual": '<calcPr calcId="191029" calcMode="manual"/>',
+               "full": '<calcPr calcId="191029" fullCalcOnLoad="1"/>'}[self.calc]
+            +
             f'<extLst><ext uri="{SHOP_URI}" xmlns:shop="{SHOP}"><shop:owner team="front"/>'
             '</ext></extLst></workbook>')
 
@@ -278,8 +308,10 @@ class Shop:
         last = FIRST_INPUT + len(ITEMS) - 1
         cells = "".join(f'<c r="{c}{n}" i="1"/>' for n in range(FIRST_INPUT, last + 1)
                         for c in "AFI")
+        extra = ('<c r="B4"/>' if self.external else '') + ('<c r="C5" a="1"/>'
+                                                              if self.array else '')
         return (_DECL + f'<calcChain xmlns="{X}">{cells}<c r="B1" i="3"/><c r="B2"/>'
-                '<c r="B3"/></calcChain>')
+                f'<c r="B3"/>{extra}</calcChain>')
 
     # -- the package -----------------------------------------------------------------------
 
@@ -304,6 +336,10 @@ class Shop:
             overrides.append(("/xl/calcChain.xml", "spreadsheetml.calcChain+xml"))
         if self.table:
             overrides.append(("/xl/tables/table1.xml", "spreadsheetml.table+xml"))
+        if self.external:
+            rels.append(("rId7", "externalLink", "externalLinks/externalLink1.xml"))
+            overrides.append(("/xl/externalLinks/externalLink1.xml",
+                              "spreadsheetml.externalLink+xml"))
         ct = (_DECL + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
               '<Default Extension="bin" ContentType="application/vnd.openxmlformats-'
               'officedocument.spreadsheetml.printerSettings"/>'
@@ -326,6 +362,13 @@ class Shop:
             parts["xl/sharedStrings.xml"] = self.shared_strings()
         if self.calc_chain:
             parts["xl/calcChain.xml"] = self.calc_chain_xml()
+        if self.external:
+            parts["xl/externalLinks/externalLink1.xml"] = self.external_link()
+            parts["xl/externalLinks/_rels/externalLink1.xml.rels"] = (
+                _DECL + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
+                'relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.'
+                'org/officeDocument/2006/relationships/externalLinkPath" '
+                'Target="supplier.xlsx" TargetMode="External"/></Relationships>')
         if self.table:
             parts["xl/worksheets/_rels/sheet2.xml.rels"] = _rels(
                 [("rId1", "table", "../tables/table1.xml")])

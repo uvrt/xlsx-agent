@@ -54,8 +54,10 @@ and whether it holds what a declared schema says (:mod:`xlsx_agent.schema`)::
 
 and, from 0.2, edited (:mod:`xlsx_agent.edit`): one history, atomic steps, a checked save::
 
+    wb.set_cells({"Stock!D10": 12, "Stock!H10": {"date": "2026-10-20"},
+                  "Stock!J10": {"formula": "=D10*2"}})   # typed, guarded, one step (E3)
     with wb.batch() as edit:             # one step, all or nothing
-        ...                              # E3's writes
+        wb.set_cells({...}); wb.set_cells({...})
     wb.undo(); wb.redo(); wb.version     # undo to the start: the bytes opened
     wb.validate()                        # the structure check, by code and address
     wb.save("stock.xlsx")                # reopened and read back first
@@ -103,6 +105,7 @@ from .xml import iterparse_xml
 
 if TYPE_CHECKING:
     from .edit import Editor, EditReport, SaveReport
+    from .edit.cells import Written
 
 #: SpreadsheetML's main namespace, transitional and strict.
 NS_MAIN = ("http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -378,21 +381,40 @@ class Workbook:
         return "invalidated" if self.calculation else "cached_unverified"
 
     @property
+    def _external_names(self) -> frozenset[str]:
+        """The defined names (case folded) that refer to another workbook."""
+        return frozenset(name.name.casefold() for name in self.regions._every_name
+                         if name.reason == "external")
+
+    @property
+    def external_links(self) -> int:
+        """How many external-link parts the workbook relates to (``externalLink``): other
+        workbooks its formulas or names may refer to, never followed."""
+        return sum(1 for rel in self.package.relationships(self.part).values()
+                   if rel.type.rpartition("/")[2] == "externalLink")
+
+    @property
     def strict(self) -> bool:
         """The workbook part is in strict OOXML's namespace (``purl.oclc.org``)."""
         return self._root.tag.startswith(f"{{{NS_MAIN[1]}}}")
 
-    def _write(self, address: str, value: Any, *, style: int | None = None) -> bool:
-        """Write one cell, by address (``Stock!D10``), through the editor: internal, the
-        hook the 0.2 write tools (E3) are built on and the tests write with until then.
-        ``value`` as :meth:`ooxml_edit.sheets.Worksheet.write` takes it; whether the cell
-        changed."""
-        parsed = parse_address(address)
-        if not isinstance(parsed, RangeAddress) or parsed.kind != "cell" \
-                or parsed.sheet is None:
-            raise ValueError("a cell address names a sheet and one cell, as Stock!F2")
-        sheet = self.sheet_of(parsed)
-        return self.editor.write(sheet, parsed.area.first, value, style=style)
+    def set_cells(self, cells: "Mapping[str, Any] | Sequence[tuple[str, Any]]", *,
+                  replace_formulas: bool = False) -> "Written":
+        """Write cells by address, typed and guarded (:mod:`xlsx_agent.edit.cells`):
+        ``{"Stock!D10": 12, "Stock!H10": {"date": "2026-10-20"}, "Stock!J10":
+        {"formula": "=D10*2"}, "Stock!B4": None}`` -- text always literal, numbers,
+        booleans, dates in the workbook's date system into a cell that shows one (or with
+        ``"format"``), blanks that keep the cell's format, formulas only given as one.
+        Every value and guard is checked before anything changes, and the writes are one
+        step (or part of the open batch): :class:`~xlsx_agent.edit.EditError` with the
+        cells refused, and nothing written, for any refusal.  A cell holding a formula is
+        written over only with ``replace_formulas``.  Returns the
+        :class:`~xlsx_agent.edit.cells.Written`: the cells, their old types, the shared
+        formula groups handed on, the calculation status (``invalidated`` after any
+        write)."""
+        from .edit.cells import set_cells
+
+        return set_cells(self, cells, replace_formulas=replace_formulas)
 
     def _forget(self) -> None:
         """Forget everything read from the package: it changed (an edit, a rollback, an
@@ -954,7 +976,9 @@ class Workbook:
         return SheetReader(data or b"", sheet=name, hidden=not sheet.visible,
                            strings=self.strings, styles=self.styles, date1904=self.date1904,
                            locale=self.locale, formats=formats, grouping=self.grouping,
-                           local_dates=self.local_dates, redaction=self._redaction)
+                           local_dates=self.local_dates, redaction=self._redaction,
+                           cache=self.calculation_status,
+                           external_names=self._external_names)
 
     def _stream(self, sheet: Sheet, run):
         """``run()`` over a sheet's part, with the parser's refusal turned into

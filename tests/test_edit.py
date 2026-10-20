@@ -1,8 +1,8 @@
 """The edit foundation (0.2, E1): history, atomic batches, undo and redo to the bytes, the
 reports, the structure check, the checked save, and the shared tools a workbook gains.
 
-Every fixture is the corner shop's stock list (``tests/shop.py``), made in code.  Until
-E3's ``set_cells`` the cells are written through the internal hook ``Workbook._write``.
+Every fixture is the corner shop's stock list (``tests/shop.py``), made in code; the cells
+are written with E3's ``set_cells`` (its own checks: ``tests/test_set_cells.py``).
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from ooxml_edit.sheets import Formula, outside_footprint
 from ooxml_edit.tools import Result, Toolbox, integer, number, string, tool
 
 from xlsx_agent import Workbook
+from xlsx_agent.address import parse_address
 from xlsx_agent.edit import EditError, compress
 from xlsx_agent.edit.report import MAX_RANGES
 from xlsx_agent.tools import FORMAT, GROUPS, TOOLS
@@ -58,7 +59,7 @@ def _pack(parts: dict[str, bytes]) -> bytes:
 def _edit(wb: Workbook, writes=WRITES):
     with wb.batch() as edit:
         for address, value in writes.items():
-            wb._write(address, value)
+            wb.set_cells({address: value})
     return edit
 
 
@@ -84,9 +85,9 @@ def test_undo_gives_the_original_bytes_and_redo_the_edited(options):
 def test_two_steps_undo_one_at_a_time():
     original = Shop().to_bytes()
     wb = Workbook.open(original)
-    wb._write("Stock!D10", 7)
+    wb.set_cells({"Stock!D10": 7})
     first = wb.to_bytes()
-    wb._write("Lists!B2", 0.07)
+    wb.set_cells({"Lists!B2": 0.07})
     second = wb.to_bytes()
     assert wb.version == 2
     assert wb.undo() and wb.to_bytes() == first and wb.version == 1
@@ -98,8 +99,8 @@ def test_a_no_op_is_the_original_bytes_and_no_step():
     original = Shop().to_bytes()
     wb = Workbook.open(original)
     with wb.batch() as edit:
-        assert not wb._write("Stock!D10", 120)        # what it holds already
-        assert not wb._write("Stock!B4", None)        # a styled blank stays one
+        assert not wb.set_cells({"Stock!D10": 120}).changed     # what it holds already
+        assert not wb.set_cells({"Stock!B4": None}).changed     # a styled blank stays one
         wb.read("Stock!A1:C3")                        # a read inside a batch
     assert not edit.report.changed and edit.report.parts == () and edit.report.cells == {}
     assert wb.version == 0 and not wb.history.can_undo() and wb.to_bytes() == original
@@ -112,7 +113,7 @@ def test_reads_after_a_write_see_it():
     wb = Workbook.open(Shop().to_bytes())
     assert wb.cell("Stock!D10").v == 120
     with wb.batch():
-        wb._write("Stock!D10", 99)
+        wb.set_cells({"Stock!D10": 99})
     assert wb.cell("Stock!D10").v == 99
     wb.undo()
     assert wb.cell("Stock!D10").v == 120
@@ -134,10 +135,10 @@ def test_one_invalid_write_rolls_back_every_write(bad):
     address, value = bad
     with pytest.raises((ValueError, TypeError)):
         with wb.batch():
-            wb._write("Stock!B10", "Spare fan")       # a new shared string
-            wb._write("Stock!J10", Formula("D10*2"))  # drops the calculation chain
-            wb._write(address, value)
-            wb._write("Stock!D12", 4)
+            wb.set_cells({"Stock!B10": "Spare fan"})        # a new shared string
+            wb.set_cells({"Stock!J10": Formula("D10*2")})   # drops the calculation chain
+            wb.set_cells({address: value})
+            wb.set_cells({"Stock!D12": 4})
     assert wb.to_bytes() == original and wb.version == 0
     assert not wb.history.can_undo() and not wb.package.changed_parts()
     # the calculation metadata is back: the chain, its relationship and content type, calcPr
@@ -151,12 +152,12 @@ def test_one_invalid_write_rolls_back_every_write(bad):
 
 def test_a_rollback_after_a_step_keeps_that_step():
     wb = Workbook.open(Shop().to_bytes())
-    wb._write("Stock!D10", 7)
+    wb.set_cells({"Stock!D10": 7})
     kept = wb.to_bytes()
     with pytest.raises(ValueError):
         with wb.batch():
-            wb._write("Stock!D11", 8)
-            wb._write("Stock!D12", float("inf"))
+            wb.set_cells({"Stock!D11": 8})
+            wb.set_cells({"Stock!D12": float("inf")})
     assert wb.to_bytes() == kept and wb.version == 1 and wb.cell("Stock!D11").v == 40
 
 
@@ -165,12 +166,12 @@ def test_an_error_caught_inside_a_batch_still_rolls_it_back():
     wb = Workbook.open(original)
     with pytest.raises(EditError) as raised:
         with wb.batch():
-            wb._write("Stock!D10", 7)
+            wb.set_cells({"Stock!D10": 7})
             try:
-                wb._write("Stock!D11", float("nan"))
+                wb.set_cells({"Stock!D11": float("nan")})
             except ValueError:
                 pass
-            wb._write("Stock!D12", 9)
+            wb.set_cells({"Stock!D12": 9})
     assert raised.value.code == "rolled_back"
     assert wb.to_bytes() == original and wb.version == 0
 
@@ -178,12 +179,12 @@ def test_an_error_caught_inside_a_batch_still_rolls_it_back():
 def test_a_savepoint_rolls_back_alone():
     wb = Workbook.open(Shop().to_bytes())
     with wb.batch() as edit:
-        wb._write("Stock!D10", 7)
+        wb.set_cells({"Stock!D10": 7})
         with pytest.raises(ValueError):
             with wb.savepoint():
-                wb._write("Stock!D11", 8)
-                wb._write("Stock!D12", float("nan"))
-        wb._write("Stock!D13", 9)
+                wb.set_cells({"Stock!D11": 8})
+                wb.set_cells({"Stock!D12": float("nan")})
+        wb.set_cells({"Stock!D13": 9})
     assert edit.report.cells == {"Stock": ["D10", "D13"]}
     assert [wb.cell(a).v for a in ("Stock!D10", "Stock!D11", "Stock!D13")] == [7, 40, 9]
     assert wb.version == 1
@@ -193,7 +194,7 @@ def test_undo_waits_for_the_batch():
     wb = Workbook.open(Shop().to_bytes())
     with pytest.raises(ValueError):     # the EditError rolls the batch back too
         with wb.batch():
-            wb._write("Stock!D10", 7)
+            wb.set_cells({"Stock!D10": 7})
             wb.undo()
     assert wb.version == 0
 
@@ -207,7 +208,7 @@ def test_a_strict_workbook_is_not_written():
             b"http://purl.oclc.org/ooxml/spreadsheetml/main")
     wb = Workbook.open(_pack(parts))
     with pytest.raises(EditError) as raised:
-        wb._write("Stock!D10", 7)
+        wb.set_cells({"Stock!D10": 7})
     assert raised.value.code == "strict" and wb.version == 0
 
 
@@ -290,8 +291,8 @@ def test_reports_errors_and_logs_carry_no_content(caplog):
     for bad in (f"{marker}" * 5000, float("nan")):
         with pytest.raises(Exception) as raised:
             with wb.batch():
-                wb._write("Stock!B12", f"{marker} again")
-                wb._write("Stock!B13", bad)
+                wb.set_cells({"Stock!B12": f"{marker} again"})
+                wb.set_cells({"Stock!B13": bad})
         texts.append(str(raised.value))
     wb.undo()
     wb.redo()
@@ -477,7 +478,12 @@ def test_a_workbook_with_a_vba_project_is_not_saved_as_xlsx(tmp_path):
     "style": integer("A cell format index, unchecked.", optional=True)},
     kind="xlsx", mutates=True)
 def _test_write(call, doc, cell, value, style=None):
-    call.document._write(cell, value, style=style)
+    workbook = call.document
+    if style is None:
+        workbook.set_cells({cell: value})
+    else:       # a format the workbook may not have: past set_cells, to the editor
+        parsed = parse_address(cell)
+        workbook.editor.write(workbook.sheet_of(parsed), parsed.area.first, value, style=style)
     return Result(summary=f"wrote {cell}", changed=[doc])
 
 
