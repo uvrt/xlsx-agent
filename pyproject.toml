@@ -30,8 +30,9 @@ classifiers = [
 # the history and the tool layer as pptx-agent and docx-agent use it -- from 0.18.0 with
 # workbooks a kind of the shared tools (O1), which xlsx_agent.tools needs, and from 0.19.0
 # the session's locale (Toolbox(locale=...)), which the xlsx format reads workbooks in, and
-# from 0.20.0 the session's datasets (d:<id>, O2), which xlsx_derive keeps; its
-# charts.workbook carries the cell and area types xlsx-agent's addresses build on; from
+# from 0.20.0 the session's datasets (d:<id>, O2), which xlsx_derive keeps; its sheets
+# (charts.workbook before 0.51.0) carries the cell and area types xlsx-agent's addresses
+# build on; from
 # 0.22.0 the sources resolver hook (O3: DocumentFormat.datasets and merge_sources), by which
 # a deck or document tool takes a workbook's table as its rows (from: "t:Products").
 # ooxml-common (standard library only) is named for what xlsx-agent imports from it
@@ -41,7 +42,9 @@ classifiers = [
 # on PyPI yet: install them first from sibling checkouts (`pip install -e ../ooxml-common
 # -e ../ooxml-edit`) or from GitHub.
 # ooxml-edit 0.47.0: DocumentFormat.tool_hints, which TOOL_HINTS fills (round 9, N5).
-dependencies = ["lxml>=4.9", "ooxml-edit>=0.47.0", "ooxml-common>=0.15.0"]
+# ooxml-edit 0.51.0: ooxml_edit.sheets (O4), the lossless cell writer 0.2's edits are built
+# on and where Cell, Area and the grid's limits are imported from (charts.workbook before).
+dependencies = ["lxml>=4.9", "ooxml-edit>=0.51.0", "ooxml-common>=0.15.0"]
 
 [project.optional-dependencies]
 # pptx-agent (and pptx2svg, which its layout checks measure text with) for the tests only:
@@ -57,5 +60,9 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The Excel oracle drives the real Microsoft Excel for Mac, one instance per machine; opt in
+# with `pytest -m oracle` (tests/oracle.py).
+addopts = "-m 'not oracle'"
 markers = ["slow: a long measurement, run with --run-slow",
-           "provider: calls a model provider's API online; skipped without its API key"]
+           "provider: calls a model provider's API online; skipped without its API key",
+           "oracle: drives Microsoft Excel for Mac (one instance per machine); skips when Excel is in use"]

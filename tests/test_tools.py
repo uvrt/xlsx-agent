@@ -68,7 +68,7 @@ def test_open_describe_close_through_a_toolbox(box):
     blob = session.add_blob(shop().to_bytes(), name="shop.xlsx")
     opened = _call(box, session, "open_document", {"blob": blob})
     assert opened.ok and opened.created == ["d1"]
-    assert opened.data["kind"] == "xlsx" and opened.data["baseline_problems"] == 3
+    assert opened.data["kind"] == "xlsx" and opened.data["baseline_problems"] == 0
     assert opened.data["summary"] == {"kind": "xlsx", "sheets": 3, "hidden_sheets": 1,
                                       "tables": 1, "next": "call describe"}
     described = _call(box, session, "describe", {"doc": "d1"})
@@ -177,17 +177,19 @@ def test_detect_claims_workbooks_only():
 
 
 def test_the_tools_are_the_shared_ones_with_an_xlsx_describe(box):
-    assert [t.name for t in TOOLS] == ["open_document", "close_document", "read_blob",
-                                       "describe", "find_text", "xlsx_read", "xlsx_profile",
-                                       "xlsx_query", "xlsx_derive", "xlsx_compare",
-                                       "xlsx_validate_data"]
-    assert CORE_TOOLS == ["open_document", "describe", "find_text", "xlsx_read", "xlsx_profile",
-                          "xlsx_query", "xlsx_derive", "xlsx_compare", "xlsx_validate_data"]
+    assert [t.name for t in TOOLS] == ["open_document", "close_document", "undo", "batch",
+                                       "read_blob", "describe", "find_text", "save_document",
+                                       "xlsx_read", "xlsx_profile", "xlsx_query",
+                                       "xlsx_derive", "xlsx_compare", "xlsx_validate_data"]
+    assert CORE_TOOLS == ["open_document", "undo", "batch", "describe", "find_text",
+                          "save_document", "xlsx_read", "xlsx_profile", "xlsx_query",
+                          "xlsx_derive", "xlsx_compare", "xlsx_validate_data"]
     describe = next(t for t in TOOLS if t.name == "describe")
     assert describe.same_definition(shared.definition("describe")) and describe.kinds == ["xlsx"]
     loaded = [d["name"] for d in box.definitions("anthropic", groups="core")]
-    assert loaded == ["open_document", "describe", "find_text", "xlsx_read", "xlsx_profile",
-                      "xlsx_query", "xlsx_derive", "xlsx_compare", "xlsx_validate_data"]
+    assert loaded == ["open_document", "undo", "batch", "describe", "find_text",
+                      "save_document", "xlsx_read", "xlsx_profile", "xlsx_query",
+                      "xlsx_derive", "xlsx_compare", "xlsx_validate_data"]
 
 
 def test_describe_merges_with_another_kinds_handler():

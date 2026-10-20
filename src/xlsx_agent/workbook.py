@@ -52,7 +52,16 @@ and whether it holds what a declared schema says (:mod:`xlsx_agent.schema`)::
     wb.validate_data({"tables": [{"table": "t:Products", "key": ["SKU"], "columns": [
         {"name": "Price", "type": "number", "min": 0}]}]})     # ValidationReport
 
-Transitional and strict packages (``purl.oclc.org`` namespaces) are read alike.
+and, from 0.2, edited (:mod:`xlsx_agent.edit`): one history, atomic steps, a checked save::
+
+    with wb.batch() as edit:             # one step, all or nothing
+        ...                              # E3's writes
+    wb.undo(); wb.redo(); wb.version     # undo to the start: the bytes opened
+    wb.validate()                        # the structure check, by code and address
+    wb.save("stock.xlsx")                # reopened and read back first
+
+Transitional and strict packages (``purl.oclc.org`` namespaces) are read alike; a strict one
+is not written.
 """
 
 from __future__ import annotations
@@ -62,10 +71,10 @@ import os
 import re
 from collections import OrderedDict
 from dataclasses import dataclass, field, replace
-from typing import Any, BinaryIO, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, BinaryIO, Iterator, Mapping, Sequence
 
 from lxml import etree
-from ooxml_edit.charts.workbook import Area, Cell
+from ooxml_edit.sheets import Area, Cell
 from ooxml_edit.opc import OpcPackage
 from ooxml_edit.tools import Dataset
 from ooxml_edit.tools.limits import Limits
@@ -91,6 +100,9 @@ from .read.tables import TablePart, read_table
 from .read.types import Problem, Value, format_language, reading_locale
 from .redact import Redaction
 from .xml import iterparse_xml
+
+if TYPE_CHECKING:
+    from .edit import Editor, EditReport, SaveReport
 
 #: SpreadsheetML's main namespace, transitional and strict.
 NS_MAIN = ("http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -181,6 +193,8 @@ class Workbook:
         self._finds: OrderedDict = OrderedDict()
         #: A sheet's problems without the cells declared tables hide, by sheet and areas.
         self._withheld_problems: dict = {}
+        #: The history and the cell writer (:attr:`editor`), made when first needed.
+        self._editor: "Editor | None" = None
         self.regions = Regions(self)
 
     # -- lifecycle -------------------------------------------------------------------------
@@ -249,13 +263,152 @@ class Workbook:
         self._finds.clear()
         self.regions.forget_cells()
 
-    def to_bytes(self) -> bytes:
-        """The workbook as a file.  While nothing has changed it is the bytes that were
-        opened, byte for byte; a workbook opened from a package is that package's
-        :meth:`~ooxml_edit.opc.OpcPackage.to_bytes`."""
+    def to_bytes(self, kind: str | None = None) -> bytes:
+        """The workbook as a file.  While nothing has changed -- or every change has been
+        undone -- it is the bytes that were opened, byte for byte; a workbook opened from a
+        package is that package's :meth:`~ooxml_edit.opc.OpcPackage.to_bytes`.  ``kind``
+        (``"xlsx"``, ``"xlsm"``, ``"xltx"``, ``"xltm"``) writes it as that kind instead
+        (:func:`xlsx_agent.edit.serialise`: a kind without macros is refused while the
+        workbook holds a VBA project).  Unchecked: :meth:`save` reads the file back first."""
+        if kind is not None and kind != self.kind:
+            from .edit import serialise
+
+            return serialise(self, kind)
         if self._data is not None and not self.package.changed_parts():
             return self._data
         return self.package.to_bytes()
+
+    def save(self, target: "str | os.PathLike[str] | BinaryIO", *,
+             kind: str | None = None) -> "SaveReport":
+        """Write the workbook to ``target`` (a path or a binary file), checked first: the
+        bytes are reopened and every cell written since the workbook was opened is read
+        back with its type and value (:func:`xlsx_agent.edit.verify`; ``EditError``
+        ``readback`` and nothing written when one is not).  ``kind`` is the path's
+        extension's when it names a workbook kind, else the workbook's own; a ``.xlsx``
+        (or ``.xltx``) is refused while the workbook holds a VBA project
+        (``vba_project``).  Returns the :class:`~xlsx_agent.edit.SaveReport`: the kind,
+        the size, the cells read back and the structure issues of what was saved."""
+        from ooxml_common.kinds import kind_for
+
+        from .edit import serialise, verify
+
+        if kind is None:
+            kind = kind_for(target, "excel") or self.kind
+        data = serialise(self, kind)
+        report = verify(self, data, kind)
+        if isinstance(target, (str, os.PathLike)):
+            with open(os.fspath(target), "wb") as handle:
+                handle.write(data)
+        else:
+            target.write(data)
+        return report
+
+    # -- editing (0.2) ---------------------------------------------------------------------
+
+    @property
+    def editor(self) -> "Editor":
+        """The workbook's :class:`~xlsx_agent.edit.Editor`: its history and cell writer,
+        made the first time it is needed (:mod:`xlsx_agent.edit`)."""
+        if self._editor is None:
+            from .edit import Editor
+
+            self._editor = Editor(self)
+        return self._editor
+
+    @property
+    def history(self) -> Any:
+        """ooxml-edit's :class:`~ooxml_edit.history.History` of the workbook's edits."""
+        return self.editor.history
+
+    @property
+    def version(self) -> int:
+        """The workbook's state number: 0 as opened, a new number for every step, and the
+        number of the state undo or redo brings back (equal versions, equal content).  A
+        failed step keeps it.  What a caller holds as the revision it last read."""
+        return self.editor.history.version
+
+    #: The same as :attr:`version`.
+    revision = version
+
+    def batch(self):
+        """``with wb.batch() as edit:`` -- one step, all or nothing; ``edit.report`` the
+        :class:`~xlsx_agent.edit.EditReport` once it closes (:mod:`xlsx_agent.edit`)."""
+        return self.editor.batch()
+
+    def savepoint(self):
+        """Inside a batch, roll back what runs inside alone if it raises
+        (:meth:`Editor.savepoint <xlsx_agent.edit.Editor.savepoint>`)."""
+        return self.editor.savepoint()
+
+    def undo(self) -> bool:
+        """Back one step; whether there was one.  Undoing every step gives the bytes that
+        were opened."""
+        return self.editor.undo()
+
+    def redo(self) -> bool:
+        """Forward one undone step; whether there was one."""
+        return self.editor.redo()
+
+    @property
+    def last_edit(self) -> "EditReport | None":
+        """The last step's :class:`~xlsx_agent.edit.EditReport`; ``None`` before any."""
+        return self._editor.last if self._editor is not None else None
+
+    def validate(self, *, sheets: "Sequence[str] | None" = None) -> list[Problem]:
+        """The structure check (:mod:`xlsx_agent.edit.structure`): what is out of order
+        among the parts -- cell order, shared strings and their counts, styles, the
+        dimension, tables, names, relationships and content types, the calculation chain --
+        each by code with its first address and count, never content.  ``sheets`` (names)
+        limits the cell checks to those sheets."""
+        from .edit.structure import check_structure
+
+        parts = None
+        if sheets is not None:
+            parts = [self._cell_sheet(name).part for name in sheets]
+        return check_structure(self, sheets=parts)
+
+    @property
+    def calculation_status(self) -> str:
+        """Whether the workbook's cached formula values are as last saved:
+        ``"invalidated"`` when the workbook asks for a full recalculation on load
+        (``fullCalcOnLoad``, which every edit sets) or was saved with manual calculation --
+        its cached values may be stale -- and ``"cached_unverified"`` otherwise: as last
+        saved, with no known invalidation, never checked to be current.  Read from the
+        package, so a rollback or an undo restores it with the rest."""
+        return "invalidated" if self.calculation else "cached_unverified"
+
+    @property
+    def strict(self) -> bool:
+        """The workbook part is in strict OOXML's namespace (``purl.oclc.org``)."""
+        return self._root.tag.startswith(f"{{{NS_MAIN[1]}}}")
+
+    def _write(self, address: str, value: Any, *, style: int | None = None) -> bool:
+        """Write one cell, by address (``Stock!D10``), through the editor: internal, the
+        hook the 0.2 write tools (E3) are built on and the tests write with until then.
+        ``value`` as :meth:`ooxml_edit.sheets.Worksheet.write` takes it; whether the cell
+        changed."""
+        parsed = parse_address(address)
+        if not isinstance(parsed, RangeAddress) or parsed.kind != "cell" \
+                or parsed.sheet is None:
+            raise ValueError("a cell address names a sheet and one cell, as Stock!F2")
+        sheet = self.sheet_of(parsed)
+        return self.editor.write(sheet, parsed.area.first, value, style=style)
+
+    def _forget(self) -> None:
+        """Forget everything read from the package: it changed (an edit, a rollback, an
+        undo or redo).  The application's settings stay: declared tables and regions, the
+        redaction, the sheets withheld, the locale."""
+        self._sheets = None
+        self._strings = None
+        self._styles = None
+        self._scans.clear()
+        self._comments.clear()
+        self._table_parts_read = None
+        self._catalogue = None
+        self._queries.clear()
+        self._finds.clear()
+        self._withheld_problems.clear()
+        self.regions.forget_package()
 
     # -- the workbook part -----------------------------------------------------------------
 

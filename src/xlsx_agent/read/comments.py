@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ooxml_edit.charts.workbook import Cell
+from ooxml_edit.sheets import Cell
 from ooxml_edit.xml import Element
 
 from .stream import _area

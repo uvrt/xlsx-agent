@@ -93,7 +93,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Iterator, Sequence
 
-from ooxml_edit.charts.workbook import MAX_COLUMN, MAX_ROW, Area, Cell, column_letters
+from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell, column_letters
 
 from ..address import (NameNotFound, RangeAddress, SheetRef, TableAddress,
                        is_address_name, is_name, nearest, parse_address, quote_sheet)
@@ -568,6 +568,14 @@ class Regions:
         self._detected.clear()
         self._keys.clear()
         self._indexes.clear()
+
+    def forget_package(self) -> None:
+        """Forget everything read from the package (the workbook was edited, rolled back,
+        undone or redone): the tables, the names, what a formula reaches, what was found
+        from the cells.  The declared tables and regions stay: they are the caller's."""
+        self._tables = None
+        self._names = None
+        self.forget_withheld()
 
     def forget_withheld(self) -> None:
         """Forget what depends on the sheets withheld from the model (the workbook's

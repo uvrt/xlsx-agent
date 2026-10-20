@@ -101,7 +101,7 @@ Nothing below is rewritten when a sibling already has it.
 | `ooxml_edit.history` | `History`: undo, redo, nested batches, `version` | 0.2's edits; 0.1 uses `version` to key caches and datasets |
 | `ooxml_edit.tools` | `Toolbox`, `Session`, `DocumentFormat`, `@tool`, parameter helpers, `Result`/`ToolError`, `page_list`, `truncate`, refs (`Call.define_ref`, `resolve_ref`), `batch`, `Limits`, `check_package` (central-directory zip-bomb guard), the adapters | the whole tool layer; xlsx-agent adds its `FORMAT` and its tools only |
 | `ooxml_edit.tools.shared` | `open_document`, `close_document`, `read_blob`, `describe`, `find_text`; in 0.2 `save_document`, `undo`, `batch`, `set_properties`, `edit_chart`, `new_document` | xlsx handlers for the shared definitions (O1) instead of `xlsx_describe` and `xlsx_find` |
-| `ooxml_edit.charts.workbook` | `Cell`, `Area`, `SheetRange`, `parse_formula`, `column_letters`, `column_index`, `MAX_ROW`, `MAX_COLUMN`, `number_text` | imported as they are (0.1) |
+| `ooxml_edit.sheets` (0.1's reading side) | `Cell`, `Area`, `SheetRange`, `parse_formula`, `column_letters`, `column_index`, `MAX_ROW`, `MAX_COLUMN`, `number_text` | imported as they are (from `charts.workbook` until E1, which moved the imports to `sheets`) |
 | `ooxml_edit.sheets` (was `ooxml_edit.charts.workbook`) | the lossless cell writer: cells in row and column order, `spans` and `dimension`, shared strings with `count`/`uniqueCount`, inline strings where there is no table, a replaced formula removed with the calculation chain, tables that follow their data and are named after their headers | **lifted, not copied** (O4): moved within ooxml-edit to a public `ooxml_edit.sheets` (0.51.0), with its history, and given what a whole workbook needs; `charts.workbook` re-exports it, so chart edits are unchanged. 0.2's `xlsx_set_cells` and `xlsx_write_table` are built on it |
 | `ooxml_common.kinds` | `kind_for`, `kind_of`, `main_content_type`, `kind_mismatch` for `xlsx`, `xlsm`, `xltx`, `xltm` | the open check and, in 0.2, the save check |
 | `ooxml_common` themes and text measurement | theme fonts and colours; measured advance widths | 0.2's column auto-fit and colours; 0.3's renderer |
@@ -1066,7 +1066,7 @@ own `TOOL_HINTS` (`FORMAT.tool_hints`) for what ooxml-edit's reading of names mi
 
 | # | Item | Effort | Done when |
 | --- | --- | --- | --- |
-| E1 | **Edit foundation.** `History`, `batch`, `undo`, `save_document` (O1), `validate()` (structure: cell order, shared-string counts, table refs, names), the stale-cache marker; the **Excel oracle** (opt-in `pytest -m oracle`: Excel opens, re-saves, and the diff shows no repair), with a machine-wide lock as docx-agent's for Word; the built-in number-format probe. Needs O4 | M | every fixture round-trips; undo gives the original bytes; Excel opens every edited fixture unprompted |
+| E1 | **Edit foundation.** `History`, `batch`, `undo`, `save_document` (O1), `validate()` (structure: cell order, shared-string counts, table refs, names), the stale-cache marker; the **Excel oracle** (opt-in `pytest -m oracle`: Excel opens, re-saves, and the diff shows no repair), with a machine-wide lock as docx-agent's for Word; the built-in number-format probe. Needs O4. **Built (lane X, X2, 2026-10-20; ooxml-edit 0.51.0):** `xlsx_agent.edit`: the workbook's `Editor` (`wb.editor`): ooxml-edit's `History` and the `ooxml_edit.sheets` writer on one package; `with wb.batch() as edit` one step, any error rolling back everything (cells, shared strings, styles, `calcPr`, the calculation chain with its relationship and content-type entry; the version kept, so datasets stay current), an error caught inside still rolling it back (`rolled_back`), `wb.savepoint()` the tool batch's per-op rollback; `wb.undo()`/`wb.redo()` (undo to the start is the bytes opened), `wb.version`/`wb.revision`; the first write drops the chain and sets `fullCalcOnLoad` (`wb.calculation_status`: `invalidated`, else `cached_unverified`), each write read back at once, `finish()` in each step; `EditReport` (cells as ranges, capped at 50, parts, calculation, issues; never content, nor in the `xlsx_agent.edit` log); `wb.validate()` (`xlsx_agent.edit.structure`: 19 codes, by address); `wb.save()`/`to_bytes(kind)` (main content type per kind, a VBA project refused as `.xlsx`/`.xltx`, the bytes reopened and every written cell read back); the shared `save_document`, `undo` (`scope` a sheet; the workbook-wide parts shared, so out-of-order undo never strands a later step) and `batch` in the core; `tests/oracle.py` + `tools/excel_resave.applescript` (`pytest -m oracle`). The write hook is `Workbook._write` until E3. Oracle (Excel for Mac 16.106): the shop fixture plain, `r`-less, 1904, inline-string and with a table, each as made, edited and undone, 15 of 15 open without a repair and keep the values, the date serials, the formula, the `x14` validations; a shared-string index out of range is asked to repair (the control). Not built: the built-in number-format probe (a measurement of Excel's display of ids 0-49, for E3/E7) | M | every fixture round-trips; undo gives the original bytes; Excel opens every edited fixture unprompted |
 | E2 | **Formula lexer** (references only, no evaluation): cell and range references, sheet-qualified and quoted, defined names, structured references; finds and rewrites them | M | rewriting a sheet name in a corpus of made-up formulas round-trips, and Excel agrees (oracle) |
 | E3 | **`xlsx_set_cells`**: values and formulas, types kept, shared strings, calculation chain dropped, `fullCalcOnLoad` set, a shared formula group split when a member changes | M | Excel opens the results unprompted; reads after an edit mark dependent caches stale |
 | E4 | **`xlsx_write_table`**: a real table on a new sheet or an empty area, from data or `d:<id>`, long text split | S | Excel opens it as a table with filters and banding |
@@ -1103,7 +1103,11 @@ own `TOOL_HINTS` (`FORMAT.tool_hints`) for what ooxml-edit's reading of names mi
   by the offline proxy; `tests/test_tools_online.py` (`provider`) counts it online.
 - **The Excel oracle** (0.2, opt-in, never under xdist): Excel opens and re-saves edited
   fixtures; a repair prompt or a changed part we did not expect fails. Excel is never run
-  in the default suite.
+  in the default suite. Built in E1: `tests/oracle.py` (one machine-wide lock,
+  `excel-oracle.lock` in the Office group container, shared by name with the main
+  session's probes; skipped when Excel runs or the lock is held; only an Excel it started
+  is quit, and it is watched for a queued AppleEvent starting it again) and
+  `tools/excel_resave.applescript`; `pytest -m oracle`.
 
 ---
 
@@ -1124,6 +1128,8 @@ own `TOOL_HINTS` (`FORMAT.tool_hints`) for what ooxml-edit's reading of names mi
 6. **Pivot tables as a source.** Their cached rows could be read as a region; whether that
    is wanted, given that the data underneath is usually readable too.
 7. **The Excel oracle's lock.** One lock per Office application, or one shared with the
-   Word and PowerPoint oracles.
+   Word and PowerPoint oracles. *E1 took one per application* (`excel-oracle.lock`, beside
+   `word-oracle.lock` and `powerpoint-oracle.lock`), as the siblings did.
 8. **Strict OOXML.** Read in 0.1; whether 0.2 edits it, which needs Excel's behaviour on
-   a strict file measured first.
+   a strict file measured first. *Until then E1 refuses a write to a strict workbook*
+   (`EditError` `strict`).

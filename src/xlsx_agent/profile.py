@@ -88,7 +88,7 @@ import math
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Callable, Iterable, Sequence
 
-from ooxml_edit.charts.workbook import Area, Cell
+from ooxml_edit.sheets import Area, Cell
 
 from .address import RangeAddress, quote_sheet
 from .read.names import range_of, sheet_names

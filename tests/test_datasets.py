@@ -6,13 +6,13 @@ A derive's result kept as ooxml-edit's ``Dataset`` (O2) under ``d:<id>``; ``d:``
 cells; a dataset that outlives closing its workbook, and is marked stale -- never
 refreshed -- once its workbook changes.
 
-**Staleness without edits.**  Workbooks have no edits before 0.2, and no history: the
-session counts a change to such a document upwards (``DocumentEntry.bump``, which the
-dispatcher calls after every changing call).  The tests here register a test-only changing
-tool, ``xlsx_touch`` (``mutates=True``, changing nothing), beside the real ones, so the
-change goes through a real ``Toolbox`` as an edit will.  Without a history there is no undo:
-a dataset made stale stays stale (ooxml-edit's rule for such documents), which a test
-states.  Every workbook is built with tests/build.py.
+**Staleness.**  The tests here register a test-only changing tool, ``xlsx_touch``
+(``mutates=True``), beside the real ones, so the change goes through a real ``Toolbox`` as
+an edit will: it writes one far cell of the first sheet through the workbook's editor
+(E1: ``Workbook._write``, a step of the workbook's history), so the version moves on.  With
+the history (0.2), undoing the change makes the dataset current again and redoing it stale
+again; once its workbook is closed while it is stale, it stays stale.  Every workbook is
+built with tests/build.py.
 """
 
 import datetime as dt
@@ -29,6 +29,7 @@ from test_derive import checks, sales
 
 from xlsx_agent import (AddressError, DatasetAddress, DatasetTable, DatasetValue, DeriveError,
                         NameNotFound, RegionError, Workbook, as_dataset, parse_address)
+from xlsx_agent import quote_sheet
 from xlsx_agent.tools import FORMAT, GROUPS, TOOLS
 from xlsx_agent.tools.derive import SOURCES_SHOWN
 
@@ -227,6 +228,11 @@ def _cells(sources) -> list[str]:
 @tool("xlsx_touch", "Test only: a change that changes nothing.", {"doc": string("Document id.")},
       mutates=True, kind="xlsx")
 def xlsx_touch(call, doc):
+    workbook = call.document
+    sheet = workbook.sheets[0]
+    cell = f"{quote_sheet(sheet.name)}!XFD1048576"
+    current = workbook.cell(cell).v
+    workbook._write(cell, (current or 0) + 1)
     return Result(summary="touched")
 
 
@@ -339,7 +345,12 @@ def test_a_dataset_is_stale_once_its_workbook_changes_and_never_refreshed(box):
                    measures=[{"fn": "count"}])
     assert derived.ok and any("stale" in w for w in derived.warnings)
     assert session.dataset("d:again").stale
-    # a workbook has no history before 0.2 (no undo): once stale, stale for good, closed too
+    # undo makes it current again, redo stale again (equal versions, equal content)
+    assert call(box, session, "undo", doc="d1").ok
+    assert not session.dataset("d:by_rep").stale and not session.dataset("d:by_region").stale
+    assert call(box, session, "undo", doc="d1", redo=True).ok
+    assert session.dataset("d:by_rep").stale
+    # closed while stale: stale for good
     assert call(box, session, "close_document", doc="d1").ok
     assert session.dataset("d:by_rep").stale and session.dataset("d:by_rep").closed
     # derived again from the workbook, as it is now: current

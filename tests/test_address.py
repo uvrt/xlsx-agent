@@ -5,7 +5,7 @@ The workbooks are built with tests/build.py.
 """
 
 import pytest
-from ooxml_edit.charts.workbook import MAX_COLUMN, MAX_ROW, Area, Cell
+from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell
 
 from build import WorkbookBuilder
 from xlsx_agent import (FORMS, AddressError, DatasetAddress, NameNotFound, RangeAddress,

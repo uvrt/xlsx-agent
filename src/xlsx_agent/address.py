@@ -29,8 +29,8 @@ Every result names what it returns by address, and every tool takes the same for
 :func:`parse_address` reads any of them into a :class:`RangeAddress`,
 :class:`TableAddress`, :class:`DatasetAddress` or :class:`RefAddress`, each of which has a
 canonical :attr:`text` it formats back to; a canonical address parses and formats back to
-itself.  Cells and areas are ooxml-edit's :class:`~ooxml_edit.charts.workbook.Cell` and
-:class:`~ooxml_edit.charts.workbook.Area`, on Excel's grid (``A1`` to ``XFD1048576``).
+itself.  Cells and areas are ooxml-edit's :class:`~ooxml_edit.sheets.Cell` and
+:class:`~ooxml_edit.sheets.Area`, on Excel's grid (``A1`` to ``XFD1048576``).
 
 What parsing accepts beyond the canonical form, and normalises:
 
@@ -123,7 +123,7 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, Mapping, Union
 
-from ooxml_edit.charts.workbook import (MAX_COLUMN, MAX_ROW, Area, Cell, column_index,
+from ooxml_edit.sheets import (MAX_COLUMN, MAX_ROW, Area, Cell, column_index,
                                         column_letters)
 from ooxml_edit.tools import DATASET_ID, REF
 
@@ -361,8 +361,8 @@ class RangeAddress:
     ``Stock!``.
 
     ``span`` is ``"cells"``, ``"columns"`` (``A:C``: ``area`` runs from row 1 to
-    :data:`~ooxml_edit.charts.workbook.MAX_ROW`), ``"rows"`` (``2:5``: column 1 to
-    :data:`~ooxml_edit.charts.workbook.MAX_COLUMN`) or ``"sheet"`` (``Stock!``: ``area`` is
+    :data:`~ooxml_edit.sheets.MAX_ROW`), ``"rows"`` (``2:5``: column 1 to
+    :data:`~ooxml_edit.sheets.MAX_COLUMN`) or ``"sheet"`` (``Stock!``: ``area`` is
     :data:`WHOLE_GRID`).  Whole columns, rows and sheets are clipped to the sheet's used
     range when read (:meth:`clipped`)."""
 

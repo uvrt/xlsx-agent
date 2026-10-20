@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ooxml_edit.charts.workbook import Area, column_letters
+from ooxml_edit.sheets import Area, column_letters
 
 from .stream import _area
 from .strings import decode_xstring

@@ -61,6 +61,7 @@ from ..address import AddressError, NameNotFound
 from ..clean import CleanedWarning
 from ..dataset import merge_sources, table_dataset
 from ..declare import DeclarationError, parse_declarations
+from ..edit import EditError, undo_scope, undo_shared
 from ..package import (BIFF_BOF, CFB_SIGNATURE, KindMismatchWarning, OpenError,
                        compound_file_refusal)
 from ..query import QueryError
@@ -166,6 +167,7 @@ ERRORS: dict[type[BaseException], Any] = {
     QueryError: ("invalid_arguments", _options),
     SchemaError: ("invalid_arguments", _options),
     DeclarationError: ("refused", _options),
+    EditError: "refused",
 }
 
 #: The tool error each :class:`~xlsx_agent.QueryError` code calls for.
@@ -265,10 +267,27 @@ def detect(data: bytes, name: str) -> bool:
 
 
 def problems(workbook: Workbook) -> list[Any]:
-    """What is odd about the workbook (:attr:`Workbook.problems
-    <xlsx_agent.Workbook.problems>`): by code, address and count, never by content.  The
-    baseline the session takes at open, and the problems ``describe`` lists."""
-    return list(workbook.problems)
+    """The workbook's structure issues (:meth:`Workbook.validate
+    <xlsx_agent.Workbook.validate>`): by code, address and count, never by content.  The
+    baseline the session takes at open (``open_document``'s ``baseline_problems`` counts
+    them), and what ``save_document``'s validation report compares with it: a new one
+    refuses the save.  The sheets are checked cell by cell only once they have changed --
+    at open, none has, so opening streams no sheet -- and an issue a changed sheet had
+    when it was opened is not counted again (the sheet is checked as opened then, from the
+    package's original bytes).  What is odd about the cells (:attr:`Workbook.problems
+    <xlsx_agent.Workbook.problems>`: numbers stored as text, formulas without a cached
+    value...) is a fact ``describe`` gives, not a validation problem: writing such a value
+    is no reason to refuse a save, and neither is the recalculation an edit asks for."""
+    from ..edit.structure import check_structure
+
+    changed = workbook.package.changed_parts()
+    sheets = [s.part for s in workbook._every_sheet if s.part in changed]
+    found = check_structure(workbook, sheets=sheets)
+    if not sheets:
+        return found
+    opened = Workbook.open(workbook.package.opened())
+    before = {(p.code, p.address) for p in check_structure(opened, sheets=sheets)}
+    return [p for p in found if (p.code, p.address) not in before]
 
 
 def problem_key(problem: Any) -> Any:
@@ -362,7 +381,14 @@ def workbook_format(*, grouping: bool = True, local_dates: bool = False,
         problems=problems,
         problem_key=problem_key, warnings=(KindMismatchWarning, CleanedWarning), prompt=PROMPT,
         errors=dict(ERRORS), summary=summary, strict_first=STRICT_FIRST,
-        datasets={"t:": resolve_table}, merge_sources=merge_sources, tool_hints=TOOL_HINTS)
+        datasets={"t:": resolve_table}, merge_sources=merge_sources, tool_hints=TOOL_HINTS,
+        undo_scope=undo_scope, undo_shared=undo_shared, restored=_restored)
+
+
+def _restored(workbook: Workbook) -> None:
+    """A scoped undo or a batch's rolled-back op restored parts behind the workbook's back:
+    it forgets what it read from them."""
+    workbook._forget()
 
 
 FORMAT = workbook_format()

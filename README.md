@@ -15,7 +15,9 @@ column ids and descriptions, columns and whole sheets hidden from the model, hea
 by their text, key-value tables, text cleaned by the caller's rules), addresses by key, comparisons summarised per column, dates, tables
 as sources for decks and documents
 ([CHANGELOG.md](CHANGELOG.md)).
-Nothing is edited or saved yet: that is 0.2. Not released to PyPI; installed from source.
+0.2's edit foundation is in (E1: a history with atomic batches, undo and redo to the bytes,
+a structure check, bounded edit reports, a checked save, and the Excel oracle); the cell
+writes themselves come with E3. Not released to PyPI; installed from source.
 
 - The Python API: [docs/api-tour.md](docs/api-tour.md).
 - The tools, for Claude and OpenAI: [src/xlsx_agent/tools/README.md](src/xlsx_agent/tools/README.md).

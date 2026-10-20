@@ -64,7 +64,7 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from ooxml_edit.charts.workbook import Area, Cell
+from ooxml_edit.sheets import Area, Cell
 
 from .address import RangeAddress, quote_sheet
 from .profile import ColumnStats, profile

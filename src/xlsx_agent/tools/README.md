@@ -13,8 +13,11 @@ provider's messages. What each tool takes and returns: [ROADMAP.md](../../../ROA
 | `definitions("openai-responses")` | the Responses API (GPT-6): the core as functions, each other group a deferred `namespace`, and `tool_search` |
 | `definitions("openai-chat", groups=[...])` | Chat Completions, which has no tool search: the core and the groups named |
 
-**Status (0.1.0).** Read and derive only: nothing a tool does changes a workbook, and no
-tool saves one. The definitions pass Claude's and OpenAI's documented rules offline
+**Status (0.1.0, and E1 of 0.2).** Read and derive, and the edit foundation: the shared
+`save_document`, `undo` and `batch` serve workbooks (E1), while the tools that write cells
+come with E3, so no tool changes a workbook yet. `save_document` hands the application the
+workbook as `xlsx`, `xlsm` or `xltx`, reopened and every written cell read back first. The
+definitions pass Claude's and OpenAI's documented rules offline
 (`ooxml_edit.tools.adapters.anthropic_problems`, `openai_problems`), and on Claude online
 (`tests/test_tools_online.py`, marked `provider`): Claude accepts them as sent, and the
 loaded core counts **4,958 tokens** (claude-sonnet-5-5's count-tokens, 2026-10-13, 9
@@ -27,7 +30,7 @@ on Azure OpenAI's Responses API.
 
 | Group | Tools |
 | --- | --- |
-| `core` (always loaded) | `open_document`, `describe`, `find_text`, `xlsx_read`, `xlsx_profile`, `xlsx_query`, `xlsx_derive`, `xlsx_compare`, `xlsx_validate_data` |
+| `core` (always loaded) | `open_document`, `undo`, `batch`, `describe`, `find_text`, `save_document`, `xlsx_read`, `xlsx_profile`, `xlsx_query`, `xlsx_derive`, `xlsx_compare`, `xlsx_validate_data` |
 | `shared_misc` | `close_document`, `read_blob` |
 
 `describe` and `find_text` are the shared tools with the workbook's handlers: one
@@ -35,6 +38,18 @@ definition for decks, documents and workbooks alike. `describe` of any document 
 lists the session's datasets (ooxml-edit 0.30.0): id, columns, types, row count and
 `from` -- `d1/t:Sales` for a derive from a workbook, `d:by_rep` for one from a dataset --
 never their values.
+
+`save_document`, `undo` and `batch` are the shared ones too (E1). A workbook's undo step is
+one call (or one `batch`), and its version is the workbook history's: undoing every step
+gives the bytes that were opened, and a dataset derived before a change is current again
+once the change is undone. `undo`'s `scope` takes a sheet's name: that sheet's latest step
+is taken back while no later step changed what it changed -- a step that touched what
+every sheet shares (the workbook part, shared strings, styles, the calculation chain,
+which the first write of a session always does) is taken back by a plain undo only; a
+caller's own undo (`Session.view`) follows the same rule. `save_document`'s validation
+report is the structure check (`Workbook.validate`) against the one the workbook opened
+with: a new issue refuses the save; `open_document`'s `baseline_problems` counts those
+issues (cell facts such as numbers stored as text are `describe`'s).
 
 ## Setup (every provider)
 

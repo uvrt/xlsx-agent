@@ -1,12 +1,25 @@
 """The xlsx handlers of the shared tools (``ooxml_edit.tools.shared``): one definition each
 for every format, dispatched by the document's kind.
 
-``open_document``, ``close_document`` and ``read_blob`` are the session's own
-(``shared.SESSION_TOOLS``): they work for a workbook as for any document, through the
-xlsx :data:`~xlsx_agent.tools.FORMAT` (its ``detect``, ``open``, ``problems`` and
-``summary``).  This module adds the workbook's ``describe``: the catalogue
-(:mod:`xlsx_agent.catalogue`), and its ``find_text``.  ``save_document``, ``undo`` and
-``batch`` (E1) and ``new_document`` (E9) come with their milestones.
+``open_document``, ``close_document``, ``read_blob``, ``undo`` and ``batch`` are the
+session's own (``shared.SESSION_TOOLS``): they work for a workbook as for any document,
+through the xlsx :data:`~xlsx_agent.tools.FORMAT` (its ``detect``, ``open``, ``problems``,
+``summary``, and from E1 its undo scopes and the workbook's own ``batch``, ``savepoint``,
+``undo`` and ``redo``: :mod:`xlsx_agent.edit`).  This module adds the workbook's
+``describe``: the catalogue (:mod:`xlsx_agent.catalogue`), its ``find_text`` and (E1) its
+``save_document``.  ``new_document`` (E9) comes with its milestone.
+
+**save_document** writes the workbook as ``format`` -- ``xlsx``, ``xlsm`` or ``xltx`` (the
+main part's content type set to it; a deck's or a document's format is refused, naming
+these) -- and hands it to the application as an output, the model getting the name, format,
+size and validation report, never the bytes.  A name whose extension names another
+workbook kind than ``format`` is refused (Excel refuses such a file), and so is a kind
+without macros while the workbook holds a VBA project.  Before it is handed over the file is
+reopened and every cell written since the workbook was opened is read back with its type and
+value (:func:`xlsx_agent.edit.verify`: ``refused`` with the addresses when one is not); the
+validation report is the toolbox's gate, the structure check (:mod:`xlsx_agent.edit.structure`)
+against the one the workbook opened with: a new issue refuses the save.  ``saved`` adds the
+cells read back and the calculation status (``invalidated`` once a cell was written).
 
 **find_text** is :meth:`Workbook.find_text <xlsx_agent.workbook.Workbook.find_text>`
 (:mod:`xlsx_agent.find`): ``text`` as written (case counts), or a Python regex
@@ -33,13 +46,17 @@ from typing import Any
 
 from ooxml_edit.tools import Result, ToolError, shared
 
+from ..edit import EditError, serialise, verify
 from ..find import KINDS
-from .docformat import KIND, handler
+from .docformat import EXTENSIONS, KIND, handler
 from .query import KEPT
 from .read import _MARGIN, _cursor, _forms, _parse_cursor, _size
 
-#: The session tools a workbook uses so far; ``undo`` and ``batch`` wait for edits (E1).
-SESSION_NAMES = ("open_document", "close_document", "read_blob")
+#: The session tools a workbook uses: ``undo`` and ``batch`` from E1.
+SESSION_NAMES = ("open_document", "close_document", "read_blob", "undo", "batch")
+
+#: The formats ``save_document`` writes a workbook as.
+SAVE_FORMATS = ("xlsx", "xlsm", "xltx")
 
 
 # -- S16 describe ------------------------------------------------------------------------------
@@ -182,5 +199,33 @@ def _summary(start: int, shown: int, total: int, more: bool) -> str:
     return text + "; more with next_cursor" if more else text
 
 
+# -- S3 save_document ----------------------------------------------------------------------------
+
+
+@shared.handler("save_document", kind=KIND)
+@handler
+def save_document(call: Any, doc: str, name: str, format: str) -> Result:  # noqa: A002
+    """The shared ``save_document``'s xlsx handler (see the module's notes)."""
+    if format not in SAVE_FORMATS:
+        raise ToolError("invalid_arguments", f"a workbook saves as xlsx, xlsm or xltx, not "
+                        f"{format}", field="format", valid_options=list(SAVE_FORMATS))
+    extension = name.lower().rpartition(".")[2] if "." in name else ""
+    if f".{extension}" in EXTENSIONS and extension != format:
+        raise ToolError("invalid_arguments", f"{name} names a .{extension} but format is "
+                        f"{format}: Excel refuses a file whose kind and extension disagree",
+                        field="name")
+    workbook = call.document
+    try:
+        data = serialise(workbook, format)
+        checked = verify(workbook, data, format)
+    except EditError as error:
+        raise ToolError("refused", str(error), details={
+            "code": error.code, "addresses": list(error.addresses)}) from None
+    described = call.output(name, format, data)
+    described["saved"] = {"verified": checked.verified,
+                          "calculation": workbook.calculation_status}
+    return Result(summary=f"Saved {name} ({format}, {len(data):,} bytes)", data=described)
+
+
 TOOLS = [*[tool for tool in shared.SESSION_TOOLS if tool.name in SESSION_NAMES], describe,
-         find_text]
+         find_text, save_document]

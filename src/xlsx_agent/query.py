@@ -75,7 +75,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
 
-from ooxml_edit.charts.workbook import Area, Cell
+from ooxml_edit.sheets import Area, Cell
 
 from .address import RangeAddress
 from .profile import FIRST_ADDRESSES, Count, majority_type
