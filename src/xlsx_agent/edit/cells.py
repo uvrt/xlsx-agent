@@ -257,7 +257,10 @@ def set_cells(workbook: Any, cells: Any, *, replace_formulas: bool = False,
     fixed = tuple(w.address for w in planned
                   if w.wrap and editor.cells.sheet(w.sheet.stored_name).custom_height(w.cell.row))
     rows = tuple(dict.fromkeys(w.address for w in planned if w.new_row))
-    invalid, unchecked = _checked(workbook, planned)
+    try:
+        invalid, unchecked = _checked(workbook, planned)
+    except Exception:  # noqa: BLE001 -- advisory: a rule that cannot be read fails no write
+        invalid, unchecked = (), tuple(w.address for w in planned)
     return Written(cells=tuple(w.address for w in planned), changed=changed,
                    old={w.address: w.old for w in planned}, released=tuple(released),
                    calculation=workbook.calculation_status, fixed_height=fixed,
