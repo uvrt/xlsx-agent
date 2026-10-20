@@ -137,7 +137,8 @@ INVENTORY = {
         "values": _values((1, "number", 1), (3, "number", 1), (0.5, "number", 1),
                           (2, "number", 1)),
         "flags": {"no_cached_value": _count(1, "Stock!E3"),
-                  "volatile": _count(2, "Stock!E4", "Stock!E5")}},
+                  "volatile": _count(2, "Stock!E4", "Stock!E5")},
+        "cache": {"cached_unverified": 3, "absent": 1}},
     "Status": {
         "address": "t:Products[Status]", "column": "Status", "range": "Stock!F2:F6",
         "rows": 5, "cells": 5, "filled": 5, "fill": 1.0, "formulas": 0, "formula_share": 0.0,

@@ -205,7 +205,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from ooxml_common.locales import DATE_ORDERS
 from ooxml_edit.sheets import Area, Cell, number_text
-from ooxml_edit.tools import Dataset
+from ooxml_edit.tools import CACHE_EXTERNAL, CACHE_STATUSES, Dataset
 from ooxml_edit.tools.schema import close_match
 
 from .address import DatasetAddress, RangeAddress, SheetRef, TableAddress, parse_address
@@ -437,7 +437,12 @@ class Derived:
     hidden cell among the columns read; ``totals`` per ``share`` measure, its total;
     ``pivot_columns`` per pivoted column, its measure and pivot value; ``date1904`` the
     date system its dates are in (its source's); ``source_key`` the key column its
-    sources are written by (``None``: as ranges; see the module's notes).
+    sources are written by (``None``: as ranges; see the module's notes); ``cache`` the
+    formula cells read (every row's, in every column the derive reads), counted by their
+    cache status (``cached_unverified``, ``invalidated``, ``absent``) and ``external``
+    (those referring to another workbook) -- a dataset's own counts when derived from one
+    -- so that a result computed from invalidated caches says so, and its dataset is
+    stale (ooxml-edit's ``Dataset.cache``).
 
     :meth:`dataset` gives it as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`, what a
     tool session keeps under ``d:<id>`` (:mod:`xlsx_agent.dataset`); ``wb.derive(ds, ...)``
@@ -465,6 +470,7 @@ class Derived:
     pivot_columns: dict[str, dict[str, Any]] = field(default_factory=dict)
     date1904: bool = False
     source_key: str | None = None
+    cache: dict[str, int] = field(default_factory=dict)
 
     def dataset(self) -> "Dataset":
         """This result as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`: the rows as
@@ -525,6 +531,8 @@ class Derived:
             out["totals"] = {k: t.as_dict() for k, t in self.totals.items()}
         if self.pivot_columns:
             out["pivot_columns"] = {k: dict(v) for k, v in self.pivot_columns.items()}
+        if self.cache:
+            out["cache"] = dict(self.cache)
         return out
 
 
@@ -1039,6 +1047,7 @@ class _State:
     not_compared: dict = field(default_factory=dict)     # column -> _Counter
     hidden: _Counter = field(default_factory=_Counter)
     totals: dict = field(default_factory=dict)           # offset or None -> [partials, runs, count]
+    cache: dict = field(default_factory=dict)            # status or "external" -> count
 
 
 def _group_key(value: Value, date1904: bool) -> tuple:
@@ -1099,11 +1108,16 @@ def _second_pass(plan: _Plan) -> _State:
                               "them so that each group's rows are fewer runs",
                               field="from")
 
+    cache = state.cache
     for row in rows:
         for o in read:
             value = row[o - left]
             if value.cleaned:
                 state.cleaned.setdefault(o, _Counter()).add(value)
+            if value.cache is not None:
+                cache[value.cache] = cache.get(value.cache, 0) + 1
+                if value.external:
+                    cache["external"] = cache.get("external", 0) + 1
         # the filters: as a query's, a cell of another type than its column's never passes
         passed = True
         for test, t in typed_tests:
@@ -1493,7 +1507,18 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
         excluded=excluded, coerced=coerced, cleaned=cleaned,
         not_compared={c: counter.done() for c, counter in state.not_compared.items()},
         hidden=state.hidden.done(), totals=totals, pivot_columns=pivot_columns,
-        date1904=plan.date1904, source_key=keyed.column if keyed is not None else None)
+        date1904=plan.date1904, source_key=keyed.column if keyed is not None else None,
+        cache=_cache(state.cache, region))
+
+
+def _cache(counted: dict, region: Any) -> dict[str, int]:
+    """The formula caches a result's values came from: those read, and a dataset's own
+    when derived from one, in ooxml-edit's order (``CACHE_STATUSES``, then ``external``)."""
+    total = dict(counted)
+    if isinstance(region, DatasetTable) and region.dataset.cache:
+        for key, count in region.dataset.cache.items():
+            total[key] = total.get(key, 0) + count
+    return {key: total[key] for key in (*CACHE_STATUSES, CACHE_EXTERNAL) if total.get(key)}
 
 
 def _merge(a: _Runs, b: _Runs) -> _Runs:

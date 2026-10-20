@@ -94,7 +94,7 @@ from .address import RangeAddress, quote_sheet
 from .read.names import range_of, sheet_names
 from .read.regions import Region
 from .read.stream import Validation
-from .read.types import TYPES, Value, serial_text, text_date
+from .read.types import CACHE_STATUSES, TYPES, Value, serial_text, text_date
 
 if TYPE_CHECKING:  # pragma: no cover
     from .workbook import Sheet, Workbook
@@ -190,7 +190,9 @@ class ColumnStats:
     text, as ISO 8601); ``validation``; ``flags`` by code.  For a column of a declared
     table (:mod:`xlsx_agent.declare`), ``header`` its header's text when it is addressed
     by an id, and ``description`` the caller's; ``range`` each sheet's, joined by ``,``,
-    for a table over several sheets."""
+    for a table over several sheets.  ``cache``: the column's formula cells by cache
+    status (``cached_unverified``, ``invalidated``, ``absent``; empty without formulas);
+    a formula referring to another workbook is flagged ``external_formula``."""
 
     address: str
     column: str
@@ -221,6 +223,7 @@ class ColumnStats:
     flags: dict[str, Count] = field(default_factory=dict)
     header: str | None = None
     description: str | None = None
+    cache: dict[str, int] = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         """The profile as plain data; what is unset (no measures, no values, no lengths, no
@@ -251,6 +254,8 @@ class ColumnStats:
             out["validation"] = [v.as_dict() for v in self.validation]
         if self.flags:
             out["flags"] = {code: c.as_dict() for code, c in self.flags.items()}
+        if self.cache:
+            out["cache"] = dict(self.cache)
         return out
 
 
@@ -383,6 +388,7 @@ class _Tally:
     def __init__(self, locale: object = None) -> None:
         self.locale = locale
         self.cells = self.filled = self.formulas = 0
+        self.cache: dict[str, int] = {}
         self.types: dict[str, _Counter] = {}
         self.flags: dict[str, _Counter] = {}
         self.measures: dict[str, _Measure] = {}
@@ -404,9 +410,13 @@ class _Tally:
             self._flag("volatile", value)
         if value.cleaned:
             self._flag("cleaned", value)
+        if value.external:
+            self._flag("external_formula", value)
         t = value.t
         if value.formula:
             self.formulas += 1
+            if value.cache is not None:
+                self.cache[value.cache] = self.cache.get(value.cache, 0) + 1
         if t == "blank":
             if value.formula:
                 self.cells += 1
@@ -521,7 +531,8 @@ class _Tally:
                            text_longest=self.longest[1] if self.longest else None,
                            date_text_min=dates[0], date_text_max=dates[1],
                            date_text_measured=dates[2],
-                           validation=allowed, flags=flags)
+                           validation=allowed, flags=flags,
+                           cache={k: self.cache[k] for k in CACHE_STATUSES if k in self.cache})
 
 
 class _Measure:

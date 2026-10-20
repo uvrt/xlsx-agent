@@ -38,6 +38,7 @@ from typing import Any, Iterator
 
 from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell
 
+from ..formula import is_external
 from ..xml import iterparse_xml
 from .strings import SharedStrings, item_text
 from .styles import DATE_KINDS, Styles
@@ -144,8 +145,9 @@ class SheetScan:
     ``dimension`` the ``dimension`` as written, never trusted; ``cells`` how many cells
     hold a value or a formula; ``merges`` the merged areas; ``hidden_rows`` how many rows
     are hidden; ``ordered`` whether rows and cells come in the order of the sheet;
-    ``issues`` each value issue (``no_cached_value``, ``number_as_text``...), ``at_limit``
-    and ``volatile`` by code, as ``(count, first address)``; ``validations`` the sheet's
+    ``issues`` each value issue (``no_cached_value``, ``number_as_text``...), ``at_limit``,
+    ``volatile`` and ``external_formula`` (a formula that refers to another workbook) by
+    code, as ``(count, first address)``; ``validations`` the sheet's
     data-validation rules, in the file's order; ``arrays`` the blocks the array formulas
     (and dynamic arrays' spills) fill, each its formula's ``ref``, in reading order;
     ``hyperlinks`` the sheet's hyperlinks, in the file's order."""
@@ -280,7 +282,8 @@ class SheetReader:
     def __init__(self, data: bytes, *, sheet: str, hidden: bool, strings: SharedStrings,
                  styles: Styles, date1904: bool, locale: Any, formats: bool = False,
                  grouping: bool = True, local_dates: bool = False,
-                 redaction: Any = None) -> None:
+                 redaction: Any = None, cache: str = "cached_unverified",
+                 external_names: "frozenset[str]" = frozenset()) -> None:
         self.data = data
         self.sheet = sheet
         self.hidden = hidden
@@ -295,6 +298,13 @@ class SheetReader:
         #: shared strings come redacted), a number format's code, and a formula's text,
         #: which is withheld when it holds a match.
         self.redaction = redaction
+        #: The status of every cached formula value the workbook holds
+        #: (:attr:`Workbook.calculation_status <xlsx_agent.Workbook.calculation_status>`):
+        #: ``cached_unverified`` or ``invalidated``; a formula without one is ``absent``.
+        self.cache = cache
+        #: The defined names (case folded) that refer to another workbook: a formula using
+        #: one is ``external`` as one with a workbook index is.
+        self.external_names = external_names
         #: Hidden columns as sorted, non-overlapping ``(first, last)`` spans, known once
         #: the pass has passed ``cols``.
         self.hidden_columns: list[tuple[int, int]] = []
@@ -314,7 +324,7 @@ class SheetReader:
         self.hidden_order: list[int] = []
         #: How many row elements the pass met.
         self.row_elements = 0
-        self._shared: dict[str, tuple[str, bool]] = {}
+        self._shared: dict[str, tuple[str, bool, bool]] = {}
         #: Each shared formula group met, by its first cell's address: the group's text and
         #: the range it fills (its ``ref``), for what its cells reach
         #: (:meth:`Regions.formula_withheld <xlsx_agent.read.regions.Regions.formula_withheld>`).
@@ -491,8 +501,10 @@ class SheetReader:
             self._iso(value, v_text)
         else:  # not an ST_CellType: read as a number, as the default type is
             self._number(value, v_text, node)
-        if value.formula and value.t == "blank" and value.issue is None:
-            value.issue = "no_cached_value"
+        if value.formula:
+            if value.t == "blank" and value.issue is None:
+                value.issue = "no_cached_value"
+            value.cache = "absent" if value.issue == "no_cached_value" else self.cache
         return value
 
     @staticmethod
@@ -604,7 +616,8 @@ class SheetReader:
             group = f_node.get("si")
             if group is not None:
                 anchor = f"{self.sheet}!{_letters(column)}{row}"
-                self._shared[group] = (anchor, is_volatile(f_node.text))
+                self._shared[group] = (anchor, is_volatile(f_node.text),
+                                       is_external(f_node.text, self.external_names))
                 self.shared_groups[anchor] = (f_node.text, f_node.get("ref"))
 
     def _formula(self, value: Value, f_node) -> None:
@@ -624,11 +637,12 @@ class SheetReader:
             if text:
                 value.formula_text = text
                 value.volatile = is_volatile(text)
+                value.external = is_external(text, self.external_names)
                 if group is not None:
-                    self._shared[group] = (value.a, value.volatile)
+                    self._shared[group] = (value.a, value.volatile, value.external)
                     self.shared_groups[value.a] = (text, f_node.get("ref"))
             elif group in self._shared:
-                value.shared_from, value.volatile = self._shared[group]
+                value.shared_from, value.volatile, value.external = self._shared[group]
             return
         if kind == "array":
             value.array = f_node.get("ref") or value.ref
@@ -638,6 +652,7 @@ class SheetReader:
         if text:
             value.formula_text = text
             value.volatile = is_volatile(text)
+            value.external = is_external(text, self.external_names)
 
 
 def scan(reader: SheetReader) -> SheetScan:
@@ -668,6 +683,8 @@ def scan(reader: SheetReader) -> SheetScan:
             result._count("at_limit", value)
         if value.volatile:
             result._count("volatile", value)
+        if value.external:
+            result._count("external_formula", value)
     if result.cells:
         result.used = Area(Cell(top, left), Cell(bottom, right))
     result.dimension = reader.dimension

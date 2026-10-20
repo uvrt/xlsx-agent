@@ -976,7 +976,8 @@ def test_the_result_as_plain_data(wb):
                         {"sources": ["Sales!C11:C12"], "count": 2},
                         {"sources": ["Sales!D11:D12"], "count": 2}]],
         "matched": 2, "used": 2, "groups": 1,
-        "totals": {"part": {"value": 1.0, "sources": ["Sales!D11:D12"], "count": 2}}}
+        "totals": {"part": {"value": 1.0, "sources": ["Sales!D11:D12"], "count": 2}},
+        "cache": {"absent": 1}}
 
 
 # -- bounded ----------------------------------------------------------------------------------

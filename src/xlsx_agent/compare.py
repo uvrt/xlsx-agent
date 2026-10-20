@@ -526,7 +526,7 @@ def _label(cells: tuple[_Kept, ...], index: int | None) -> str | None:
     :data:`LABEL_CHARS` characters; ``None`` otherwise."""
     if index is None:
         return None
-    v, t, _, _, hidden, _ = cells[index]
+    v, t, _, _, hidden = cells[index][:5]
     if t != "text" or hidden or not isinstance(v, str) or not v.strip():
         return None
     return v if len(v) <= LABEL_CHARS else v[:LABEL_CHARS - 1] + "…"
@@ -563,7 +563,8 @@ def _key_offset(a: "Workbook", b: "Workbook", old: Region, new: Region, key: str
 
 
 #: A cell as :func:`_rows` keeps it: its value, type, issue, whether it is a formula's
-#: cached value and hidden, and its own cell (a declared table's: :attr:`Value.origin`).
+#: cached value and hidden, its own cell (a declared table's: :attr:`Value.origin`), and a
+#: formula's cache status and whether it refers to another workbook.
 _Kept = tuple
 
 
@@ -584,7 +585,8 @@ def _rows(workbook: "Workbook", region: Region, offsets: list[int]
 
 
 def _kept(value: Value) -> _Kept:
-    return (value.v, value.t, value.issue, value.formula, value.hidden, value.origin)
+    return (value.v, value.t, value.issue, value.formula, value.hidden, value.origin,
+            value.cache, value.external)
 
 
 def _keyed(rows: Iterator[tuple[int, tuple[_Kept, ...]]], region: Region
@@ -631,10 +633,10 @@ def _by_key(region: Region, key: str, column: str | None = None) -> str:
 
 def _value(region: Region, position: int, offset: int, kept: _Kept) -> Value:
     """A kept cell as the reader gives it, with its address."""
-    v, t, issue, formula, hidden, origin = kept
+    v, t, issue, formula, hidden, origin, cache, external = kept
     return Value(_written(region), region.data.first.row + position - 1,
                  region.area.first.column + offset, v=v, t=t, issue=issue, formula=formula,
-                 hidden=hidden, origin=origin)
+                 hidden=hidden, origin=origin, cache=cache, external=external)
 
 
 def _values(region: Region, position: int, offsets: list[int],

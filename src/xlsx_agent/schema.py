@@ -114,7 +114,7 @@ from .address import (AddressError, NameNotFound, RangeAddress, TableAddress, ne
 from .profile import ALLOWED_CAP, column_lists
 from .query import MAX_IN, _Bad, _key, _operand
 from .read.regions import Region, RegionError, key_text
-from .read.types import TYPES, Value
+from .read.types import CACHE_STATUSES, TYPES, Value
 
 if TYPE_CHECKING:  # pragma: no cover
     from .workbook import Workbook
@@ -280,12 +280,16 @@ class ValidationReport:
     """What :func:`validate` found: ``problems`` in order (iterating the report gives
     them); ``counts`` every problem cell by code, always complete (a table's or sheet's
     problem counts one); ``tables`` the tables checked; ``cut`` how many problem cells
-    were past :data:`MAX_PROBLEMS` and are counted only."""
+    were past :data:`MAX_PROBLEMS` and are counted only; ``cache`` the formula cells
+    checked, by their cache status (``cached_unverified``, ``invalidated``, ``absent``)
+    and ``external`` (referring to another workbook): a check of ``invalidated`` values
+    is a check of what was last saved, not of what Excel would calculate now."""
 
     problems: tuple[DataProblem, ...]
     counts: dict[str, int]
     tables: tuple[CheckedTable, ...]
     cut: int = 0
+    cache: dict[str, int] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -569,7 +573,8 @@ def validate(workbook: "Workbook", schema: Any) -> ValidationReport:
         if region is not None:
             checked.append(_check(workbook, region, spec, index, out))
     problems, counts, cut = out.done()
-    return ValidationReport(problems, counts, tuple(checked), cut)
+    cache = {key: out.cache[key] for key in (*CACHE_STATUSES, "external") if out.cache.get(key)}
+    return ValidationReport(problems, counts, tuple(checked), cut, cache)
 
 
 def _region(workbook: "Workbook", spec: _Table, index: int, out: "_Problems") -> Region | None:
@@ -774,6 +779,10 @@ def _check(workbook: "Workbook", region: Region, spec: _Table, index: int,
         for row in workbook._read(RangeAddress(region.sheet_ref, area), columns=reading):
             for check, position in zip(checks, positions):
                 value = row[position]
+                if value.cache is not None:
+                    out.cache[value.cache] = out.cache.get(value.cache, 0) + 1
+                    if value.external:
+                        out.cache["external"] = out.cache.get("external", 0) + 1
                 check.run(value, lambda code, v, detail, check=check: out.add(
                     index, 1, (v.row, check.offset), code, None, label, check.name, detail,
                     cell=v))
@@ -824,6 +833,8 @@ class _Problems:
         self.counts: dict[str, int] = {}
         self.cut = 0
         self.runs = 0
+        #: The formula cells checked, by cache status (and ``external``).
+        self.cache: dict[str, int] = {}
 
     def add(self, table: int, phase: int, place: tuple[int, int], code: str,
             address: str | None, label: str | None, column: str | None, detail: dict,

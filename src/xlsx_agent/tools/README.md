@@ -9,14 +9,15 @@ provider's messages. What each tool takes and returns: [ROADMAP.md](../../../ROA
 
 | Call | Sends |
 | --- | --- |
-| `definitions("anthropic")` | every tool; the core loaded, the rest deferred behind the BM25 tool-search tool, `cache_control` on the last core tool. No tool is sent strict: Claude's strict plan is for writing tools, and 0.1's tools all read |
+| `definitions("anthropic")` | every tool; the core loaded, the rest deferred behind the BM25 tool-search tool, `cache_control` on the last core tool. Only `xlsx_set_cells` is sent strict: Claude's strict plan is for writing tools, and the others read |
 | `definitions("openai-responses")` | the Responses API (GPT-6): the core as functions, each other group a deferred `namespace`, and `tool_search` |
 | `definitions("openai-chat", groups=[...])` | Chat Completions, which has no tool search: the core and the groups named |
 
-**Status (0.1.0, and E1 of 0.2).** Read and derive, and the edit foundation: the shared
-`save_document`, `undo` and `batch` serve workbooks (E1), while the tools that write cells
-come with E3, so no tool changes a workbook yet. `save_document` hands the application the
-workbook as `xlsx`, `xlsm` or `xltx`, reopened and every written cell read back first. The
+**Status (0.1.0, and E1 and E3 of 0.2).** Read and derive, the edit foundation -- the
+shared `save_document`, `undo` and `batch` serve workbooks (E1) -- and typed cell writes:
+`xlsx_set_cells` in the deferred `xlsx_edit` group (E3). `save_document` hands the
+application the workbook as `xlsx`, `xlsm` or `xltx`, reopened and every written cell read
+back first. The
 definitions pass Claude's and OpenAI's documented rules offline
 (`ooxml_edit.tools.adapters.anthropic_problems`, `openai_problems`), and on Claude online
 (`tests/test_tools_online.py`, marked `provider`): Claude accepts them as sent, and the
@@ -32,6 +33,7 @@ on Azure OpenAI's Responses API.
 | --- | --- |
 | `core` (always loaded) | `open_document`, `undo`, `batch`, `describe`, `find_text`, `save_document`, `xlsx_read`, `xlsx_profile`, `xlsx_query`, `xlsx_derive`, `xlsx_compare`, `xlsx_validate_data` |
 | `shared_misc` | `close_document`, `read_blob` |
+| `xlsx_edit` (E3) | `xlsx_set_cells` |
 
 `describe` and `find_text` are the shared tools with the workbook's handlers: one
 definition for decks, documents and workbooks alike. `describe` of any document also
@@ -50,6 +52,20 @@ caller's own undo (`Session.view`) follows the same rule. `save_document`'s vali
 report is the structure check (`Workbook.validate`) against the one the workbook opened
 with: a new issue refuses the save; `open_document`'s `baseline_problems` counts those
 issues (cell facts such as numbers stored as text are `describe`'s).
+
+**Writing cells** (`xlsx_set_cells`, E3). Each item of `cells` is an `address` and
+exactly one of `text` (always literal, `"=x"` too), `number`, `bool`, `date` (`YYYY-MM-DD`,
+or the session locale's order with a four-digit year, into a cell whose format shows a
+date, or with `format`), `formula` (`=D10*2`, the only way to write one) or `blank: true`
+(the value goes, the format stays). `replace_formulas: true` writes over formula cells.
+Every refusal -- a value refused, a formula cell without `replace_formulas`, an array
+formula or merged cell, a table's header, a column the application withholds from the
+model -- comes before anything changes, each by code and address in the error's
+`details`; at most 5,000 cells a call, one undo step. Afterwards every formula value the
+workbook gives reads `cache: invalidated` (Excel recalculates when it opens the file;
+nothing here does), and a dataset derived from those values is stale; a deck or document
+table placed from them says `stale` and the counts in its `from`. The application's write
+policy and expected-value preconditions are X4's.
 
 ## Setup (every provider)
 
@@ -70,10 +86,18 @@ A workbook can also come in as an input the model opens itself:
 `{"blob": "b1"}`. `.xlsx`, `.xlsm`, `.xltx` and `.xltm` open; `.xls`, `.xlsb` and encrypted
 workbooks are refused with the reason. A macro is never run.
 
-**Roles.** Every workbook tool reads, so all are the `review` role's (ooxml-edit 0.45.0,
-[TOOLS.md, "Roles"](https://github.com/uvrt/ooxml-edit/blob/main/docs/TOOLS.md)): a
-reviewer's toolbox, `Toolbox(..., roles=["review"])`, sends the same definitions, and in a
-toolbox with the deck or Word tools a reviewer keeps every workbook tool.
+**Roles.** Every workbook tool but `undo` and `xlsx_set_cells` reads, so those are the
+`review` role's (ooxml-edit 0.45.0,
+[TOOLS.md, "Roles"](https://github.com/uvrt/ooxml-edit/blob/main/docs/TOOLS.md)); `undo`
+and `xlsx_set_cells` are `edit`'s. A reviewer's toolbox, `Toolbox(..., roles=["review"])`,
+sends the same definitions without those two (and without the `xlsx_edit` group), and in a
+toolbox with the deck or Word tools a reviewer keeps every reading workbook tool.
+
+| Role | Workbook tools |
+| --- | --- |
+| `review` | `describe`, `find_text`, `xlsx_read`, `xlsx_profile`, `xlsx_query`, `xlsx_derive`, `xlsx_compare`, `xlsx_validate_data` |
+| `edit` | `undo`, `xlsx_set_cells` |
+| any | `open_document`, `close_document`, `read_blob`, `batch`, `save_document` |
 Agents sharing one session (ooxml-edit 0.46.0) each work through a view of it,
 `session.view(roles=[...], context={...})`: the workbook and the datasets derived from it
 are the session's, so a deck builder's view uses the `d:` an analyst's view derived.

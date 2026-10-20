@@ -147,6 +147,7 @@ def large() -> Workbook:
 def test_the_catalogue_of_a_small_workbook_lists_everything():
     assert _open(shop()).catalogue() == {
         "kind": "xlsx", "date_system": 1900, "flags": {"full_calc_on_load": True},
+        "cache": "invalidated",       # it arrived asking for a recalculation
         "sheets": [{"name": "Stock", "id": 1, "used": "A1:D5"},
                    {"name": "Notes", "id": 2, "state": "hidden", "protected": True,
                     "used": "B2:C4"},

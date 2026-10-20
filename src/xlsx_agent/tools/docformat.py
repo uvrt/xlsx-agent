@@ -94,7 +94,8 @@ its header's first cell; t:Products[Price] a column; t:Products/SKU-0042/Price t
 in the row whose key is SKU-0042; t:Products/#5 the fifth data row (a position); \
 t:Products/#9:#16 rows 9 to 16 (#9: to the last). d:by_region a dataset, its columns, rows and values written as a table's.
 - Values are typed: percent is the stored fraction, dates are ISO 8601. A formula's value \
-is the one Excel cached; no_cached_value means there is none: never guess one.
+is the one Excel cached; no_cached_value means there is none: never guess one. cache \
+invalidated: the workbook changed (or asks to recalculate) since: the value may be stale.
 - Do no arithmetic: every figure you report comes from a cell or xlsx_derive, with its \
 address (a cell or d:). A number without one is not data. A stale dataset's workbook has \
 changed since: derive it again. A slide or document table or chart takes its rows as from: \

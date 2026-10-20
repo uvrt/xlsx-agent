@@ -1,12 +1,13 @@
 """The workbook tools by role (ooxml-edit 0.45.0, round 7, item 9).
 
-Every xlsx tool but the shared ``undo`` reads (E1 adds ``undo``, ``batch`` and
-``save_document``; the writing tools come with E3): all of them are ``review``'s, or any
-role's, and a reviewer, ``["review"]`` or ``["review", "resolve"]``, is sent the default's
-definitions without ``undo``, which is ``edit``'s (no strict tool), with ``accept`` too.  A
-role set without ``review`` -- ``["resolve"]``, ``["accept"]`` -- is sent only the
+Every xlsx tool but the shared ``undo`` and E3's ``xlsx_set_cells`` reads (E1 adds
+``undo``, ``batch`` and ``save_document``): all of them are ``review``'s, or any role's,
+and a reviewer, ``["review"]`` or ``["review", "resolve"]``, is sent the default's
+definitions without ``undo`` and ``xlsx_set_cells``, which are ``edit``'s, with ``accept``
+too.  A role set without ``review`` -- ``["resolve"]``, ``["accept"]`` -- is sent only the
 session's ``open_document``, ``close_document``, ``read_blob``, ``batch`` and
-``save_document``, and ``["edit"]`` ``undo`` too; every read is refused.  A reviewer's
+``save_document``, and ``["edit"]`` ``undo`` and ``xlsx_set_cells`` too; every read is
+refused.  A reviewer's
 prompt has the role line without the sentence about comments: no workbook tool places one.
 """
 
@@ -37,10 +38,16 @@ def _book() -> bytes:
     return book.to_bytes()
 
 
+#: The workbook tools that are the edit role's, and the group of its own they make
+#: (an OpenAI namespace a reviewer is not sent).
+EDITING = {"undo", "xlsx_set_cells"}
+EDITING_GROUPS = {"xlsx_edit"}
+
+
 def test_every_workbook_tool_is_a_reviewer_s():
     assert all(tool.roles <= {"review"} or tool.role == "any" for tool in TOOLS
-               if tool.name != "undo")
-    assert next(t for t in TOOLS if t.name == "undo").roles == {"edit"}
+               if tool.name not in EDITING)
+    assert all(t.roles == {"edit"} for t in TOOLS if t.name in EDITING)
 
 
 @pytest.mark.parametrize("provider", ["anthropic", "openai-responses", "openai-chat"])
@@ -50,7 +57,7 @@ def test_a_reviewer_is_sent_the_default_s_definitions(box, provider, roles):
     for groups in (None, "core"):
         default = box.definitions(provider, groups=groups)
         if "edit" not in roles:
-            default = [d for d in default if _name(d) != "undo"]
+            default = [d for d in default if _name(d) not in EDITING | EDITING_GROUPS]
         assert box.definitions(provider, groups=groups, roles=roles) == default
 
 
@@ -69,7 +76,7 @@ def test_a_reviewer_s_core_is_the_core_and_within_the_budget(box):
 def test_a_set_without_review_reads_nothing(box, roles):
     sent = {d["name"] for d in box.definitions("anthropic", defer=False, roles=roles)}
     assert sent == {"open_document", "close_document", "read_blob", "batch",
-                    "save_document"} | ({"undo"} if "edit" in roles else set())
+                    "save_document"} | (EDITING if "edit" in roles else set())
     assert anthropic_problems(box.definitions("anthropic", roles=roles)) == []
     assert openai_problems(box.definitions("openai-responses", roles=roles)) == []
     session = box.session(roles=roles)

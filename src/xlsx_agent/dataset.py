@@ -135,7 +135,8 @@ def as_dataset(derived: Any) -> Dataset:
     sources = [tuple(tuple(str(s) for s in where[c].sources) for c in columns)
                for where in derived.provenance]
     return Dataset(columns, rows, sources=sources, keys=derived.key_columns,
-                   types=tuple(derived.types.get(c) for c in columns), detail=derived)
+                   types=tuple(derived.types.get(c) for c in columns), detail=derived,
+                   cache=getattr(derived, "cache", None) or None)
 
 
 class DatasetTable:
@@ -439,7 +440,11 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
     row shares, as a derive's sources are (:mod:`xlsx_agent.derive`); else its cell address
     (``Stock!F7``).  ``keys`` is 1 when the key column comes first.  More than
     ``max_cells`` values (rows times columns) is refused before any is read:
-    :class:`RegionError` ``too_many_cells``."""
+    :class:`RegionError` ``too_many_cells``.
+
+    ``cache`` counts the formula cells read by their cache status and ``external``
+    (ooxml-edit's ``Dataset.cache``): rows read from an invalidated cache are placed
+    ``stale``, and the placed values' ``from`` carries the counts."""
     if isinstance(address, str):
         address = parse_address(address)
     if not isinstance(address, TableAddress):
@@ -490,12 +495,17 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
     seen: list[set[str]] = [set() for _ in columns]
     cleaned: list[str] = []
     cleaned_count = 0
+    cache: dict[str, int] = {}
     for position in positions:
         sheet_row = data.first.row + position - 1
         cells_of = found.get(sheet_row, {})
         values, where = [], []
         for n, (name, offset) in enumerate(zip(columns, offsets)):
             value = cells_of.get(left + offset)
+            if value is not None and value.cache is not None:
+                cache[value.cache] = cache.get(value.cache, 0) + 1
+                if value.external:
+                    cache["external"] = cache.get("external", 0) + 1
             if value is not None and value.cleaned:
                 cleaned_count += 1
                 if len(cleaned) < FIRST_ADDRESSES:
@@ -527,7 +537,7 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
             f"rules, the first at {', '.join(cleaned)}; a list is placed as its items, one "
             "line each"), stacklevel=2)
     return Dataset(columns, rows, sources=sources, keys=1 if first_is_key else 0,
-                   types=types, detail=detail)
+                   types=types, detail=detail, cache=cache or None)
 
 
 def _typed(v: Any, label: str | None) -> tuple[Any, str, str | None]:

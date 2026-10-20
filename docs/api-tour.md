@@ -475,17 +475,63 @@ A schema names required `sheets` and `tables` (a `t:` address, or a region spec 
 `pattern`. A schema that is not one is refused (`SchemaError`, with the path) before
 anything is read. Problems carry addresses and codes, never a cell's text.
 
-## Editing (0.2: the foundation, E1)
+## Editing (0.2: E1's foundation, E3's typed writes)
 
 Every change is a step of the workbook's history (ooxml-edit's `History`), written by
-ooxml-edit's lossless cell writer (`ooxml_edit.sheets`). The public writes come with E3
-(`set_cells`); until then the foundation is exercised through an internal hook,
-`wb._write("Stock!D10", 12)`, which E3 builds on.
+ooxml-edit's lossless cell writer (`ooxml_edit.sheets`) through `wb.set_cells` (E3):
+
+```python
+written = wb.set_cells({
+    "Stock!B15": "Spare fan",                    # text: always literal, "=x" too
+    "Stock!D15": 12,                             # a number (finite; whole ones exact)
+    "Stock!G15": True,                           # a boolean
+    "Stock!H10": {"date": "2026-10-20"},         # a date (or a Python date), 1900 or 1904
+    "Stock!H15": {"date": "2026-10-21", "format": "yyyy-mm-dd"},   # a cell without one
+    "Stock!B4": None,                            # a blank: the value goes, the format stays
+    "Stock!J15": {"formula": "=D15*2"},          # a formula only when given as one
+})
+written.as_dict()
+# {'written': 7, 'changed': 6, 'cells': [{'a': 'Stock!B15', 'old': 'blank'}, ...],
+#  'calculation': 'invalidated'}
+wb.set_cells({"Stock!F10": 50}, replace_formulas=True)   # over a formula: only when asked
+# released: ('Stock!F10',) -- the shared group's master: F11 holds its formula now
+```
+
+- **Refused, before anything changes** (`EditError`, every refused cell in `problems`):
+  text over 32,767 characters (never cut), a number that is not finite or a whole number
+  past 2^53, empty text (write `None`), a date before the date system's first day, a date
+  string that is not ISO 8601 or the locale's order with a four-digit year
+  (`wb.locale`: `3/4/2026` is 3 April under nl-BE, 4 March under en-US), a time zone or a
+  time of day (times come later), a date into a cell whose format shows no day without
+  `"format"`, a formula over a formula cell without `replace_formulas`, a cell of an
+  array formula or a data table, a merged area's cell other than its first, a table's
+  header cell, a cell named twice, a shared group's master whose formula the lexer cannot
+  move safely. A new cell takes its row's or column's format, as one typed there does.
+- **Shared formulas.** Writing the master of a shared group hands the group to its next
+  member the call does not write, its formula moved by `xlsx_agent.formula.shift`
+  (`shift("D10*E10", 1, 0) == "D11*E11"`; `$` parts, names, structured references and
+  strings untouched); a member written leaves its group alone. Neighbours' formulas are
+  never touched.
+- **Freshness.** Every formula value says `cache`: `cached_unverified` (as last saved,
+  never checked), `invalidated` (after any write, workbook-wide, or when the file arrived
+  with `fullCalcOnLoad` or manual calculation) or `absent` (no cached value); `external`
+  when it refers to another workbook. Derives, validations, profiles and `t:` sources
+  count them (`cache`), and a dataset from invalidated caches is stale:
+
+```python
+wb.cell("Totals!B1").cache               # 'invalidated' once anything was written
+wb.derive("t:Stock!A9", measures=[{"fn": "sum", "column": "Value", "as": "v"}]).cache
+# {'invalidated': 9}: the Id and Value formulas read (F10 is a number now); its dataset
+# is stale from the start
+wb.undo(); wb.undo(); wb.cell("Totals!B1").cache    # 'cached_unverified' again
+```
+
+The steps themselves:
 
 ```python
 original = wb.to_bytes()
 with wb.batch() as edit:                 # one step: all of it or none of it
-    ...                                  # writes
+    wb.set_cells({...}); wb.set_cells({...})
 edit.report.as_dict()
 # {'before': 0, 'version': 1, 'cells': {'Stock': ['B10:D10', 'B15']}, 'cell_count': 4,
 #  'parts': ['[Content_Types].xml', 'xl/_rels/workbook.xml.rels', 'xl/calcChain.xml',

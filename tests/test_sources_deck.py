@@ -221,3 +221,42 @@ def test_a_sheets_date_column_reads_as_python_dates_do(toolbox, locale, key):
 def test_the_workbook_definitions_are_unchanged_and_strict_clean():
     assert strict_problems(TOOLS) == []
     assert not any(tool.sources for tool in TOOLS)         # no workbook tool takes from
+
+
+# -- formula freshness across the formats (X3) -------------------------------------------------
+
+
+def test_a_deck_table_from_edited_formula_cells_is_placed_stale_with_its_caches(toolbox):
+    """The shop's item ids and line values are formulas: once a cell of the workbook is
+    written, every cache is invalidated, and the deck's table says so -- stale, with the
+    counts -- while a dataset derived before the edit goes stale and comes back with undo."""
+    from shop import Shop
+
+    session = toolbox.session(clock=CLOCK)
+    deck = pptx_agent.Document.new()
+    deck.add_slide("Blank")
+    session.open(deck.to_bytes(), "deck.pptx")                           # d1
+    session.open(Shop().to_bytes(), "stock.xlsx")                        # d2
+    source = {"from": "t:Stock!A9", "from_columns": ["Id", "Value"]}
+    fresh = ok(call(toolbox, session, "ppt_add_table", doc="d1", slide="s:256", box=BOX,
+                    **source)).data["from"]
+    # every formula cell of the rows read: the ids, the line values and the tax rates
+    assert fresh["cache"] == {"cached_unverified": 15} and "stale" not in fresh
+    ok(call(toolbox, session, "xlsx_derive", doc="d2", **{"from": "t:Stock!A9"}, id="before",
+            group_by=["Category"], measures=[{"fn": "sum", "column": "Value", "as": "total"}]))
+    ok(call(toolbox, session, "xlsx_set_cells", doc="d2",
+            cells=[{"address": "Stock!D10", "number": 7}]))
+    placed = ok(call(toolbox, session, "ppt_add_table", doc="d1", slide="s:256", box=BOX,
+                     **source)).data["from"]
+    assert placed["stale"] is True and placed["cache"] == {"invalidated": 15}
+    after = ok(call(toolbox, session, "xlsx_derive", doc="d2", **{"from": "t:Stock!A9"},
+                    id="after", group_by=["Category"],
+                    measures=[{"fn": "sum", "column": "Value", "as": "total"}]))
+    assert after.data["cache"]["invalidated"] >= 5
+    assert any("d:after is stale" in w and "invalidated" in w for w in after.warnings)
+    assert session.dataset("d:before").stale and session.dataset("d:after").stale
+    drawn = ok(chart(toolbox, session, **{"from": "d:before", "columns": ["Category", "total"]}))
+    assert drawn.data["from"]["stale"] is True
+    ok(call(toolbox, session, "undo", doc="d2"))
+    assert not session.dataset("d:before").stale      # undo back: current again
+    assert session.dataset("d:after").stale           # computed from invalidated caches
