@@ -62,10 +62,12 @@ column's name); a cell named twice.  A neighbour's formula is never touched.
 
 **Guards of the host's** (X4), each a refusal before anything changes, every cell listed:
 a cell named by key (``"t:stock/P-7/Quantity"``, :mod:`xlsx_agent.edit.keys`) is the
-cell of the row holding the key; with ``new_rows``, a key no row has starts a row in its
-table's capacity.  A cell on a protected sheet (``protected``: its ``sheetProtection``
-turns protection on, read from the package; unlocked cells are refused too, see below), a
-cell the host's write policy does not cover (``not_writable``), a formula or a write over
+cell of the row holding the key (never of a key column of formulas: ``formula_key``); a
+key no row has starts a row in its table's capacity, in the free row ``allocate`` names
+(``{"t:stock/Lamp": 15}``) or, with ``new_rows``, the next free one.  A cell on a
+protected sheet (``protected``: its ``sheetProtection`` turns protection on, read from
+the package; unlocked cells are refused too, see below), a cell the host's write policy
+does not cover (``not_writable``), a formula or a write over
 one it refuses (``formulas_not_allowed``; :mod:`xlsx_agent.edit.policy`), a free capacity
 row named by its address (``capacity_row``).  An *expectation* goes with any value as
 ``{"value": 12, "expect": {...}}`` (or inside ``{"date": ...}``, ``{"formula": ...}``,
@@ -202,15 +204,18 @@ class Written:
 
 
 def set_cells(workbook: Any, cells: Any, *, replace_formulas: bool = False,
-              new_rows: bool = False, revision: int | None = None) -> Written:
+              new_rows: bool = False, allocate: Any = None,
+              revision: int | None = None) -> Written:
     """Write ``cells`` (see the module): a mapping of address to value, or ``(address,
-    value)`` pairs.  :class:`~xlsx_agent.edit.EditError` before anything changes for any
-    value refused or guard met, every refused cell listed (at most :data:`MAX_LISTED`);
-    ``revision`` refused first when the workbook's version is another."""
+    value)`` pairs; ``allocate`` the rows the host names for new keys
+    (:mod:`xlsx_agent.edit.keys`).  :class:`~xlsx_agent.edit.EditError` before anything
+    changes for any value refused or guard met, every refused cell listed (at most
+    :data:`MAX_LISTED`); ``revision`` refused first when the workbook's version is
+    another."""
     from . import EditError
 
     items = list(cells.items()) if isinstance(cells, Mapping) else list(cells)
-    if not items:
+    if not items and not allocate:
         raise EditError("bad_value", "no cells to write")
     if revision is not None:
         if isinstance(revision, bool) or not isinstance(revision, int):
@@ -225,7 +230,8 @@ def set_cells(workbook: Any, cells: Any, *, replace_formulas: bool = False,
     with editor.batch():
         # Checked inside the step: a refusal caught in an open batch still rolls it back,
         # as any write that fails there does (xlsx_agent.edit, "Atomic").
-        planned = plan(workbook, items, replace_formulas=replace_formulas, new_rows=new_rows)
+        planned = plan(workbook, items, replace_formulas=replace_formulas, new_rows=new_rows,
+                       allocate=allocate)
         cells_of: dict[str, set[Cell]] = {}
         for write in planned:
             cells_of.setdefault(write.sheet.part, set()).add(write.cell)
@@ -328,13 +334,15 @@ class _Refusals:
 
 
 def plan(workbook: Any, items: "list[tuple[Any, Any]]", *,
-         replace_formulas: bool = False, new_rows: bool = False) -> list[Planned]:
+         replace_formulas: bool = False, new_rows: bool = False,
+         allocate: Any = None) -> list[Planned]:
     """Every write checked against the values allowed, the host's policy, the
     expectations and the guards (see the module), nothing changed: the writes, or
     :class:`~xlsx_agent.edit.EditError`."""
     from ..address import AddressError, NameNotFound, RangeAddress, parse_address
     from . import EditError
-    from .keys import Found, NewCell, allocate, free_rows, is_keyed, resolve
+    from .keys import Found, NewCell, allocations, free_rows, is_keyed, resolve
+    from .keys import allocate as assign_rows
     from .policy import PolicyError
 
     if workbook.strict:
@@ -345,6 +353,8 @@ def plan(workbook: Any, items: "list[tuple[Any, Any]]", *,
     except PolicyError as error:
         raise EditError("bad_policy", error.message) from None
     check = _Check(workbook, refusals, allowed, free_rows(workbook), replace_formulas)
+    explicit = allocations(workbook, allocate, refusals.add)
+    allocated = {(item.region.address.text, item.key) for item in explicit}
     # (order, sub-order, sheet, cell, value, new row: "key", "row" or False), as found
     found: list[tuple[int, int, Any, Cell, Any, "str | bool"]] = []
     pending: list[tuple[int, str, NewCell, Any]] = []
@@ -363,7 +373,7 @@ def plan(workbook: Any, items: "list[tuple[Any, Any]]", *,
             def refuse(code: str, detail: str | None = None, shown: str = shown) -> None:
                 refusals.add(code, shown, detail)
 
-            cell_found = resolve(workbook, address, new_rows, refuse)
+            cell_found = resolve(workbook, address, new_rows, refuse, allocated)
             if isinstance(cell_found, NewCell):
                 pending.append((order, shown, cell_found, given))
             elif isinstance(cell_found, Found):
@@ -385,14 +395,21 @@ def plan(workbook: Any, items: "list[tuple[Any, Any]]", *,
             refusals.add("bad_address", shown, "no such sheet")
             continue
         found.append((order, 1, sheet, parsed.area.first, given, False))
-    if pending:
-        rows, refused = allocate(workbook, [new for _, _, new, _ in pending])
+    if pending or explicit:
+        rows, refused = assign_rows(workbook, [new for _, _, new, _ in pending], explicit,
+                                    first_free=new_rows)
+        for item in explicit:
+            key = (item.region.address.text, item.key)
+            if key in refused:
+                code, detail = refused[key]
+                refusals.add(code, item.shown, detail)
         keyed: set[tuple[str, str]] = set()
         for order, shown, new, given in pending:
             key = (new.region.address.text, new.key)
             if key in refused:
-                code, detail = refused[key]
-                refusals.add(code, shown, detail)
+                if key not in allocated:     # else refused once, as the allocation
+                    code, detail = refused[key]
+                    refusals.add(code, shown, detail)
                 continue
             row = rows[key]
             if key not in keyed:     # the key cell first, with the row's first cell's order
@@ -401,6 +418,13 @@ def plan(workbook: Any, items: "list[tuple[Any, Any]]", *,
                               row.key_value, "key"))
             column = capacity_rows(new.region).columns[new.column]
             found.append((order, 1, row.sheet, Cell(row.row, column), given, "row"))
+        for n, item in enumerate(explicit):     # a row of its key alone
+            key = (item.region.address.text, item.key)
+            if key in rows and key not in keyed:
+                keyed.add(key)
+                row = rows[key]
+                found.append((len(items) + n, 0, row.sheet, Cell(row.row, row.key_column),
+                              row.key_value, "key"))
     found.sort(key=lambda entry: (entry[0], entry[1]))
     out = [write for entry in found for write in [check.one(*entry[2:])] if write is not None]
     for part, facts in check.sheets.items():
@@ -445,7 +469,7 @@ class _Check:
                          "(sheetProtection): its owner unprotects it in Excel")
             return None
         if not new_row and any(area.contains(cell) for area in self.free.get(sheet.part, ())):
-            refusals.add("capacity_row", label, "start the row by its key, with new_rows")
+            refusals.add("capacity_row", label, "start the row by its key, with allocate")
             return None
         if allowed is not None and not allowed.allows(sheet.part, cell):
             refusals.add("not_writable", label)

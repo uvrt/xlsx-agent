@@ -73,8 +73,9 @@ session's), and :meth:`Workbook.declare_tables
   the rows the template leaves for it (``"header_row": 9, "capacity": 200``: rows 10 to
   209).  The rows below its data rows, to the last of those, are its *capacity*: where a
   new row by key is written (:meth:`Workbook.set_cells
-  <xlsx_agent.workbook.Workbook.set_cells>` with ``new_rows``, :mod:`xlsx_agent.edit.keys`),
-  each in the first one free, and nowhere else.  Each must be empty when declared -- no
+  <xlsx_agent.workbook.Workbook.set_cells>`, :mod:`xlsx_agent.edit.keys`), each in the free
+  row the host allocates to its key (``allocate``; ``new_rows``: the next one free), and
+  nowhere else.  Each must be empty when declared -- no
   value and no formula in any of the table's columns (a formula whose result is empty
   text is something; a cell with only a format is empty) -- or the declaration is refused
   (``capacity_not_empty``, naming the first such cell); so is a table on more than one

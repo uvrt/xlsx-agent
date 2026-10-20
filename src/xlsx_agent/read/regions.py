@@ -1590,11 +1590,15 @@ class Regions:
         cache = (_key_cache(region), column)
         if cache not in self._indexes:
             keys: list[str | None] = []
+            formulas: list[int] = []
             area = region.column_area(column)
             if area is not None:
-                for row in self.workbook.read(RangeAddress(region.sheet_ref, area)):
+                for position, row in enumerate(
+                        self.workbook.read(RangeAddress(region.sheet_ref, area)), 1):
                     keys.append(key_text(row[0]))
-            self._indexes[cache] = KeyIndex(region, column, keys)
+                    if row[0].formula:
+                        formulas.append(position)
+            self._indexes[cache] = KeyIndex(region, column, keys, formulas)
         return self._indexes[cache]
 
     def key_column(self, region: Region, key: str | None = None) -> str:
@@ -1652,13 +1656,17 @@ NEAR_KEYS = 50_000
 class KeyIndex:
     """A region's key column, read once: ``keys`` each data row's key by position (from
     0: row 1 is ``keys[0]``; ``None`` for a cell that is no key, :func:`key_text`),
-    ``duplicates`` the keys two or more rows share, with their positions.  :meth:`find`
+    ``duplicates`` the keys two or more rows share, with their positions; ``formulas`` the
+    positions of the rows whose key cell holds a formula (its key is the cached value: a
+    write by key refuses such a column, :mod:`xlsx_agent.edit.keys`).  :meth:`find`
     looks a key up as an address by key does."""
 
-    def __init__(self, region: Region, column: str, keys: list[str | None]) -> None:
+    def __init__(self, region: Region, column: str, keys: list[str | None],
+                 formulas: "Sequence[int]" = ()) -> None:
         self.region = region
         self.column = column
         self.keys = keys
+        self.formulas = tuple(formulas)
         self._first: dict[str, int] = {}
         self.duplicates: dict[str, list[int]] = {}
         for position, k in enumerate(keys, 1):

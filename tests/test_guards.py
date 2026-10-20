@@ -372,7 +372,9 @@ def test_new_rows_follow_the_policy():
         == "not_writable"
     _, closed = _open({"tables": [{"table": "stock", "columns": ["Quantity"]}]})
     assert _refused(closed, {"t:stock/Lamp/Quantity": 2}, new_rows=True).code \
-        == "not_writable"
+        == "not_allocated"          # the next free row only where the policy says new_rows
+    assert _refused(closed, {"t:stock/Lamp/Quantity": 2},
+                    allocate={"t:stock/Lamp": 15}).code == "not_writable"
     _, bare = _open({"tables": [{"table": "stock", "new_rows": True}]},
                     tables=[{k: v for k, v in STOCK.items() if k != "capacity"}])
     assert _refused(bare, {"Stock!B4": "Ann"}).code == "bad_policy"
@@ -416,6 +418,88 @@ def test_a_formula_returning_empty_text_is_no_free_row():
     assert _refused(wb, {"t:stock/Fan/Quantity": 1}, new_rows=True).code == "capacity_full"
 
 
+# -- the contract's keys and rows (X6) ------------------------------------------------------
+
+
+def test_a_key_column_of_formulas_is_refused_as_a_key():
+    _, wb = _open(tables=[{**STOCK, "key": "Id"}])     # ids made from the row's number
+    assert wb.cell("Stock!A11").formula and wb.cell("Stock!A11").v == "P-002"
+    for options in ({}, {"new_rows": True}):
+        error = _refused(wb, {"t:stock/P-002/Quantity": 1}, **options)
+        assert error.code == "formula_key" and error.addresses == ("cells[0]",)
+        assert "declare a key column of values" in str(error) and "P-002" not in str(error)
+    error = _refused(wb, {"t:stock/P-009/Quantity": 1}, allocate={"t:stock/P-009": 15})
+    assert error.code == "formula_key" and error.addresses == ("allocate[0]", "cells[0]")
+    _, values = _open()                                # the same table keyed by its items
+    assert values.set_cells({"t:stock/Mug/Quantity": 1}).cells == ("Stock!D13",)
+
+
+def test_new_rows_go_into_the_rows_the_host_allocates_in_any_order():
+    data, wb = _open()
+    written = wb.set_cells({"t:stock/Lamp/Quantity": 2, "t:stock/Fan/Category": "Hardware"},
+                           allocate={"t:stock/Fan": 15, "t:stock/Lamp": 16})
+    assert written.cells == ("Stock!B16", "Stock!D16", "Stock!B15", "Stock!C15")
+    assert written.new_rows == ("Stock!B16", "Stock!B15")
+    assert wb.cell("Stock!B15").v == "Fan" and wb.table("t:stock").rows == 7
+    assert _region(wb)["free"] == 1
+    alone = wb.set_cells({}, allocate=[("t:stock/Stool", 17)])   # a row of its key alone
+    assert alone.cells == ("Stock!B17",) and alone.new_rows == ("Stock!B17",)
+    error = _refused(wb, {"t:stock/Shelf/Quantity": 1}, allocate={"t:stock/Shelf": 17})
+    assert error.code == "capacity_full" and "8 rows at most" in str(error)
+    for _ in range(2):
+        wb.undo()
+    assert wb.to_bytes() == data and _region(wb)["free"] == 3
+    mixed = wb.set_cells({"t:stock/Lamp/Quantity": 2, "t:stock/Fan/Quantity": 1},
+                         allocate={"t:stock/Fan": 15}, new_rows=True)
+    assert mixed.new_rows == ("Stock!B16", "Stock!B15")     # Lamp the next free after Fan's
+
+
+def test_an_allocation_is_refused_off_the_capacity_twice_with_a_gap_or_for_a_known_key():
+    _, wb = _open()                                    # data rows 10-14, capacity 10-17
+    cases = [
+        ({"t:stock/Lamp": 14}, "data_row"), ({"t:stock/Lamp": 18}, "not_capacity"),
+        ({"t:stock/Lamp": 9}, "not_capacity"), ({"t:stock/Lamp": 16}, "capacity_gap"),
+        ({"t:stock/Lamp": 15, "t:stock/Fan": 17}, "capacity_gap"),
+        ([("t:stock/Lamp", 15), ("t:stock/Fan", 15)], "allocated_twice"),
+        ([("t:stock/Lamp", 15), ("t:stock/Lamp", 16)], "allocated_twice"),
+        ({"t:stock/Kettle": 15}, "existing_key"), ({"t:stock/Lamp": 0}, "bad_value"),
+        ({"t:stock/Lamp": True}, "bad_value"), ({"t:stock/Lamp/Item": 15}, "bad_address"),
+        ({"t:stock/#3": 15}, "bad_address"), ({"t:nothing/Lamp": 15}, "bad_address")]
+    for allocate, code in cases:
+        error = _refused(wb, {"t:stock/Lamp/Quantity": 2}, allocate=allocate)
+        assert error.code == code, (allocate, error.code)
+        assert error.addresses[0].startswith("allocate["), allocate
+        assert "Lamp" not in str(error) and "Kettle" not in str(error)
+    assert _refused(wb, {"t:stock/Lamp/Quantity": 2}).code == "missing_key"
+    assert "allocate" in str(_refused(wb, {"t:stock/Lamp/Quantity": 2}))
+    _, full = _open(tables=[{**STOCK, "capacity": 5}])
+    assert _refused(full, {}, allocate={"t:stock/Lamp": 15}).code == "capacity_full"
+    _, plain = _open(tables=[{k: v for k, v in STOCK.items() if k != "capacity"}])
+    assert _refused(plain, {}, allocate={"t:stock/Lamp": 15}).code == "no_capacity"
+
+
+def test_a_row_holding_a_formula_with_an_empty_result_is_never_allocated():
+    _, wb = _open()
+    wb.editor.write(wb.sheet("Stock"), Cell(16, 3), Formula('=""'))   # below a free row
+    assert _region(wb)["free"] == 3           # row 15 is still the next free one
+    error = _refused(wb, {"t:stock/Lamp/Quantity": 2, "t:stock/Fan/Quantity": 1},
+                     allocate={"t:stock/Lamp": 15, "t:stock/Fan": 16})
+    assert error.code == "not_free" and error.addresses == ("allocate[1]",)
+    assert wb.set_cells({"t:stock/Lamp/Quantity": 2},
+                        allocate={"t:stock/Lamp": 15}).new_rows == ("Stock!B15",)
+
+
+def test_allocated_rows_follow_the_policy_over_the_capacity_rows():
+    opened = {"tables": [{"table": "stock", "columns": ["Quantity"]}],
+              "cells": ["Stock!B15:I15"]}          # the host opens row 15 alone
+    _, wb = _open(opened)
+    assert _refused(wb, {"t:stock/Lamp/Quantity": 2}, new_rows=True).code == "not_allocated"
+    assert _refused(wb, {"t:stock/Lamp/Quantity": 2, "t:stock/Fan/Quantity": 1},
+                    allocate={"t:stock/Lamp": 15, "t:stock/Fan": 16}).code == "not_writable"
+    assert wb.set_cells({"t:stock/Lamp/Quantity": 2},
+                        allocate={"t:stock/Lamp": 15}).changed == 2
+
+
 # -- the tool ----------------------------------------------------------------------------------
 
 
@@ -451,11 +535,30 @@ def test_the_session_s_policy_is_shown_by_describe_and_refuses_outside_it(box):
     assert refused.error.code == "refused" and refused.error.details["code"] == "not_writable"
     assert refused.error.details["addresses"] == ["Stock!E10", "Stock!E13"]
     assert session.entry("d1").version == 0
-    written = box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "new_rows": True, "cells": [
-        {"address": "t:stock/Lamp/Quantity", "number": 2}]})
+    written = box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "cells": [
+        {"address": "t:stock/Lamp/Quantity", "number": 2, "row": 15}]})
     assert written.ok and written.data["new_rows"] == ["Stock!B15"]
     with pytest.raises(ValueError):
         policy(session, {"cells": []})
+
+
+def test_the_tool_allocates_a_new_key_s_row_on_its_cells(box):
+    session, _ = _session(box)
+    refused = box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "cells": [
+        {"address": "t:stock/Lamp/Quantity", "number": 2, "row": 14}]})
+    assert refused.error.details["code"] == "data_row"
+    assert refused.error.details["addresses"] == ["allocate[0]"]
+    missing = box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "cells": [
+        {"address": "t:stock/Lamp/Quantity", "number": 2}]})
+    assert missing.error.details["code"] == "missing_key"
+    wrong = box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "cells": [
+        {"address": "Stock!D15", "number": 2, "row": 15}]})
+    assert wrong.error.code == "invalid_arguments" and wrong.error.field == "cells[0].row"
+    written = box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "cells": [
+        {"address": "t:stock/Lamp/Quantity", "number": 2, "row": 15},
+        {"address": "t:stock/Lamp/Category", "text": "Hardware", "row": 15},
+        {"address": "t:stock/Fan/Quantity", "number": 1, "row": 16}]})
+    assert written.ok and written.data["new_rows"] == ["Stock!B15", "Stock!B16"]
 
 
 def test_expectations_and_the_revision_through_the_tool(box):

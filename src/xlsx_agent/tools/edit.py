@@ -30,10 +30,16 @@ error's ``details`` giving each refusal by ``code`` and address (``problems``). 
 **Guards** (X4, :mod:`xlsx_agent.edit.policy`, :mod:`xlsx_agent.edit.keys`): an
 ``address`` may name a value by its row's key, ``t:stock/P-7/Quantity`` -- the row holding
 the key now, wherever it is; a key two rows share, a key no row has, a row by place
-(``#3``) and a table with no key column declared refuse.  ``new_rows: true`` starts a row
-for each key no row has, in the first free row of the table's declared capacity (none
-left: refused).  Each item's ``expect`` -- the cell's type now (``empty`` or ``blank``:
-no value and no formula; ``text``, ``number``, ``bool``, ``error``; ``formula``: any
+(``#3``), a table with no key column declared and one whose key column holds formulas
+(``formula_key``: keys are values the application supplies) refuse.  A key no row has
+starts a new row only in the row an item names for it, ``row`` (the sheet's row number:
+a free row of the table's declared capacity, continuing its data rows with no blank row
+between; :mod:`xlsx_agent.edit.keys`): the application allocates the rows -- in its
+instructions, or by the write policy over the capacity rows it opens -- and there is no
+"next free row" form here.  A row outside the capacity, one of the data rows, a row not
+empty, a row or key allocated twice, a gap and a key a row already has refuse.  Each
+item's ``expect`` -- the cell's type now (``empty`` or ``blank``: no value and no formula;
+``text``, ``number``, ``bool``, ``error``; ``formula``: any
 formula cell, whatever it caches) -- and ``expect_value`` -- its value now as a read gave
 it, as text (a text's own, a number's digits, ``true``/``false``, a date ``YYYY-MM-DD``; a
 formula's cached value) -- refuse the call when the cell holds something else, the
@@ -58,13 +64,14 @@ addresses only.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from ooxml_edit.tools import (Result, ToolError, array, boolean, integer, number, obj, string,
                               tool)
 from ooxml_edit.sheets import Formula
 
-from ..address import AddressError, RangeAddress, parse_address
+from ..address import AddressError, RangeAddress, TableAddress, parse_address
 from ..edit import EditError
 from .docformat import KIND, handler
 from .read import DOC
@@ -104,18 +111,18 @@ GROUP = "xlsx_edit"
            "expect": string("The cell's type now, else refused.", enum=EXPECT_TYPES,
                             optional=True),
            "expect_value": string("Its value now as read (dates YYYY-MM-DD), else refused.",
-                                  optional=True)}),
+                                  optional=True),
+           "row": integer("New key (t:...): the free capacity row it starts in.",
+                          optional=True)}),
            f"At most {MAX_CELLS:,}.", min_items=1),
        "replace_formulas": boolean("Write over cells holding a formula. Default false.",
                                    optional=True),
-       "new_rows": boolean("A key no row has starts a row in its table's free capacity.",
-                           optional=True),
        "revision": integer("The doc's version you read; refused if it changed.",
                            optional=True)},
       group=GROUP, kind=KIND, mutates=True)
 @handler
 def xlsx_set_cells(call: Any, doc: str, cells: list[dict],
-                   replace_formulas: bool | None = None, new_rows: bool | None = None,
+                   replace_formulas: bool | None = None,
                    revision: int | None = None) -> Result:
     """``xlsx_set_cells``'s handler (see the module's notes)."""
     if len(cells) > MAX_CELLS:
@@ -125,9 +132,10 @@ def xlsx_set_cells(call: Any, doc: str, cells: list[dict],
     items = [(_address(item, index), _expected(item, index, _value(item, index)))
              for index, item in enumerate(cells)]
     _withheld(workbook, items)
+    allocate = _allocated(cells, items)
     try:
         written = workbook.set_cells(items, replace_formulas=bool(replace_formulas),
-                                     new_rows=bool(new_rows), revision=revision)
+                                     allocate=allocate or None, revision=revision)
     except EditError as error:
         details: dict[str, Any] = {"code": error.code, "addresses": list(error.addresses)}
         if len(error.problems) > 1:
@@ -206,6 +214,27 @@ def _expected(item: dict, index: int, value: Any) -> Any:
     if isinstance(value, dict):
         return {**value, "expect": out}
     return {"value": value, "expect": out}
+
+
+def _allocated(cells: list[dict], items: list) -> list[tuple[str, int]]:
+    """The rows the items allocate (``row``), as :meth:`Workbook.set_cells` takes them:
+    ``(t:<table>/<key>, row)`` pairs, each once."""
+    out: list[tuple[str, int]] = []
+    for index, (item, (address, _)) in enumerate(zip(cells, items)):
+        row = item.get("row")
+        if row is None:
+            continue
+        try:
+            parsed = TableAddress.parse(address.strip())
+        except (AddressError, ValueError):
+            parsed = None
+        if parsed is None or parsed.kind != "value" or parsed.key is None:
+            raise ToolError("invalid_arguments", "row goes with a value by a new key, "
+                            "t:<table>/<key>/<column>", field=f"cells[{index}].row")
+        pair = (replace(parsed, column=None).text, row)
+        if pair not in out:
+            out.append(pair)
+    return out
 
 
 def _withheld(workbook: Any, items: list) -> None:

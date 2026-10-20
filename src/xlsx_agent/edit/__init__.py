@@ -118,6 +118,16 @@ EDIT_CODES = {
     "no_capacity": "the table has no capacity for new rows",
     "capacity_full": "the table's capacity for new rows is used up",
     "capacity_row": "the cell is in a table's free capacity, where a row is started by key",
+    # the contract's keys and rows (X6, xlsx_agent.edit.keys)
+    "formula_key": "the table's key column holds formulas: keys are values the application "
+                   "supplies",
+    "not_capacity": "the row allocated is outside the table's capacity",
+    "data_row": "the row allocated is already one of the table's data rows",
+    "not_free": "the row allocated is not empty",
+    "allocated_twice": "a row or a key is allocated twice",
+    "existing_key": "a row already has the key allocated a new row",
+    "capacity_gap": "the rows allocated leave a blank row below the table's data rows",
+    "not_allocated": "the write policy takes new rows only where allocate names them",
 }
 
 #: The content type of a VBA project part ([MS-OFFMACRO2]; what Excel writes).
