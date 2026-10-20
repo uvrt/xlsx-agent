@@ -5,6 +5,12 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **`xlsx_query` takes a dataset** (round 10, O5; ooxml-edit 0.55.0): `table` may be
+  `d:by_region`, no `doc` needed; its rows are filtered and sorted as a table's
+  (`xlsx_agent.query.dataset_matches`) over the values as the dataset reports them, each
+  with its `d:` address, paged as `xlsx_read` pages a dataset, `dataset` saying where it
+  came from. The shared `undo`'s `scope` names a sheet (workbooks) beside a slide (decks).
+  Every definition 4,840 -> 4,859 estimated (guard 4,860); strict set unchanged.
 - **Guarded writes** (lane X, X4; no ooxml-edit change). The host's write policy
   (`xlsx_agent.edit.policy`, `WritePolicy`, `PolicyError`): an immutable allowlist of
   `cells` (cells, ranges, whole sheets) and `tables` (a table's data cells by `columns`;

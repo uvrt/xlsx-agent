@@ -235,7 +235,7 @@ Every result is bounded by `Limits.max_result_chars` (24,000) and
 | `describe` (shared) | `doc` | the catalogue: sheets (id, name, visible, hidden or very hidden, protected, used range); tables, names and detected regions with their key columns; per column: header, inferred type, fill rate, min/max/mean or distinct values when 12 or fewer, text length median and max, formula share, data-validation list, flags (mixed types, numbers as text, no cached value, cut at 32,767); up to two sample rows per table; workbook flags (recalculation, external links, macros); the session's datasets (id, columns, types, rows, from; T11) | about 3,000 tokens by default; a workbook too big for that lists every table and the first columns, and says which were left for `xlsx_profile` |
 | `xlsx_profile` | `doc`, `target` (table or column), `columns`, `cursor` | the full per-column profile for one table, every column (a date column's range as dates; text lengths in characters and words with the longest cell's address; the range of dates stored as text) | one table per call; 50 columns a page, within 24,000 characters; paged |
 | `xlsx_read` | `doc` (not for a dataset), `target` (range, table, column, row, dataset), `formats`, `formulas`, `comments`, `hyperlinks`, `merges`, `sources` (a dataset's only), `key` (the column holding a by-key target's key, `Code` for `t:Parts/BX-17`; `key_column` read as it), `columns` (a `t:` target's columns to give, in that order), `limit`, `max_chars`, `cursor` | typed values by row, with addresses; optionally format codes, formula text, comments, links, merges; the array blocks over the rows always | default 50 rows, at most 500 or 24,000 characters; paged, a row too wide for a page split across pages |
-| `xlsx_query` | `doc`, `table`, `columns`, `where` (`eq`, `in`, `gte`, `lte`, `contains`, `words_gt`, `blank`, `not_blank`, combined with and), `sort`, `limit`, `cursor` | matching rows with their addresses, and the count of all matches | as `xlsx_read`; a filter on a column of the wrong type is refused naming the column's type |
+| `xlsx_query` | `doc`, `table` (table, region or dataset; round 10), `columns`, `where` (`eq`, `in`, `gte`, `lte`, `contains`, `words_gt`, `blank`, `not_blank`, combined with and), `sort`, `limit`, `cursor` | matching rows with their addresses, and the count of all matches | as `xlsx_read`; a filter on a column of the wrong type is refused naming the column's type |
 | `find_text` (shared) | `doc`, `text`, `regex`, `range` (a sheet, range or table), `cursor` | matches by address and kind: cell (text cells; numbers and dates are not searched, having no display string yet), table or region name, column header, comment, defined name; hidden ones marked; formula text not searched (the shared tool has no option for it) | 50 per page |
 | `xlsx_derive` | `doc`, `from` (table, region or dataset), `where`, `group_by`, `measures` (`count`, `sum`, `mean`, `median`, `min`, `max` (of dates, a date), `first`, `last` (row order, any column), `share`, `distinct`, each with `column` and `as`), `bins` (edges for a number or date column), `pivot` (a column whose values become columns), `sort` (by output columns: a `group_by` column or a measure's `as`), `top`, `round`, `coerce` (`number_as_text`, `date_as_text`), `id` | `d:<id>`: columns, rows, the rounding applied, and for every value its sources (see *Provenance*); the rows left out and why, counted by reason | at most 1,000 result rows and 50 shown; a measure on a column whose type does not allow it is refused before anything is computed |
 | `xlsx_compare` | `a`, `b` (two open documents), `tables` (default every table and declared region; `table_b` when the one table's name differs in `b`), `key`, `columns`, `cursor` | first, each table's summary: per column the cells changed, and for numbers and dates up, down and the largest move each way by key (X10); sheets added, removed and renamed (by id); rows added and removed (by key, `t:Products/SKU-6`); cells changed (address by key, `t:Products/SKU-2/Price`, and in each sheet, old and new value, type: a number and the same number as text is a `type` change); each row and cell change with its row's `label` (the first text column other than the key, T19b); columns added, removed and renamed; duplicate keys reported, not paired by guess | 50 differences per page, totals always, the summary on the first page |
@@ -1071,6 +1071,20 @@ Round 8, M1 (ooxml-edit 0.46.0): agents sharing one session each through a view 
 (`Session.view`), roles narrowed per agent; the workbook and its datasets are shared.
 Round 9, N5 (ooxml-edit 0.47.0): a name that is no tool names the tool meant, the format's
 own `TOOL_HINTS` (`FORMAT.tool_hints`) for what ooxml-edit's reading of names misses.
+
+*Datasets queried as tables* (production feedback, round 10, O5, 2026-10-20): `xlsx_query`
+refused a dataset ("takes a table or region") and models filtered one by deriving from it.
+`table` now takes `d:by_region` as `xlsx_read` and `xlsx_derive`'s `from` do, no `doc`
+needed: the same filters, types and sort (`xlsx_agent.query.dataset_matches`, sharing the
+type check and the sort with a sheet's query), over the dataset's values as it reports them
+-- what `xlsx_read` shows, rounded where its derive rounded, so `gte 3.7` finds the row
+shown as 3.7 -- each with its `d:` address, paged as a dataset's read is, `dataset` saying
+where it came from and whether it is stale. A part of a dataset (`d:by_region[total]`) is
+refused naming the whole one, with `columns` for its columns. The shared `undo`'s `scope`
+now says a workbook's is a sheet (ooxml-edit 0.55.0). `xlsx_query` 457 -> 474 estimated,
+`undo` 158 -> 159; every definition 4,840 -> 4,859 (guard 4,850 -> 4,860); strict set
+unchanged.
+
 ### 0.2 — edit
 
 | # | Item | Effort | Done when |

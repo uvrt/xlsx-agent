@@ -52,6 +52,11 @@ X4 (guards): ``xlsx_set_cells``' address by key, each cell's ``expect`` (a type)
 -> 533 (deferred: the core unchanged, 4,096); every definition 4,686 -> 4,840, the guard
 4,690 -> 4,850.  (A first form with ``expect`` an object of typed fields, 553, was refused
 online as too complex for strict mode: see the strict complexity proxy below.)
+Round 10, item 4 (ooxml-edit 0.55.0): ``xlsx_query`` takes a dataset (O5: ``doc`` optional,
+``table`` and the description name ``d:``), 457 -> 474, and the shared ``undo``'s ``scope``
+names a sheet as well as a slide, 158 -> 159: the core 4,096 -> 4,115 estimated, about
+6,062 -> 6,091 counted by the proxy; every definition 4,840 -> 4,859, the guard 4,850 ->
+4,860.  The strict set is unchanged: neither tool is strict.
 """
 
 from __future__ import annotations
@@ -70,7 +75,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
-ALL_GUARD = 4850
+ALL_GUARD = 4860
 
 
 @pytest.fixture(scope="module")
