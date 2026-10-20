@@ -69,6 +69,21 @@ session's), and :meth:`Workbook.declare_tables
   Columns not listed keep their header's name.
 * ``optional``: ``true`` when a workbook without the sheets is no error: the table is then
   not declared.
+* ``capacity``: the most data rows the table holds, counted from its first data row --
+  the rows the template leaves for it (``"header_row": 9, "capacity": 200``: rows 10 to
+  209).  The rows below its data rows, to the last of those, are its *capacity*: where a
+  new row by key is written (:meth:`Workbook.set_cells
+  <xlsx_agent.workbook.Workbook.set_cells>` with ``new_rows``, :mod:`xlsx_agent.edit.keys`),
+  each in the first one free, and nowhere else.  Each must be empty when declared -- no
+  value and no formula in any of the table's columns (a formula whose result is empty
+  text is something; a cell with only a format is empty) -- or the declaration is refused
+  (``capacity_not_empty``, naming the first such cell); so is a table on more than one
+  sheet, with ``last_row`` (its data rows end where its cells do), of key-value type, with
+  more data rows than its capacity, or whose capacity runs into the next section's header
+  (``bad_capacity``).  The data rows then follow the cells: a row written below them joins
+  the table, and leaves it when undone (:meth:`Regions.refresh_capacity
+  <xlsx_agent.read.regions.Regions.refresh_capacity>`).  ``describe`` shows ``capacity``
+  and the rows ``free``.
 
 **A header found by its text** (``"header_row": {"match": [...], "rows": "8:40"}``), for a
 sheet of several sections: on each sheet, the one row whose text cells, in the table's
@@ -232,7 +247,7 @@ TYPES = ("rows", "key_value")
 
 #: The keys a table's declaration takes.
 TABLE_KEYS = ("name", "sheets", "type", "header_row", "first_row", "last_row", "columns",
-              "key", "description", "fields", "optional")
+              "key", "description", "fields", "optional", "capacity")
 
 #: The keys a declaration of sheets withheld from the model takes.
 SHEET_KEYS = ("sheets", "hidden", "optional")
@@ -266,7 +281,8 @@ class DeclarationError(ValueError):
     ``no_rows``, ``unknown_column``, ``duplicate_field``, ``bad_id``, ``id_taken``,
     ``no_columns``, ``hidden_key``, ``no_key``, ``duplicate_key``, ``bad_pattern``,
     ``clean_key``, ``hidden_elsewhere``, ``ambiguous_header``, ``on_hidden_sheet``,
-    ``redacted_term``, ``redact_late``), ``path`` where in the
+    ``redacted_term``, ``redact_late``, ``bad_capacity``, ``capacity_not_empty``), ``path``
+    where in the
     declarations (``tables[0].fields[2].header``), ``valid_options`` what would do instead.
     The message names sheets, cells, paths and what the declaration gave, never a cell's
     content."""
@@ -333,6 +349,7 @@ class TableSpec:
     optional: bool = False
     header_match: tuple[str, ...] = ()
     header_within: tuple[int, int] | None = None
+    capacity: int | None = None
 
 
 # ------------------------------------------------------------------------------------------
@@ -443,11 +460,34 @@ def _table(item: Any, path: str) -> "TableSpec | HiddenSheets | RedactTerms":
     optional = item.get("optional", False)
     if not isinstance(optional, bool):
         raise DeclarationError("bad_declaration", f"{path}.optional", "true or false")
+    capacity = _capacity(item, path, kind, last_row)
     return TableSpec(path=path, name=name, sheets=tuple(sheets), type=kind,
                      header_row=header_row, first_row=first_row, last_row=last_row,
                      columns=columns, key=key, description=description,
                      fields=tuple(_field(f, f"{path}.fields[{n}]") for n, f in enumerate(fields)),
-                     optional=optional, header_match=match, header_within=within)
+                     optional=optional, header_match=match, header_within=within,
+                     capacity=capacity)
+
+
+def _capacity(item: Mapping, path: str, kind: str, last_row: int | None) -> int | None:
+    """``capacity``, checked for its form: a whole number of rows, on a table of rows
+    whose data rows end where its cells do (no ``last_row``)."""
+    if "capacity" not in item:
+        return None
+    value = item["capacity"]
+    where = f"{path}.capacity"
+    if isinstance(value, bool) or not isinstance(value, int) or not \
+            1 <= value <= MAX_SHEET_ROW:
+        raise DeclarationError("bad_capacity", where, "the most data rows the table holds, "
+                               "a whole number from 1")
+    if kind != "rows":
+        raise DeclarationError("bad_capacity", where, "a key-value table has no capacity: "
+                               "its fields are its rows")
+    if last_row is not None:
+        raise DeclarationError("bad_capacity", where, "capacity takes the place of last_row: "
+                               "the data rows end where the cells do, the empty rows below "
+                               "them, to the capacity, are where new rows go")
+    return value
 
 
 def _hidden_sheets(item: Mapping, path: str) -> HiddenSheets:
@@ -878,6 +918,8 @@ def build(workbook: "Workbook", spec: TableSpec,
                                                       f"{quote_sheet(first_sheet.name)}!{cell}"])
         first = spec.first_row or (header + 1 if header is not None else used.first.row)
         last, below = _last_row(workbook, spec, sheet, used, first, left, right, stop)
+        if spec.capacity is not None:
+            _check_capacity(workbook, spec, sheets, sheet, first, last, left, right, stop)
         belows.append(below)
         parts.append(Part(sheet.name, sheet.id, header, first, last))
     if names is None:
@@ -889,6 +931,42 @@ def build(workbook: "Workbook", spec: TableSpec,
         if spec.header_row == 0:
             names[:2] = list(KEY_VALUE_COLUMNS)
     return _region(workbook, spec, parts, left, right, names, flags, belows)
+
+
+def _check_capacity(workbook: "Workbook", spec: TableSpec, sheets: "list[Sheet]",
+                    sheet: "Sheet", first: int, last: int, left: int, right: int,
+                    stop: int | None) -> None:
+    """A table's ``capacity`` against its sheet: one sheet; its data rows within it; and
+    every row below them, to the capacity's end, empty in the table's columns (no value,
+    no formula: a formula whose result is empty text is something), and before the next
+    section's header."""
+    from .read.regions import row_empty
+
+    where = f"{spec.path}.capacity"
+    if len(sheets) != 1:
+        raise DeclarationError("bad_capacity", where, f"the table lies on {len(sheets)} "
+                               "sheets; a table with a capacity lies on one, where its new "
+                               "rows go")
+    end = first + spec.capacity - 1
+    if last > end:
+        raise DeclarationError("bad_capacity", where, f"the table has {last - first + 1} "
+                               f"data rows, more than its capacity of {spec.capacity}")
+    if end > MAX_SHEET_ROW:
+        raise DeclarationError("bad_capacity", where, "the capacity runs past the sheet's "
+                               "last row")
+    if stop is not None and end >= stop:
+        raise DeclarationError("bad_capacity", where, f"the capacity runs into row {stop}, "
+                               "the next section's header")
+    writer = workbook.editor.cells.sheet(sheet.stored_name)
+    for row in range(last + 1, end + 1):
+        if not row_empty(writer, row, left, right):
+            column = next(c for c in range(left, right + 1)
+                          if not writer.is_empty(Cell(row, c)))
+            raise DeclarationError("capacity_not_empty", where, f"cell "
+                                   f"{column_letters(column)}{row} of sheet "
+                                   f"{quote_sheet(sheet.name)}, below the data rows, holds "
+                                   "a value or a formula: the rows a table grows into are "
+                                   "empty")
 
 
 def _sheets(workbook: "Workbook", spec: TableSpec) -> "list[Sheet]":
@@ -1122,7 +1200,7 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
                   header_rows=header_rows, key=key, flags=tuple(dict.fromkeys(flags)),
                   headers=tuple(names[i] for i in visible),
                   notes=tuple(notes[i] for i in visible), about=spec.description,
-                  shape=spec.type, workbook=workbook)
+                  shape=spec.type, capacity=spec.capacity, workbook=workbook)
     hidden_columns = tuple(left + i for i in range(width) if hidden[i])
     rules = tuple(cleans[i] for i in visible) if any(cleans) else ()
     if len(parts) == 1 and not hidden_columns and not rules:
