@@ -14,6 +14,9 @@ format, a shared formula group's master written over (the group handed to its ne
 and a member given its own formula -- opens without a repair, and Excel's re-save keeps the
 values and types and computes each member's line value from the formula it kept.
 
+X4: rows written by key into a declared table's capacity (a value by key, two new rows,
+under a write policy) open without a repair, and Excel's re-save keeps them in the table.
+
 Without Excel, or with Excel in use or its lock held, every test here skips.  The lock tests
 at the end run in the default suite, without Excel.
 """
@@ -32,7 +35,7 @@ from ooxml_edit.sheets import Cell, Formula
 from xlsx_agent import Workbook
 
 import oracle
-from shop import FIRST_INPUT, Shop
+from shop import FIRST_INPUT, ITEMS, Shop
 
 VARIANTS = {"plain": {}, "rless": {"rless": True}, "1904": {"date1904": True},
             "inline": {"shared": False}, "table": {"table": True}}
@@ -226,6 +229,35 @@ def test_excel_opens_markdown_cells_and_keeps_the_runs_lines_and_wrap(excel, var
     assert 'customHeight="1"' in first and 'ht="21"' in first
     grown = heights[FIRST_INPUT].decode()
     assert 'ht="' in grown and float(re.search(r'ht="([0-9.]+)"', grown).group(1)) > 40
+
+
+#: What X4's writes by key put in the stock table (declared over the input rows, its key
+#: Item, room for 4 more rows): a value by key, and two new rows in its capacity.
+KEYED = {"t:stock/Kettle/Quantity": 7, "t:stock/Lamp/Quantity": 2,
+         "t:stock/Lamp/Category": "Hardware", "t:stock/Fan/Unit price": 19.5}
+
+
+@pytest.mark.oracle
+@pytest.mark.parametrize("variant", ["plain", "rless", "inline"])
+def test_excel_opens_rows_written_by_key_into_a_table_s_capacity(excel, variant):
+    original = Shop(**VARIANTS[variant]).to_bytes()
+    wb = Workbook.open(original, policy={"tables": [
+        {"table": "stock", "columns": ["Quantity", "Category", "Unit price"],
+         "new_rows": True}]})
+    wb.declare_tables([{"name": "stock", "sheets": "Stock", "header_row": 9, "key": "Item",
+                        "capacity": len(ITEMS) + 4}])
+    written = wb.set_cells(KEYED, new_rows=True)
+    assert written.new_rows == ("Stock!B15", "Stock!B16")
+    edited = wb.to_bytes()
+    outcome = excel.resave(edited, name=f"shop-x4-{variant}")
+    assert outcome.ok, outcome
+    again = Workbook.open(outcome.saved.read_bytes())
+    assert again.cell("Stock!D12").v == 7
+    assert [again.cell(f"Stock!{c}15").v for c in "BCD"] == ["Lamp", "Hardware", 2]
+    assert again.cell("Stock!B16").v == "Fan" and again.cell("Stock!E16").v == 19.5
+    again.declare_tables([{"name": "stock", "sheets": "Stock", "header_row": 9,
+                           "key": "Item", "capacity": len(ITEMS) + 4}])
+    assert again.table("t:stock").rows == len(ITEMS) + 2
 
 
 @pytest.mark.oracle
