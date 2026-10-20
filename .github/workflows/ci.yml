@@ -34,8 +34,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@main"
-          # TEMPORARY (r10): ooxml-edit 0.55.0 from its branch until uvrt/ooxml-edit#66 is merged; back to @main then
-          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@small-r10"
+          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@main"
           # Test only: a deck filled from a workbook's table (tests/test_sources_deck.py).
           python -m pip install "pptx2svg @ git+https://github.com/uvrt/pptx2svg@main"
           python -m pip install "pptx-agent @ git+https://github.com/uvrt/pptx-agent@main"
