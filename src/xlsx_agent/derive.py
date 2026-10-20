@@ -204,7 +204,7 @@ from fractions import Fraction
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from ooxml_common.locales import DATE_ORDERS
-from ooxml_edit.charts.workbook import Area, Cell, number_text
+from ooxml_edit.sheets import Area, Cell, number_text
 from ooxml_edit.tools import Dataset
 from ooxml_edit.tools.schema import close_match
 

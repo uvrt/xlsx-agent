@@ -85,7 +85,7 @@ from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Iterator, Mapping, Sequence
 
-from ooxml_edit.charts.workbook import Area, Cell
+from ooxml_edit.sheets import Area, Cell
 
 from .address import NameNotFound, RangeAddress, TableAddress, nearest
 from .profile import FIRST_ADDRESSES, Count

@@ -36,7 +36,7 @@ from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
-from ooxml_edit.charts.workbook import MAX_COLUMN, MAX_ROW, Area, Cell
+from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell
 
 from ..xml import iterparse_xml
 from .strings import SharedStrings, item_text

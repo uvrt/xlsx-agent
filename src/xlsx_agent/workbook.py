@@ -65,7 +65,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, BinaryIO, Iterator, Mapping, Sequence
 
 from lxml import etree
-from ooxml_edit.charts.workbook import Area, Cell
+from ooxml_edit.sheets import Area, Cell
 from ooxml_edit.opc import OpcPackage
 from ooxml_edit.tools import Dataset
 from ooxml_edit.tools.limits import Limits

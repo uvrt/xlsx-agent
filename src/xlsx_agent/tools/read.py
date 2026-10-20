@@ -70,7 +70,7 @@ import zlib
 from dataclasses import replace
 from typing import Any, Iterable
 
-from ooxml_edit.charts.workbook import Area, Cell
+from ooxml_edit.sheets import Area, Cell
 from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, boolean, integer,
                               string, tool)
 

@@ -58,7 +58,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Iterator
 
-from ooxml_edit.charts.workbook import Area, Cell
+from ooxml_edit.sheets import Area, Cell
 
 from .address import (AddressError, RangeAddress, TableAddress, parse_address, quote_sheet)
 

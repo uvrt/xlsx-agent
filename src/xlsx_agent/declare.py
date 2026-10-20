@@ -216,7 +216,7 @@ import fnmatch
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
-from ooxml_edit.charts.workbook import Area, Cell, column_index, column_letters
+from ooxml_edit.sheets import Area, Cell, column_index, column_letters
 
 from .address import NameNotFound, RangeAddress, SheetRef, is_name, nearest, quote_sheet
 from .clean import CLEAN_KEYS, Clean, RuleError, parse_clean

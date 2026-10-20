@@ -61,7 +61,7 @@ import warnings
 from dataclasses import dataclass, replace
 from typing import Any, Iterable, Iterator, Sequence
 
-from ooxml_edit.charts.workbook import Area, Cell
+from ooxml_edit.sheets import Area, Cell
 from ooxml_edit.tools import DATASET_PREFIX, Dataset
 
 from .address import (AddressError, DatasetAddress, NameNotFound, RangeAddress, SheetRef,

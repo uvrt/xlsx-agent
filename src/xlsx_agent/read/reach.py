@@ -27,7 +27,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from ooxml_edit.charts.workbook import column_index
+from ooxml_edit.sheets import column_index
 
 #: The functions whose result is a reference their arguments' text does not name.
 ANYWHERE = ("INDIRECT", "OFFSET")

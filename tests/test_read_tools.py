@@ -16,7 +16,7 @@ from datetime import date
 import pytest
 
 from build import Formula, WorkbookBuilder
-from ooxml_edit.charts.workbook import Area, Cell
+from ooxml_edit.sheets import Area, Cell
 from ooxml_edit.tools import Limits, Toolbox
 from test_catalogue import MARKER, ROWS, WIDE, shop, warehouse
 

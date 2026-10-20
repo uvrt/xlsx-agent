@@ -13,7 +13,7 @@ import pytest
 from build import Formula, WorkbookBuilder
 from ooxml_edit.tools import Toolbox
 
-from ooxml_edit.charts.workbook import Area, Cell
+from ooxml_edit.sheets import Area, Cell
 
 from xlsx_agent import DeclarationError, RegionError, Workbook
 from xlsx_agent.tools import GROUPS, TOOLS, format as xlsx_format

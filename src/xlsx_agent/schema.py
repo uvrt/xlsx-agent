@@ -107,7 +107,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping, Sequence
 
-from ooxml_edit.charts.workbook import Area, Cell, column_letters
+from ooxml_edit.sheets import Area, Cell, column_letters
 
 from .address import (AddressError, NameNotFound, RangeAddress, TableAddress, nearest,
                       parse_address, quote_sheet)
