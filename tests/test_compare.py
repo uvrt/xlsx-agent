@@ -139,6 +139,17 @@ def test_a_formula_is_compared_by_its_cached_value():
     assert table.changed == () and table.unchanged == 1
 
 
+def test_a_key_column_of_formulas_still_pairs_rows_and_says_so():
+    # X6: read-only, so rows are paired by the cached keys; a write by key refuses them
+    old = _open(_book([[Formula('"K"&ROW()', cached="K2"), 1], ["K3", 2]],
+                      columns=("Id", "V")))
+    new = _open(_book([["K2", 1], ["K3", 5]], columns=("Id", "V")))
+    (table,) = Workbook.compare(old, new, key="Id").tables
+    assert table.formula_key and table.paired == 2 and [c.key for c in table.changed] == ["K3"]
+    (plain,) = Workbook.compare(new, new, key="Id").tables
+    assert not plain.formula_key
+
+
 def test_whole_number_keys_match_as_digits():
     old = _open(_book([[42, "a"], [7, "b"]], columns=("Id", "V")))
     new = _open(_book([[42.0, "a"], [7, "c"]], columns=("Id", "V")))
