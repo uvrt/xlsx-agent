@@ -569,6 +569,14 @@ class Regions:
         self._keys.clear()
         self._indexes.clear()
 
+    def forget_package(self) -> None:
+        """Forget everything read from the package (the workbook was edited, rolled back,
+        undone or redone): the tables, the names, what a formula reaches, what was found
+        from the cells.  The declared tables and regions stay: they are the caller's."""
+        self._tables = None
+        self._names = None
+        self.forget_withheld()
+
     def forget_withheld(self) -> None:
         """Forget what depends on the sheets withheld from the model (the workbook's
         :meth:`~xlsx_agent.workbook.Workbook.withhold_sheets`): the names shown, what a
