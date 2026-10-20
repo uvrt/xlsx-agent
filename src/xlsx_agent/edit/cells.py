@@ -60,6 +60,35 @@ cells concerned): writing over a cell that holds a formula, unless the call says
 inside a merged area other than its first; an Excel table's header cell (its text is the
 column's name); a cell named twice.  A neighbour's formula is never touched.
 
+**Guards of the host's** (X4), each a refusal before anything changes, every cell listed:
+a cell named by key (``"t:stock/P-7/Quantity"``, :mod:`xlsx_agent.edit.keys`) is the
+cell of the row holding the key; with ``new_rows``, a key no row has starts a row in its
+table's capacity.  A cell on a protected sheet (``protected``: its ``sheetProtection``
+turns protection on, read from the package; unlocked cells are refused too, see below), a
+cell the host's write policy does not cover (``not_writable``), a formula or a write over
+one it refuses (``formulas_not_allowed``; :mod:`xlsx_agent.edit.policy`), a free capacity
+row named by its address (``capacity_row``).  An *expectation* goes with any value as
+``{"value": 12, "expect": {...}}`` (or inside ``{"date": ...}``, ``{"formula": ...}``,
+``{"markdown": ...}``): ``"type"`` -- ``"empty"`` (or ``"blank"``: no value and no
+formula; a formula whose result is empty text is a ``formula``, never empty), ``"text"``,
+``"number"``, ``"bool"``, ``"error"``, ``"formula"`` (any formula cell, whatever it
+caches) -- and ``"value"`` (text, a number, a boolean: what the cell shows, a formula's
+cached value) or ``"date"``; a cell holding something else refuses the call
+(``not_expected``), the error's :attr:`~xlsx_agent.edit.EditError.held` naming what each
+holds by type, never by value.  ``revision``: the workbook's :attr:`version
+<xlsx_agent.Workbook.version>` the call was made for, refused (``revision``) before
+anything else when it has moved on.
+
+*Protected sheets* (decided, X4): ECMA-376 Part 1 prohibits what a protected sheet's
+``sheetProtection`` (18.3.1.85) protects for the cells marked ``locked`` (``protection``,
+18.8.33; locked unless their format says otherwise), so it reads as leaving unlocked cells
+open to input.  How Excel treats a value written into an unlocked cell of a protected
+sheet (as typed there, or as a change it would not have allowed) is not measured, so
+every cell of a protected sheet is refused, unlocked ones too, until it is.
+A workbook's structure protection (``workbookProtection lockStructure``) locks its sheets
+(adding, deleting, renaming, moving, hiding), not their cells: no cell write is refused for
+it, and none adds a sheet.
+
 **Shared formulas.**  Writing over the master of a shared formula group (the cell that
 holds the group's text) hands the group to its next member, its formula moved there by
 :func:`xlsx_agent.formula.shift` (:meth:`ooxml_edit.sheets.Worksheet.release_shared`): every
@@ -84,10 +113,11 @@ from typing import Any, Iterable, Mapping
 from ooxml_common.locales import DATE_ORDERS
 from ooxml_edit.dates import is_date_code
 from ooxml_edit.markdown import plain
-from ooxml_edit.sheets import MAX_TEXT, Cell, Formula, RichText
+from ooxml_edit.sheets import MAX_TEXT, Area, Cell, Formula, RichText
 
 from ..formula import ShiftError, shift, tokens
 from ..markdown import cell_runs
+from ..read.regions import capacity_rows
 from ..read.styles import classify_format
 from ..read.types import _letters
 
@@ -119,6 +149,8 @@ class Planned:
     release: bool = False
     #: Text with a line break: the cell is given a format that wraps it.
     wrap: bool = False
+    #: The cell is a new row's key cell (by key, in a table's capacity).
+    new_row: bool = False
 
 
 @dataclass(frozen=True)
@@ -128,8 +160,9 @@ class Written:
     each one's type before (``old``: ``text``, ``number``, ``bool``, ``error``, ``blank``
     or ``formula``), the shared formula groups handed on (``released``: the old masters'
     addresses), the cells whose text has line breaks in a row of a fixed height
-    (``fixed_height``: lines past it hidden in Excel), and the workbook's calculation
-    status after (``invalidated`` once anything was written).  Never a value."""
+    (``fixed_height``: lines past it hidden in Excel), the key cells of the new rows
+    started in a table's capacity (``new_rows``), and the workbook's calculation status
+    after (``invalidated`` once anything was written).  Never a value."""
 
     cells: tuple[str, ...]
     changed: int
@@ -137,6 +170,7 @@ class Written:
     released: tuple[str, ...] = ()
     calculation: str = "cached_unverified"
     fixed_height: tuple[str, ...] = ()
+    new_rows: tuple[str, ...] = ()
 
     def as_dict(self, limit: int = MAX_LISTED) -> dict[str, Any]:
         """As plain data, at most ``limit`` cells listed (the rest counted)."""
@@ -149,26 +183,37 @@ class Written:
             out["released"] = list(self.released[:limit])
         if self.fixed_height:
             out["fixed_height"] = list(self.fixed_height[:limit])
+        if self.new_rows:
+            out["new_rows"] = list(self.new_rows[:limit])
         out["calculation"] = self.calculation
         return out
 
 
-def set_cells(workbook: Any, cells: Any, *, replace_formulas: bool = False) -> Written:
+def set_cells(workbook: Any, cells: Any, *, replace_formulas: bool = False,
+              new_rows: bool = False, revision: int | None = None) -> Written:
     """Write ``cells`` (see the module): a mapping of address to value, or ``(address,
     value)`` pairs.  :class:`~xlsx_agent.edit.EditError` before anything changes for any
-    value refused or guard met, every refused cell listed (at most :data:`MAX_LISTED`)."""
+    value refused or guard met, every refused cell listed (at most :data:`MAX_LISTED`);
+    ``revision`` refused first when the workbook's version is another."""
     from . import EditError
 
     items = list(cells.items()) if isinstance(cells, Mapping) else list(cells)
     if not items:
         raise EditError("bad_value", "no cells to write")
+    if revision is not None:
+        if isinstance(revision, bool) or not isinstance(revision, int):
+            raise EditError("bad_value", "a revision is the workbook's version, a whole number")
+        if revision != workbook.version:
+            raise EditError("revision", f"the call was made for version {revision}; the "
+                            f"workbook is at version {workbook.version}: read what changed, "
+                            "then write again")
     editor = workbook.editor
     changed = 0
     released: list[str] = []
     with editor.batch():
         # Checked inside the step: a refusal caught in an open batch still rolls it back,
         # as any write that fails there does (xlsx_agent.edit, "Atomic").
-        planned = plan(workbook, items, replace_formulas=replace_formulas)
+        planned = plan(workbook, items, replace_formulas=replace_formulas, new_rows=new_rows)
         cells_of: dict[str, set[Cell]] = {}
         for write in planned:
             cells_of.setdefault(write.sheet.part, set()).add(write.cell)
@@ -193,11 +238,17 @@ def set_cells(workbook: Any, cells: Any, *, replace_formulas: bool = False) -> W
                     style = editor.cells.styles.with_wrap_text(base)
             if editor.write(write.sheet, write.cell, write.value, style=style):
                 changed += 1
+        if changed:
+            # What was read from the cells (scans, keys, a table's rows) is read again by
+            # the next call of the same batch, as after the step.
+            workbook._forget()
     fixed = tuple(w.address for w in planned
                   if w.wrap and editor.cells.sheet(w.sheet.stored_name).custom_height(w.cell.row))
+    rows = tuple(dict.fromkeys(w.address for w in planned if w.new_row))
     return Written(cells=tuple(w.address for w in planned), changed=changed,
                    old={w.address: w.old for w in planned}, released=tuple(released),
-                   calculation=workbook.calculation_status, fixed_height=fixed)
+                   calculation=workbook.calculation_status, fixed_height=fixed,
+                   new_rows=rows)
 
 
 def _translate(text: str, rows: int, columns: int) -> str:
@@ -212,6 +263,8 @@ class _Refusals:
 
     def __init__(self) -> None:
         self.found: list[tuple[str, str, str | None]] = []
+        #: What each cell an expectation was not met at holds: its type, never its value.
+        self.held: dict[str, str] = {}
 
     def add(self, code: str, address: str, detail: str | None = None) -> None:
         self.found.append((code, address, detail))
@@ -227,78 +280,245 @@ class _Refusals:
         if others:
             detail = (f"{detail}; " if detail else "") + f"{others} other refusal(s)"
         raise EditError(code, detail, addresses=same,
-                        problems=[(c, a) for c, a, _ in self.found[:MAX_LISTED]])
+                        problems=[(c, a) for c, a, _ in self.found[:MAX_LISTED]],
+                        held=self.held)
 
 
 def plan(workbook: Any, items: "list[tuple[Any, Any]]", *,
-         replace_formulas: bool = False) -> list[Planned]:
-    """Every write checked against the values allowed and the guards (see the module),
-    nothing changed: the writes, or :class:`~xlsx_agent.edit.EditError`."""
+         replace_formulas: bool = False, new_rows: bool = False) -> list[Planned]:
+    """Every write checked against the values allowed, the host's policy, the
+    expectations and the guards (see the module), nothing changed: the writes, or
+    :class:`~xlsx_agent.edit.EditError`."""
     from ..address import AddressError, NameNotFound, RangeAddress, parse_address
     from . import EditError
-    from .structure import _label
+    from .keys import Found, NewCell, allocate, free_rows, is_keyed, resolve
+    from .policy import PolicyError
 
     if workbook.strict:
         raise EditError("strict")
     refusals = _Refusals()
-    out: list[Planned] = []
-    seen: dict[tuple[str, int, int], str] = {}
-    sheets: dict[str, _SheetFacts] = {}
-    editor = workbook.editor
-    for item in items:
+    try:
+        allowed = workbook._allowed()
+    except PolicyError as error:
+        raise EditError("bad_policy", error.message) from None
+    check = _Check(workbook, refusals, allowed, free_rows(workbook), replace_formulas)
+    # (order, sub-order, sheet, cell, value, new row: "key", "row" or False), as found
+    found: list[tuple[int, int, Any, Cell, Any, "str | bool"]] = []
+    pending: list[tuple[int, str, NewCell, Any]] = []
+    for order, item in enumerate(items):
         if not isinstance(item, (tuple, list)) or len(item) != 2:
             raise EditError("bad_address", "cells are a mapping of address to value, or "
                             "(address, value) pairs")
         address, given = item
         if not isinstance(address, str):
             raise EditError("bad_address", f"an address is text, not {type(address).__name__}")
+        shown = address.strip()[:80]
+        if is_keyed(address):
+            # A key is cell content: a refusal names the item by its place in the call.
+            shown = f"cells[{order}]"
+
+            def refuse(code: str, detail: str | None = None, shown: str = shown) -> None:
+                refusals.add(code, shown, detail)
+
+            cell_found = resolve(workbook, address, new_rows, refuse)
+            if isinstance(cell_found, NewCell):
+                pending.append((order, shown, cell_found, given))
+            elif isinstance(cell_found, Found):
+                found.append((order, 1, cell_found.sheet, cell_found.cell, given, False))
+            continue
         try:
             parsed = parse_address(address)
         except (AddressError, ValueError):
-            refusals.add("bad_address", address.strip()[:80])
+            refusals.add("bad_address", shown)
             continue
         if not isinstance(parsed, RangeAddress) or parsed.kind != "cell" \
                 or parsed.sheet is None:
-            refusals.add("bad_address", address.strip()[:80],
-                         "a cell with its sheet, as Stock!D10")
+            refusals.add("bad_address", shown, "a cell with its sheet, as Stock!D10, or a "
+                         "value by key, as t:stock/<key>/<column>")
             continue
         try:
             sheet = workbook.sheet_of(parsed)
         except (NameNotFound, KeyError, ValueError):
-            refusals.add("bad_address", address.strip()[:80], "no such sheet")
+            refusals.add("bad_address", shown, "no such sheet")
             continue
-        cell = parsed.area.first
+        found.append((order, 1, sheet, parsed.area.first, given, False))
+    if pending:
+        rows, refused = allocate(workbook, [new for _, _, new, _ in pending])
+        keyed: set[tuple[str, str]] = set()
+        for order, shown, new, given in pending:
+            key = (new.region.address.text, new.key)
+            if key in refused:
+                code, detail = refused[key]
+                refusals.add(code, shown, detail)
+                continue
+            row = rows[key]
+            if key not in keyed:     # the key cell first, with the row's first cell's order
+                keyed.add(key)
+                found.append((order, 0, row.sheet, Cell(row.row, row.key_column),
+                              row.key_value, "key"))
+            column = capacity_rows(new.region).columns[new.column]
+            found.append((order, 1, row.sheet, Cell(row.row, column), given, "row"))
+    found.sort(key=lambda entry: (entry[0], entry[1]))
+    out = [write for entry in found for write in [check.one(*entry[2:])] if write is not None]
+    for part, facts in check.sheets.items():
+        if facts.masters:
+            _check_releases(facts, {w.cell for w in out if w.sheet.part == part}, refusals)
+    refusals.raise_any()
+    return out
+
+
+class _Check:
+    """The checks of one call, cell by cell (:meth:`one`), with what they read once: each
+    sheet's facts, the host's policy as resolved, the free capacity rows."""
+
+    def __init__(self, workbook: Any, refusals: "_Refusals", allowed: Any,
+                 free: "dict[str, list[Area]]", replace_formulas: bool) -> None:
+        self.workbook = workbook
+        self.refusals = refusals
+        self.allowed = allowed
+        self.free = free
+        self.replace_formulas = replace_formulas
+        self.seen: dict[tuple[str, int, int], str] = {}
+        self.sheets: dict[str, _SheetFacts] = {}
+
+    def one(self, sheet: Any, cell: Cell, given: Any, new_row: "str | bool") -> Planned | None:
+        """One cell's write, checked; ``None`` (with the refusal noted) when refused.
+        ``new_row``: ``"key"`` for a new row's key cell, ``"row"`` for its other cells."""
+        from .structure import _label
+
+        refusals, allowed = self.refusals, self.allowed
         label = f"{_label(sheet)}!{_letters(cell.column)}{cell.row}"
         if sheet.type != "worksheet" or sheet.part is None:
             refusals.add("not_a_worksheet", label)
-            continue
+            return None
         key = (sheet.part, cell.row, cell.column)
-        if key in seen:
-            refusals.add("duplicate_cell", label)
-            continue
-        seen[key] = label
-        facts = sheets.get(sheet.part)
+        if key in self.seen:
+            refusals.add("duplicate_cell", label, "a new row's key cell is written from "
+                         "its address" if self.seen[key] == "key" else None)
+            return None
+        self.seen[key] = "key" if new_row == "key" else label
+        if sheet.protected:
+            refusals.add("protected", label, f"sheet {_label(sheet)} is protected "
+                         "(sheetProtection): its owner unprotects it in Excel")
+            return None
+        if not new_row and any(area.contains(cell) for area in self.free.get(sheet.part, ())):
+            refusals.add("capacity_row", label, "start the row by its key, with new_rows")
+            return None
+        if allowed is not None and not allowed.allows(sheet.part, cell):
+            refusals.add("not_writable", label)
+            return None
+        facts = self.sheets.get(sheet.part)
         if facts is None:
-            writer = editor.cells.sheet(sheet.stored_name)
+            writer = self.workbook.editor.cells.sheet(sheet.stored_name)
             if writer is None:
                 refusals.add("not_a_worksheet", label)
-                continue
-            facts = sheets[sheet.part] = _SheetFacts(workbook, sheet, writer)
-        write = _value(workbook, facts, label, sheet, cell, given, refusals)
+                return None
+            facts = self.sheets[sheet.part] = _SheetFacts(self.workbook, sheet, writer)
+        expect = None
+        if isinstance(given, Mapping) and "expect" in given:
+            expect = _expectation(self.workbook, label, given["expect"], refusals)
+            if expect is None:
+                return None
+            given = {k: v for k, v in given.items() if k != "expect"}
+            if not given:
+                refusals.add("bad_value", label, "expect goes with the value to write")
+                return None
+        write = _value(self.workbook, facts, label, sheet, cell, given, refusals)
         if write is None:
-            continue
+            return None
+        write.new_row = new_row == "key"
+        content = facts.writer.content(cell)
+        if expect is not None and not _meets(content, *expect):
+            refusals.add("not_expected", label, f"it holds {_article(_held(content))}")
+            refusals.held[label] = _held(content)
+            return None
+        if allowed is not None and not allowed.formulas and write.kind == "formula":
+            refusals.add("formulas_not_allowed", label)
+            return None
+        if allowed is not None and not allowed.replace_formulas \
+                and content.formula is not None:
+            refusals.add("formulas_not_allowed", label, "the cell holds one, and the policy "
+                         "writes over none")
+            return None
         if write.style is None and write.format is None and write.kind != "blank":
             # A new cell takes its row's or column's format, as one typed there does.
             inherited = facts.writer.style(cell, inherited=True)
             if inherited != facts.writer.style(cell):
                 write.style = inherited
-        if _guards(facts, write, refusals, replace_formulas):
-            out.append(write)
-    for part, facts in sheets.items():
-        if facts.masters:
-            _check_releases(facts, {w.cell for w in out if w.sheet.part == part}, refusals)
-    refusals.raise_any()
-    return out
+        if not _guards(facts, write, refusals, self.replace_formulas):
+            return None
+        return write
+
+
+#: The types an expectation names: a cell's ``old`` type, ``empty`` the same as
+#: ``blank`` (no value and no formula).
+EXPECT_TYPES = ("blank", "empty", "text", "number", "bool", "error", "formula")
+
+_ANY = object()
+
+
+def _expectation(workbook: Any, label: str, expect: Any,
+                 refusals: "_Refusals") -> "tuple[str | None, Any] | None":
+    """``expect`` as ``(type, value)`` (``None`` and ``_ANY`` when not given), checked;
+    ``None`` (with the refusal noted) when it is no expectation."""
+    from ooxml_edit.sheets import date_serial
+
+    if not isinstance(expect, Mapping) or not expect \
+            or set(expect) - {"type", "value", "date"} \
+            or ("value" in expect and "date" in expect):
+        refusals.add("bad_value", label, 'expect is "type", "value" or both (or "date")')
+        return None
+    kind = expect.get("type")
+    if kind is not None and kind not in EXPECT_TYPES:
+        refusals.add("bad_value", label, f"an expected type is one of {', '.join(EXPECT_TYPES)}")
+        return None
+    if kind == "empty":
+        kind = "blank"
+    value = _ANY
+    if "value" in expect:
+        value = expect["value"]
+        if value is None:
+            if kind not in (None, "blank"):
+                refusals.add("bad_value", label, "an expected value of None is a blank")
+                return None
+            kind, value = "blank", _ANY
+        elif not isinstance(value, (str, bool, int, float)) or isinstance(value, float) \
+                and not math.isfinite(value):
+            refusals.add("bad_value", label, "an expected value is text, a number or a "
+                         "boolean")
+            return None
+    if "date" in expect:
+        day = _day(expect["date"], workbook, label, refusals)
+        if day is None:
+            return None
+        value = date_serial(day, date1904=workbook.date1904)
+    return kind, value
+
+
+def _held(content: Any) -> str:
+    """A cell's type as an expectation names it: ``formula`` for any formula cell."""
+    return "formula" if content.formula is not None else content.kind
+
+
+def _article(kind: str) -> str:
+    return {"blank": "nothing", "error": "an error", "formula": "a formula",
+            "bool": "a boolean"}.get(kind, f"a {kind}")
+
+
+def _meets(content: Any, kind: str | None, value: Any) -> bool:
+    """Whether the cell (``content``) holds what was expected: its type (a formula cell's
+    is ``formula``, whatever it caches), and its value (a formula's, the one cached)."""
+    if kind is not None and _held(content) != kind:
+        return False
+    if value is _ANY:
+        return True
+    held = content.value
+    if isinstance(value, bool):
+        return content.kind == "bool" and held is value
+    if isinstance(value, (int, float)):
+        return content.kind == "number" and not isinstance(held, bool) \
+            and float(held) == float(value)
+    return content.kind in ("text", "error") and held == value
 
 
 class _SheetFacts:

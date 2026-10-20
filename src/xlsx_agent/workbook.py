@@ -106,6 +106,7 @@ from .xml import iterparse_xml
 if TYPE_CHECKING:
     from .edit import Editor, EditReport, SaveReport
     from .edit.cells import Written
+    from .edit.policy import Allowed, WritePolicy
 
 #: SpreadsheetML's main namespace, transitional and strict.
 NS_MAIN = ("http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -198,6 +199,13 @@ class Workbook:
         self._withheld_problems: dict = {}
         #: The history and the cell writer (:attr:`editor`), made when first needed.
         self._editor: "Editor | None" = None
+        #: The host's write policies (:mod:`xlsx_agent.edit.policy`): the one given at
+        #: :meth:`open`, then each :meth:`narrow_policy` added; empty: none.
+        self._policies: "tuple[WritePolicy, ...]" = ()
+        #: The policies resolved against the cells, with the count of :meth:`_forget`
+        #: calls they were resolved at.
+        self._allowed_at: "tuple[int, int, Allowed] | None" = None
+        self._forgotten = 0
         self.regions = Regions(self)
 
     # -- lifecycle -------------------------------------------------------------------------
@@ -205,7 +213,7 @@ class Workbook:
     @classmethod
     def open(cls, source: "str | os.PathLike[str] | bytes | BinaryIO | OpcPackage", *,
              limits: Limits | None = None, locale: Any = None, grouping: bool = True,
-             local_dates: bool = False) -> "Workbook":
+             local_dates: bool = False, policy: Any = None) -> "Workbook":
         """Open a ``.xlsx``, ``.xlsm``, ``.xltx`` or ``.xltm`` from a path, bytes, a binary
         file or an :class:`~ooxml_edit.opc.OpcPackage`.
 
@@ -229,7 +237,15 @@ class Workbook:
         separator; ``local_dates`` (off: ISO 8601 dates only) recognises text dates in the
         locale's date order too -- Excel's own reading, measured
         (:mod:`xlsx_agent.read.types`).  All three are the caller's settings, never a
-        model's."""
+        model's.
+
+        ``policy`` is the host's write policy (:mod:`xlsx_agent.edit.policy`: a
+        :class:`~xlsx_agent.edit.policy.WritePolicy`, or its plain data), fixed for the
+        workbook's life: where it may be written.  ``None``: everywhere but on a protected
+        sheet.  Its form is checked here (:class:`~xlsx_agent.edit.policy.PolicyError`)."""
+        from .edit.policy import as_policy
+
+        given = as_policy(policy) if policy is not None else None
         if isinstance(source, OpcPackage):
             part, kind = workbook_part(source)
             workbook = cls(source, part=part, kind=kind, locale=locale, grouping=grouping,
@@ -242,7 +258,58 @@ class Workbook:
             workbook = cls(package, part=part, kind=kind, data=data, locale=locale,
                            grouping=grouping, local_dates=local_dates)
         workbook._sheets = workbook._read_sheets()
+        if given is not None:
+            workbook._policies = (given,)
         return workbook
+
+    # -- the host's write policy (X4) ------------------------------------------------------
+
+    @property
+    def policies(self) -> "tuple[WritePolicy, ...]":
+        """The host's write policies: the one given at :meth:`open`, then each one
+        :meth:`narrow_policy` added; a write must pass every one.  Empty: no policy, and
+        everything but a protected sheet is writable (:mod:`xlsx_agent.edit.policy`)."""
+        return self._policies
+
+    def narrow_policy(self, policy: Any) -> None:
+        """Add a write policy (a :class:`~xlsx_agent.edit.policy.WritePolicy` or its plain
+        data): from now on a write must pass it too.  It narrows what may be written,
+        never widens it; nothing takes a policy away."""
+        from .edit.policy import as_policy
+
+        self._policies = self._policies + (as_policy(policy),)
+        self._allowed_at = None
+        self._catalogue = None
+
+    @property
+    def writable(self) -> Any:
+        """What the policies let be written, as ``describe`` shows it (``writable``):
+        ``None`` without a policy, one policy's :meth:`~xlsx_agent.edit.policy.WritePolicy.
+        as_dict`, or a list of them (each must allow a write)."""
+        if not self._policies:
+            return None
+        shown = [policy.as_dict() for policy in self._policies]
+        return shown[0] if len(shown) == 1 else shown
+
+    def check_policy(self) -> None:
+        """Resolve the policies against the workbook now: their sheets, tables and columns
+        (:class:`~xlsx_agent.edit.policy.PolicyError` naming the entry, else nothing)."""
+        self._allowed_at = None
+        self._allowed()
+
+    def _allowed(self) -> "Allowed | None":
+        """The policies resolved against the cells as they are (``None`` without one),
+        kept until the package changes."""
+        if not self._policies:
+            return None
+        kept = self._allowed_at
+        if kept is not None and kept[0] == self._forgotten and kept[1] == len(self._policies):
+            return kept[2]
+        from .edit.policy import Allowed
+
+        allowed = Allowed(self, self._policies)
+        self._allowed_at = (self._forgotten, len(self._policies), allowed)
+        return allowed
 
     @property
     def locale(self) -> Any:
@@ -399,7 +466,8 @@ class Workbook:
         return self._root.tag.startswith(f"{{{NS_MAIN[1]}}}")
 
     def set_cells(self, cells: "Mapping[str, Any] | Sequence[tuple[str, Any]]", *,
-                  replace_formulas: bool = False) -> "Written":
+                  replace_formulas: bool = False, new_rows: bool = False,
+                  revision: int | None = None) -> "Written":
         """Write cells by address, typed and guarded (:mod:`xlsx_agent.edit.cells`):
         ``{"Stock!D10": 12, "Stock!H10": {"date": "2026-10-20"}, "Stock!J10":
         {"formula": "=D10*2"}, "Stock!B4": None}`` -- text always literal, numbers,
@@ -411,10 +479,18 @@ class Workbook:
         written over only with ``replace_formulas``.  Returns the
         :class:`~xlsx_agent.edit.cells.Written`: the cells, their old types, the shared
         formula groups handed on, the calculation status (``invalidated`` after any
-        write)."""
+        write).
+
+        Guarded (X4): a cell by key (``"t:stock/P-7/Quantity"``: the row holding the key,
+        wherever it is; :mod:`xlsx_agent.edit.keys`), a new row in a declared table's
+        capacity only with ``new_rows``; the host's write policy (:attr:`policies`), a
+        protected sheet, an expectation of what a cell holds now (``{"value": 12,
+        "expect": {"type": "number", "value": 10}}``) and ``revision`` (the
+        :attr:`version` the call was made for) each refuse before anything changes."""
         from .edit.cells import set_cells
 
-        return set_cells(self, cells, replace_formulas=replace_formulas)
+        return set_cells(self, cells, replace_formulas=replace_formulas, new_rows=new_rows,
+                         revision=revision)
 
     def _forget(self) -> None:
         """Forget everything read from the package: it changed (an edit, a rollback, an
@@ -430,7 +506,9 @@ class Workbook:
         self._queries.clear()
         self._finds.clear()
         self._withheld_problems.clear()
+        self._forgotten += 1
         self.regions.forget_package()
+        self.regions.refresh_capacity()
 
     # -- the workbook part -----------------------------------------------------------------
 
@@ -744,6 +822,7 @@ class Workbook:
         ``name`` follows ECMA-376's rule for names (:func:`~xlsx_agent.address.is_name`)
         and is no table's or workbook-wide name's; declaring a region's name again replaces
         it."""
+        self._allowed_at = None    # a policy may name what this declares
         return self.regions.declare(name, where, header_rows=header_rows, headers=headers,
                                     key=key)
 
@@ -754,6 +833,7 @@ class Workbook:
         SKU-0007}/Price``) -- the caller's setting, for a table with several columns that
         could be its key, or none that is.  A region declared with ``key=`` keeps its own.
         See :meth:`~xlsx_agent.read.regions.Regions.declare_key`."""
+        self._allowed_at = None    # a policy may name what this declares
         return self.regions.declare_key(address, column)
 
     def declare_tables(self, declarations: Any) -> list[Region]:
@@ -766,6 +846,7 @@ class Workbook:
         :meth:`withhold_sheets`).  Every declaration is checked against the workbook before
         any is kept (:class:`~xlsx_agent.declare.DeclarationError`, naming the entry and
         what is wrong); see :mod:`xlsx_agent.declare`.  The tables declared, in order."""
+        self._allowed_at = None    # a policy may name what this declares
         from .declare import declare_tables
         return declare_tables(self, declarations)
 

@@ -46,6 +46,12 @@ workbook was opened back through xlsx-agent's own reader: its type and value mus
 the writer holds (``readback``, with the addresses), and the structure check
 (:mod:`.structure`) is run on what was saved.
 
+**Guarded** (X4).  The host's write policy (:mod:`.policy`), cells by key and new rows in
+a declared table's capacity (:mod:`.keys`), expectations of what a cell holds, a revision
+guard and protected sheets (:mod:`.cells`) are checked before anything changes;
+:meth:`Editor.write` asks the policy and a sheet's protection again of every write,
+whatever planned it.
+
 **No content.**  Reports, errors and log records (the ``xlsx_agent.edit`` logger) carry
 versions, counts, codes, part names and addresses: never a value, a text or a formula.
 """
@@ -98,6 +104,20 @@ EDIT_CODES = {
     "table_header": "the cell is a table's header, whose text is its column's name",
     "shared_formula": "the cell holds a shared formula whose references cannot be moved "
                       "safely to the group's other cells",
+    # guards (X4, xlsx_agent.edit.policy, .keys, .cells): each refused before anything changes
+    "protected": "the sheet is protected: nothing on it is written",
+    "not_writable": "the host's write policy does not let this cell be written",
+    "formulas_not_allowed": "the host's write policy writes no formula here",
+    "bad_policy": "the host's write policy names what the workbook does not have",
+    "not_expected": "the cell does not hold what the call expected",
+    "revision": "the workbook is not at the version the call expected",
+    "positional": "a table's row is written by its key, never by its place",
+    "no_key_column": "the table has no key column declared to write by key",
+    "missing_key": "no row has that key",
+    "duplicate_key": "two rows share that key",
+    "no_capacity": "the table has no capacity for new rows",
+    "capacity_full": "the table's capacity for new rows is used up",
+    "capacity_row": "the cell is in a table's free capacity, where a row is started by key",
 }
 
 #: The content type of a VBA project part ([MS-OFFMACRO2]; what Excel writes).
@@ -108,16 +128,20 @@ class EditError(ValueError):
     """An edit or a save refused.  :attr:`code` is one of :data:`EDIT_CODES`;
     :attr:`addresses` the cells concerned (at most 20), never their content;
     :attr:`problems` every refusal of a call that met several, as ``(code, address)`` (at
-    most 50; the first code's are :attr:`addresses`)."""
+    most 50; the first code's are :attr:`addresses`); :attr:`held` what each cell an
+    expectation was not met at holds, as its type (``not_expected``; at most 50), never its
+    value."""
 
     def __init__(self, code: str, detail: str | None = None, *,
                  addresses: "tuple[str, ...] | list[str]" = (),
-                 problems: "tuple[tuple[str, str], ...] | list[tuple[str, str]]" = ()) -> None:
+                 problems: "tuple[tuple[str, str], ...] | list[tuple[str, str]]" = (),
+                 held: "dict[str, str] | None" = None) -> None:
         if code not in EDIT_CODES:
             raise ValueError(f"not an edit error code: {code!r}")
         self.code = code
         self.addresses = tuple(addresses)[:20]
         self.problems = tuple(problems)[:50]
+        self.held = dict(list((held or {}).items())[:50])
         message = EDIT_CODES[code]
         if detail:
             message = f"{message}: {detail}"
@@ -284,10 +308,13 @@ class Editor:
             raise EditError("not_a_worksheet", addresses=[address])
         if self.workbook.strict:
             raise EditError("strict")
+        if sheet.protected:
+            raise EditError("protected", addresses=[address])
         with self.batch() as edit:
             writer = self.cells.sheet(sheet.stored_name)
             if writer is None:
                 raise EditError("not_a_worksheet", addresses=[address])
+            self._permitted(sheet, cell, value, writer, address)
             if not writer.write(cell, value, style=style):
                 return False
             self.cells.drop_calc_chain()
@@ -298,6 +325,24 @@ class Editor:
             if not _holds(writer.content(cell), value, self.cells.date1904):
                 raise EditError("readback", addresses=[address])
         return True
+
+    def _permitted(self, sheet: Any, cell: Cell, value: Any, writer: Any,
+                   address: str) -> None:
+        """The host's write policy asked again of one write, whatever planned it
+        (:mod:`.policy`): the cell, a formula, a formula written over."""
+        from .policy import PolicyError
+
+        try:
+            allowed = self.workbook._allowed()
+        except PolicyError as error:
+            raise EditError("bad_policy", error.message) from None
+        if allowed is None:
+            return
+        if not allowed.allows(sheet.part, cell):
+            raise EditError("not_writable", addresses=[address])
+        if not allowed.formulas and isinstance(value, Formula) \
+                or not allowed.replace_formulas and writer.content(cell).formula is not None:
+            raise EditError("formulas_not_allowed", addresses=[address])
 
     def touched(self, sheet: Any, cells: "Iterable[Cell]") -> None:
         """Record ``cells`` of ``sheet`` as changed in the open batch (a shared formula
@@ -485,6 +530,9 @@ def undo_shared(workbook: Any) -> list[str]:
     return out
 
 
+from .policy import PolicyError, TableEntry, WritePolicy  # noqa: E402
+
 __all__ = ["CT_VBA_PROJECT", "EDIT_CODES", "Edit", "EditError", "EditReport", "Editor",
-           "SAVE_KINDS", "STRUCTURE_CODES", "SaveReport", "check_structure", "compress",
-           "has_vba_project", "serialise", "undo_scope", "undo_shared", "verify"]
+           "PolicyError", "SAVE_KINDS", "STRUCTURE_CODES", "SaveReport", "TableEntry",
+           "WritePolicy", "check_structure", "compress", "has_vba_project", "serialise",
+           "undo_scope", "undo_shared", "verify"]

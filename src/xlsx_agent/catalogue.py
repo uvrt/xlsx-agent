@@ -11,8 +11,11 @@ values that may be stale -- ``full_calc_on_load``, ``manual_calculation`` -- ext
 links, a VBA project, data connections: listed, never followed or run), and ``cache``:
 ``"invalidated"`` once the workbook has been written (or when it arrived asking for a
 recalculation, or saved with manual calculation): every formula value then reads cache
-``invalidated``.  A formula that refers to another workbook is counted in the problems
-(``external_formula``) and flagged on its column.  Every sheet: its
+``invalidated``; and ``writable`` when the host gave a write policy
+(:mod:`xlsx_agent.edit.policy`: its cells and tables as given, ``"nothing"`` when it lets
+nothing be written; a list when narrowed, each to be passed).  A formula that refers to
+another workbook is counted in the problems (``external_formula``) and flagged on its
+column.  Every sheet: its
 name and id (both forms of its address), its state when not visible, protection, type
 when not a worksheet, and the used range.  Every region -- Excel tables, defined names over
 a range, declared regions, and the regions header detection finds on each sheet -- with its
@@ -29,7 +32,8 @@ defined names that are not ranges (with the reason, never evaluated), and the pr
 workbook has (by code, address and count).
 
 **Declared tables** (:mod:`xlsx_agent.declare`) are listed as regions too, with the
-caller's description (``about``) and each column's id and description (``about``); a
+caller's description (``about``) and each column's id and description (``about``), and
+one with a capacity its ``capacity`` and the rows still ``free`` for new rows by key; a
 table over several sheets gives each sheet's range, joined by ``,``; a column hidden from
 the model is not there.  The blocks they cover are not detected again; an Excel table one
 covers is listed as the declared table alone, and a defined name over a hidden column's
@@ -72,7 +76,7 @@ from ooxml_edit.sheets import Area, Cell
 
 from .address import RangeAddress, quote_sheet
 from .profile import ColumnStats, profile
-from .read.regions import Region, RegionError, UnclearRegion
+from .read.regions import Region, RegionError, UnclearRegion, capacity_rows
 from .read.types import Value
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -276,6 +280,8 @@ def _head(workbook: "Workbook") -> dict:
     if workbook.calculation_status == "invalidated":
         # Every formula value reads cache "invalidated": said once, not per column.
         out["cache"] = "invalidated"
+    if workbook.policies:
+        out["writable"] = workbook.writable
     return out
 
 
@@ -433,6 +439,10 @@ def _region(found: _Found, level: _Level, shown: int) -> dict:
         out["header_rows"] = region.header_rows
     if region.totals_rows:
         out["totals_rows"] = region.totals_rows
+    room = capacity_rows(region)
+    if room is not None:
+        out["capacity"] = region.capacity
+        out["free"] = room.free
     if len(found.keys) == 1:
         out["key"] = found.keys[0]
     elif found.keys:
