@@ -47,6 +47,11 @@ X3b (ooxml-edit 0.54.0): ``xlsx_read``'s ``markdown`` (text as Markdown) and
 ``xlsx_set_cells``' ``markdown`` value: ``xlsx_read`` 528 -> 556, the core 4,069 -> 4,096
 estimated, about 6,022 -> 6,062 counted by the proxy; ``xlsx_set_cells`` 347 -> 378;
 every definition 4,627 -> 4,686, the guard 4,650 -> 4,690.
+X4 (guards): ``xlsx_set_cells``' address by key, each cell's ``expect`` (a type) and
+``expect_value`` (the value as read), ``new_rows`` and ``revision``: ``xlsx_set_cells`` 378
+-> 533 (deferred: the core unchanged, 4,096); every definition 4,686 -> 4,840, the guard
+4,690 -> 4,850.  (A first form with ``expect`` an object of typed fields, 553, was refused
+online as too complex for strict mode: see the strict complexity proxy below.)
 """
 
 from __future__ import annotations
@@ -65,7 +70,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
-ALL_GUARD = 4690
+ALL_GUARD = 4850
 
 
 @pytest.fixture(scope="module")
@@ -130,3 +135,46 @@ def test_the_loaded_core_is_within_budget_and_every_definition_within_its_guard(
     every = estimate(box.definitions("anthropic", defer=False))
     assert core * COUNTED_PER_ESTIMATED <= CORE_COUNTED_BUDGET, core
     assert every <= ALL_GUARD, every
+
+
+# -- Claude's strict grammar: the complexity proxy (X4) -------------------------------------------
+
+#: What the strict tools may reach, summed over every one sent strict.  Claude documents 24
+#: optional parameters and an undocumented "Schema is too complex" (HTTP 400) beyond them:
+#: X4's first ``xlsx_set_cells`` (17 optional, 9 free strings, an optional object inside
+#: the array's items: three object levels) was refused online on Sonnet 5.5, 2026-10-20,
+#: while X3b's (9 optional, 7 free strings, two levels) was accepted.  Assumed limits, from
+#: those two points: no object below an array item's (two object levels at most), and no
+#: more optional parameters or free-text strings than the flat X4 schema has (13 and 8).
+#: Raise them only after the online suite (tests/test_tools_online.py) accepts more.
+STRICT_OBJECT_DEPTH = 2
+STRICT_OPTIONAL = 13
+STRICT_FREE_STRINGS = 8
+
+
+def _object_depth(node: dict, depth: int = 1) -> int:
+    children = list((node.get("properties") or {}).values())
+    if "items" in node:
+        children.append(node["items"])
+    return max([depth] + [_object_depth(child, depth + (child.get("type") == "object"))
+                          for child in children])
+
+
+def _optional(node: dict) -> int:
+    properties = node.get("properties") or {}
+    required = set(node.get("required", ()))
+    count = sum(1 for name in properties if name not in required)
+    count += sum(_optional(child) for child in properties.values())
+    return count + (_optional(node["items"]) if "items" in node else 0)
+
+
+def test_the_strict_tools_stay_within_the_complexity_claude_compiled(box):
+    from ooxml_edit.tools.adapters import free_strings
+
+    strict = [d for d in box.definitions("anthropic", defer=False) if d.get("strict")]
+    assert [d["name"] for d in strict] == ["xlsx_set_cells"]
+    for definition in strict:
+        assert _object_depth(definition["input_schema"]) <= STRICT_OBJECT_DEPTH, \
+            definition["name"]
+    assert sum(_optional(d["input_schema"]) for d in strict) <= STRICT_OPTIONAL
+    assert sum(free_strings(d["input_schema"]) for d in strict) <= STRICT_FREE_STRINGS

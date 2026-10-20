@@ -67,6 +67,7 @@ from .dataset import (DatasetSelection, DatasetTable, DatasetValue, as_dataset,
                       merge_sources, table_dataset)
 from .derive import Derived, DeriveError, Provenance, Total
 from .edit import EditError, EditReport, SaveReport
+from .edit.policy import PolicyError, WritePolicy
 from .edit.cells import Written
 from .find import Found
 from .package import REFUSALS, KindMismatchWarning, OpenError
@@ -85,7 +86,8 @@ __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellC
            "ColumnChange", "Diff", "DuplicateKey", "RowChange", "SheetChange", "TableDiff",
            "ColumnStats", "Comment", "Count", "DatasetAddress", "DatasetSelection",
            "DatasetTable", "DatasetValue", "DeclarationError", "DefinedName", "DeriveError",
-           "Derived", "Distinct", "EditError", "EditReport", "SaveReport", "Written",
+           "Derived", "Distinct", "EditError", "EditReport", "PolicyError", "SaveReport",
+           "WritePolicy", "Written",
            "Found", "Hyperlink", "KindMismatchWarning", "Locale", "NameNotFound", "NumberFormat",
            "OpenError", "Problem", "QueryError", "QueryResult", "RangeAddress", "RefAddress",
            "Provenance", "RedactError", "Redaction", "Region", "RegionError", "Selection", "Sheet", "SheetRef", "SheetScan",

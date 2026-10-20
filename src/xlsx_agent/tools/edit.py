@@ -27,6 +27,24 @@ from the model (:mod:`xlsx_agent.declare`): every refusal before anything change
 error's ``details`` giving each refusal by ``code`` and address (``problems``).  At most
 :data:`MAX_CELLS` cells a call.
 
+**Guards** (X4, :mod:`xlsx_agent.edit.policy`, :mod:`xlsx_agent.edit.keys`): an
+``address`` may name a value by its row's key, ``t:stock/P-7/Quantity`` -- the row holding
+the key now, wherever it is; a key two rows share, a key no row has, a row by place
+(``#3``) and a table with no key column declared refuse.  ``new_rows: true`` starts a row
+for each key no row has, in the first free row of the table's declared capacity (none
+left: refused).  Each item's ``expect`` -- the cell's type now (``empty`` or ``blank``:
+no value and no formula; ``text``, ``number``, ``bool``, ``error``; ``formula``: any
+formula cell, whatever it caches) -- and ``expect_value`` -- its value now as a read gave
+it, as text (a text's own, a number's digits, ``true``/``false``, a date ``YYYY-MM-DD``; a
+formula's cached value) -- refuse the call when the cell holds something else, the
+error's ``details`` giving each such cell's type as it is (``held``), never its value.
+Both are flat fields of the item: a nested object made the strict schema too complex for
+Claude (HTTP 400 "Schema is too complex", measured online by the main session).
+``revision`` (the version a result gave) refuses it when the workbook has changed since.
+The application's write policy (``xlsx_agent.tools.policy``; ``describe``'s ``writable``)
+and a protected sheet refuse the cells outside it, by key too.  All of them before
+anything changes.
+
 **The result**: ``written`` and ``changed`` (cells that held something else), ``cells``
 each with its ``old`` type (``text``, ``number``, ``bool``, ``error``, ``blank`` or
 ``formula``; at most ``Limits.max_list_items``, the rest counted), ``released`` (shared
@@ -34,7 +52,7 @@ formula groups whose master was written, handed to their next member), ``calcula
 (``invalidated``: every formula's cached value in the workbook may now be stale -- reads
 say ``cache: invalidated`` -- until Excel recalculates; there is no calculator here),
 ``fixed_height`` (cells given line breaks in a row of a fixed height, which Excel does not
-grow: a warning says so).  Never a value: the summary and the log carry counts, codes and
+grow: a warning says so), ``new_rows`` (the key cells of the rows started).  Never a value: the summary and the log carry counts, codes and
 addresses only.
 """
 
@@ -42,7 +60,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ooxml_edit.tools import Result, ToolError, array, boolean, number, obj, string, tool
+from ooxml_edit.tools import (Result, ToolError, array, boolean, integer, number, obj, string,
+                              tool)
 from ooxml_edit.sheets import Formula
 
 from ..address import AddressError, RangeAddress, parse_address
@@ -56,6 +75,10 @@ MAX_CELLS = 5_000
 #: The value fields of a cell, exactly one of which an item gives.
 VALUE_FIELDS = ("text", "number", "bool", "date", "formula", "blank", "markdown")
 
+#: The types an item's ``expect`` names (:data:`xlsx_agent.edit.cells.EXPECT_TYPES`).
+EXPECT_TYPES = ("empty", "blank", "text", "number", "bool", "error", "formula")
+
+
 GROUP = "xlsx_edit"
 
 
@@ -63,10 +86,12 @@ GROUP = "xlsx_edit"
       "Write cells, typed: each item an address and exactly one of text (always literal, "
       "=x too), number, bool, date (YYYY-MM-DD; the cell must show dates, or give format), "
       "formula (=D10*2), blank or markdown. One step; any refusal changes nothing. "
-      "Afterwards every formula value reads cache invalidated: Excel recalculates on open.",
+      "Afterwards every formula value reads cache invalidated: Excel recalculates on open. "
+      "describe's writable is all you may write.",
       {"doc": DOC,
        "cells": array(obj({
-           "address": string("A cell with its sheet: Stock!D10."),
+           "address": string("A cell with its sheet (Stock!D10), or a value by row key "
+                             "(t:stock/P-7/Quantity)."),
            "text": string(optional=True),
            "number": number(optional=True),
            "bool": boolean(optional=True),
@@ -75,29 +100,43 @@ GROUP = "xlsx_edit"
            "formula": string(optional=True),
            "blank": boolean("true: remove the value, keep the format.", optional=True),
            "markdown": string("**bold**, *italic*, ~~strike~~, lines, - and 1. lists.",
-                              optional=True)}),
+                              optional=True),
+           "expect": string("The cell's type now, else refused.", enum=EXPECT_TYPES,
+                            optional=True),
+           "expect_value": string("Its value now as read (dates YYYY-MM-DD), else refused.",
+                                  optional=True)}),
            f"At most {MAX_CELLS:,}.", min_items=1),
        "replace_formulas": boolean("Write over cells holding a formula. Default false.",
-                                   optional=True)},
+                                   optional=True),
+       "new_rows": boolean("A key no row has starts a row in its table's free capacity.",
+                           optional=True),
+       "revision": integer("The doc's version you read; refused if it changed.",
+                           optional=True)},
       group=GROUP, kind=KIND, mutates=True)
 @handler
 def xlsx_set_cells(call: Any, doc: str, cells: list[dict],
-                   replace_formulas: bool | None = None) -> Result:
+                   replace_formulas: bool | None = None, new_rows: bool | None = None,
+                   revision: int | None = None) -> Result:
     """``xlsx_set_cells``'s handler (see the module's notes)."""
     if len(cells) > MAX_CELLS:
         raise ToolError("limit", f"{len(cells):,} cells; at most {MAX_CELLS:,} a call: send "
                         "the rest in another", field="cells")
     workbook = call.document
-    items = [(_address(item, index), _value(item, index)) for index, item in enumerate(cells)]
+    items = [(_address(item, index), _expected(item, index, _value(item, index)))
+             for index, item in enumerate(cells)]
     _withheld(workbook, items)
     try:
-        written = workbook.set_cells(items, replace_formulas=bool(replace_formulas))
+        written = workbook.set_cells(items, replace_formulas=bool(replace_formulas),
+                                     new_rows=bool(new_rows), revision=revision)
     except EditError as error:
         details: dict[str, Any] = {"code": error.code, "addresses": list(error.addresses)}
         if len(error.problems) > 1:
             details["problems"] = [{"code": code, "a": address}
                                    for code, address in error.problems]
-        raise ToolError("refused", str(error), field="cells", details=details) from None
+        if error.held:
+            details["held"] = dict(error.held)
+        field = "revision" if error.code == "revision" else "cells"
+        raise ToolError("refused", str(error), field=field, details=details) from None
     data = written.as_dict(limit=call.limits.max_list_items)
     summary = f"Wrote {len(written.cells)} cell(s) ({written.changed} changed)"
     if written.changed:
@@ -147,6 +186,22 @@ def _value(item: dict, index: int) -> Any:
             and abs(item["number"]) <= 2 ** 53:
         return int(item["number"])
     return item[name]
+
+
+def _expected(item: dict, index: int, value: Any) -> Any:
+    """``value`` with the item's ``expect`` (a type) and ``expect_value`` (the value as
+    text), as :meth:`Workbook.set_cells` takes them: ``{"type": ..., "shown": ...}``."""
+    kind, shown = item.get("expect"), item.get("expect_value")
+    if kind is None and shown is None:
+        return value
+    out: dict[str, Any] = {}
+    if kind is not None:
+        out["type"] = kind
+    if shown is not None:
+        out["shown"] = shown
+    if isinstance(value, dict):
+        return {**value, "expect": out}
+    return {"value": value, "expect": out}
 
 
 def _withheld(workbook: Any, items: list) -> None:

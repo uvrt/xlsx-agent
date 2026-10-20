@@ -18,7 +18,9 @@ table (``Rates``, ``A1:B5``); ``Shop(array=True)`` adds an array formula over tw
 ``Totals`` (``C5:D5``, the first item's quantity and price); ``Shop(external=True)`` adds a
 link to another (made-up) workbook, ``supplier.xlsx``, and a ``Totals`` formula that reads
 its price (``B4``, ``[1]Prices!$B$2*2``); ``Shop(calc="manual")`` saves it with manual
-calculation, ``Shop(calc="full")`` asking for a full recalculation on load.
+calculation, ``Shop(calc="full")`` asking for a full recalculation on load;
+``Shop(protected=True)`` protects the ``Totals`` sheet (``sheetProtection``), and
+``Shop(locked=True)`` locks the workbook's structure (``workbookProtection``).
 """
 
 from __future__ import annotations
@@ -63,6 +65,8 @@ class Shop:
     array: bool = False
     external: bool = False
     calc: str | None = None
+    protected: bool = False
+    locked: bool = False
 
     # -- strings ---------------------------------------------------------------------------
 
@@ -218,7 +222,9 @@ class Shop:
         return (_DECL + f'<worksheet xmlns="{X}" xmlns:r="{R}">'
                 f'<dimension ref="A1:{last_column}{last_row}"/>'
                 f'<sheetData>{rows}</sheetData>'
-                '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" '
+                + ('<sheetProtection sheet="1" objects="1" scenarios="1"/>'
+                   if self.protected else '')
+                + '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" '
                 'footer="0.3"/></worksheet>')
 
     def external_link(self) -> str:
@@ -237,7 +243,8 @@ class Shop:
             f'<workbookPr{pr} defaultThemeVersion="166925"/>'
             '<mc:AlternateContent><mc:Choice Requires="shop"><shop:origin path="templates"/>'
             '</mc:Choice></mc:AlternateContent>'
-            '<bookViews><workbookView xWindow="0" yWindow="0" windowWidth="28800" '
+            + ('<workbookProtection lockStructure="1"/>' if self.locked else '')
+            + '<bookViews><workbookView xWindow="0" yWindow="0" windowWidth="28800" '
             'windowHeight="12300"/></bookViews>'
             '<sheets><sheet name="Stock" sheetId="1" r:id="rId1"/>'
             '<sheet name="Lists" sheetId="2" state="hidden" r:id="rId2"/>'

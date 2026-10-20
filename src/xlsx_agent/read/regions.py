@@ -91,7 +91,7 @@ from __future__ import annotations
 import difflib
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Iterator, Sequence
+from typing import TYPE_CHECKING, Any, Iterator, Sequence
 
 from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell, column_letters
 
@@ -179,6 +179,10 @@ class Region:
     cell's own address (:attr:`Value.origin <xlsx_agent.read.types.Value.origin>`);
     :attr:`where` gives its cells as ranges of the sheets.
 
+    A declared table with ``capacity`` (:mod:`xlsx_agent.declare`) holds at most that many
+    data rows on its one sheet: the rows below its data down to the last of them are its
+    empty capacity, where a new row by key is written (:func:`capacity_rows`).
+
     A detected region with a title cell over it (one blank row between) has ``title``, its
     text; :attr:`caption` is true of a region that is one cell and no data rows, a title or
     caption that :meth:`Regions.find` leaves out.
@@ -209,6 +213,7 @@ class Region:
     about: str | None = None
     shape: str = "rows"
     title: str | None = None
+    capacity: int | None = None
     workbook: "Workbook | None" = field(default=None, repr=False, compare=False)
 
     @property
@@ -337,6 +342,78 @@ class Region:
             raise ValueError(f"{self.address.text} was made without its workbook; get it "
                              "from Workbook.table or Workbook.region")
         return self.workbook
+
+
+@dataclass(frozen=True)
+class Capacity:
+    """Where a declared table with ``capacity`` grows (:func:`capacity_rows`): ``sheet`` its
+    sheet's name, ``first`` its first data row, ``last`` its last data row now (``first -
+    1`` without data rows), ``end`` the last row it may fill (``first + capacity - 1``),
+    ``left`` and ``right`` its sheet columns (hidden ones too), ``columns`` the sheet column
+    of each of its own (visible) columns, in order."""
+
+    sheet: str
+    first: int
+    last: int
+    end: int
+    left: int
+    right: int
+    columns: tuple[int, ...]
+
+    @property
+    def free(self) -> int:
+        """How many rows are left below the data rows."""
+        return max(0, self.end - self.last)
+
+
+def capacity_rows(region: Region) -> Capacity | None:
+    """Where ``region`` grows, when it is a declared table with a ``capacity``; else
+    ``None``."""
+    if region.capacity is None:
+        return None
+    if region.span is not None:
+        part = region.span.parts[0]
+        return Capacity(part.sheet, part.first, part.last, part.first + region.capacity - 1,
+                        region.span.left, region.span.right, region.span.columns)
+    area = region.area
+    first = area.first.row + region.header_rows
+    data = region.data
+    last = data.last.row if data is not None else first - 1
+    return Capacity(region.sheet, first, last, first + region.capacity - 1,
+                    area.first.column, area.last.column,
+                    tuple(range(area.first.column, area.last.column + 1)))
+
+
+def with_last_row(region: Region, last: int) -> Region:
+    """``region`` (a declared table with capacity) with its data rows ending at ``last``."""
+    if region.span is not None:
+        span = region.span
+        part = replace(span.parts[0], last=last)
+        span = replace(span, parts=(part,) + span.parts[1:])
+        return replace(region, span=span, area=span.area)
+    area = region.area
+    return replace(region, area=Area(area.first, Cell(max(last, area.first.row),
+                                                      area.last.column)))
+
+
+def row_empty(writer: Any, row: int, left: int, right: int) -> bool:
+    """Whether ``row`` holds nothing from column ``left`` to ``right``: no value and no
+    formula in any cell (a formula whose result is empty text holds one; a cell with only
+    a format is empty), as the cell writer reads it."""
+    return all(writer.is_empty(Cell(row, column)) for column in range(left, right + 1))
+
+
+def grown_to(workbook: "Workbook", room: Capacity) -> int:
+    """The last data row of a table with capacity as the cells are now: from its last
+    data row, down while the next row holds something (to its capacity's end), then up
+    while its last row is empty."""
+    writer = workbook.editor.cells.sheet(workbook.sheet(room.sheet).stored_name)
+    last = room.last
+    while last < room.end and not row_empty(writer, last + 1, room.left, room.right):
+        last += 1
+    while last >= room.first and row_empty(writer, last, room.left, room.right):
+        last -= 1
+    return last
 
 
 @dataclass(frozen=True)
@@ -712,6 +789,29 @@ class Regions:
     def configured(self) -> list[Region]:
         """The tables declared from configuration, in the order declared."""
         return list(self._configured.values())
+
+    def refresh_capacity(self) -> None:
+        """The data rows of each declared table with a capacity, as the cells are now (the
+        workbook was edited, rolled back, undone or redone): from its last data row, down
+        while the next row holds something -- a value or a formula, in any of its columns
+        -- within its capacity, then up while its last row is empty (:func:`grown_to`).  A
+        row written by key joins the table; undone, it leaves it.  Read through the cell
+        writer, only once the workbook has one (before, nothing has changed)."""
+        if self.workbook._editor is None:
+            return
+        for folded, region in list(self._configured.items()):
+            room = capacity_rows(region)
+            if room is None:
+                continue
+            last = grown_to(self.workbook, room)
+            if last == room.last:
+                continue
+            new = with_last_row(region, last)
+            self._configured[folded] = new
+            if self._declared.get(folded) is region:
+                self._declared[folded] = new
+            if new.span is not None:
+                self._spans[new.span.name] = new.span
 
     @contextmanager
     def reading(self, span: "Span") -> Iterator[None]:
