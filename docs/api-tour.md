@@ -4,8 +4,10 @@
 A workbook opens from bytes, a path or a package, is catalogued in one bounded result, and
 is read, queried, profiled and searched by address; figures are derived here, never by the
 caller, each with the cells it came from, and kept as datasets; two workbooks are compared
-by key, and a workbook is checked against a declared schema. Nothing is edited or saved
-yet (0.2). The tools are thin wrappers over what follows: see
+by key, and a workbook is checked against a declared schema. 0.2's edit foundation (E1)
+is in: a history with atomic batches, undo and redo to the bytes, a structure check, bounded
+edit reports and a checked save (see *Editing*); the writes themselves come with E3. The
+tools are thin wrappers over what follows: see
 [the tools README](../src/xlsx_agent/tools/README.md).
 
 The examples run on the made-up workbooks of the golden transcripts
@@ -472,3 +474,50 @@ A schema names required `sheets` and `tables` (a `t:` address, or a region spec 
 `required`, `unique`, `min`, `max`, `step`, `enum` (with `case`), `validation_list` and
 `pattern`. A schema that is not one is refused (`SchemaError`, with the path) before
 anything is read. Problems carry addresses and codes, never a cell's text.
+
+## Editing (0.2: the foundation, E1)
+
+Every change is a step of the workbook's history (ooxml-edit's `History`), written by
+ooxml-edit's lossless cell writer (`ooxml_edit.sheets`). The public writes come with E3
+(`set_cells`); until then the foundation is exercised through an internal hook,
+`wb._write("Stock!D10", 12)`, which E3 builds on.
+
+```python
+original = wb.to_bytes()
+with wb.batch() as edit:                 # one step: all of it or none of it
+    ...                                  # writes
+edit.report.as_dict()
+# {'before': 0, 'version': 1, 'cells': {'Stock': ['B10:D10', 'B15']}, 'cell_count': 4,
+#  'parts': ['[Content_Types].xml', 'xl/_rels/workbook.xml.rels', 'xl/calcChain.xml',
+#            'xl/sharedStrings.xml', 'xl/workbook.xml', 'xl/worksheets/sheet1.xml'],
+#  'calculation': 'invalidated', 'issues': []}
+wb.version                               # 1 (wb.revision: the same)
+wb.undo(); wb.to_bytes() == original     # True
+wb.redo()                                # the edited bytes again
+wb.validate()                            # [] -- or Problem(code, address, count), never text
+wb.save("stock-filled.xlsx")             # SaveReport(kind='xlsx', size=..., verified=4, issues=())
+```
+
+- **Atomic.** Anything that raises inside a batch rolls the whole package back -- cells,
+  shared strings, styles, `calcPr`, the calculation chain with its relationship and
+  content-type entry -- and the version stays as it was, so nothing keyed by it (a tool
+  session's datasets) goes stale. An error caught inside the batch still rolls it back on
+  leaving (`EditError` `rolled_back`); `wb.savepoint()` inside a batch rolls back only what
+  runs in it.
+- **Writing invalidates.** The first write drops the calculation chain and sets
+  `fullCalcOnLoad`: `wb.calculation_status` is `"invalidated"` (`"cached_unverified"`
+  before: as last saved, never checked), read from the package, so an undo restores it.
+- **Reports** (`edit.report`, `wb.last_edit`): cells written as ranges, at most 50 (the rest
+  counted), the parts changed, the calculation status, and the structure issues of the
+  sheets written. Neither reports nor errors nor the `xlsx_agent.edit` logger carry a value,
+  a text or a formula.
+- **The structure check** (`wb.validate(sheets=None)`): row and cell order and references,
+  shared-string indexes and counts, style indexes, the dimension, tables (ref, columns,
+  names, overlaps, header cells), defined names (duplicates, scopes), relationships to
+  missing parts, content types, the calculation chain naming a cell without a formula.
+- **Save** (`wb.save(path_or_file, kind=None)`; `wb.to_bytes(kind)` unchecked): the kind
+  from the path's extension (or the workbook's), the main content type set to it; a kind
+  without macros is refused while the workbook holds a VBA project (`vba_project`). The
+  bytes are reopened and every cell written since the workbook was opened is read back
+  through the reader, type and value (`readback`, with the addresses), before anything is
+  written.

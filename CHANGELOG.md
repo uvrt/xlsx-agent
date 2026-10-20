@@ -5,6 +5,43 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **The edit foundation** (0.2's E1; lane X, X2; ooxml-edit 0.51.0): `xlsx_agent.edit`.
+  `with wb.batch() as edit:` is one step of ooxml-edit's `History` over the workbook's
+  package: an error anywhere in it rolls everything back -- cells, shared strings, styles,
+  `calcPr`, the calculation chain with its relationship and content-type entry -- and keeps
+  the version (datasets stay current); an error caught inside it still rolls it back
+  (`EditError` `rolled_back`); `wb.savepoint()` rolls back one part (the tool batch's ops).
+  `wb.undo()` / `wb.redo()`: undo to the start is the bytes opened, redo the edited bytes;
+  `wb.version` (`wb.revision`). The first write drops the calculation chain and sets
+  `fullCalcOnLoad`; `wb.calculation_status` is `invalidated` then (`cached_unverified`
+  before), read from the package, so an undo restores it. Each step closes with the
+  shared strings' counts brought up to date and leaves an `EditReport` (`edit.report`,
+  `wb.last_edit`): the cells written as ranges (capped at 50), the parts changed, the
+  calculation status and the structure issues; never a value or formula, nor in the
+  `xlsx_agent.edit` logger. `wb.validate()`: the structure check by code and address
+  (`xlsx_agent.edit.structure`). `wb.save(target, kind=None)` and `wb.to_bytes(kind)`:
+  the kind's main content type; `.xlsx`/`.xltx` refused while the workbook holds a VBA
+  project; the saved bytes reopened and every written cell read back first (`readback`).
+  The writes themselves are E3's; until then the internal hook `Workbook._write` writes
+  one cell. Imports moved from `ooxml_edit.charts.workbook` to `ooxml_edit.sheets`
+  (requires ooxml-edit 0.51.0).
+- The shared `save_document`, `undo` and `batch` serve workbooks, in the core (E1):
+  `save_document`'s `format` is `xlsx`, `xlsm` or `xltx`, its validation report the
+  structure check against the one at open (a new issue refuses the save), its `saved` the
+  cells read back and the calculation status; `undo`'s `scope` a sheet's name (a step that
+  changed the parts every sheet shares is taken back by a plain undo only). The format's
+  `problems` (what `open_document`'s `baseline_problems` counts) are now the structure
+  issues; the cell facts stay `describe`'s. Definitions: the core 3,523 -> 4,069
+  estimated (about 5,214 -> 6,022 counted by the proxy), every definition 3,746 -> 4,291
+  (the guard 3,750 -> 4,300).
+- The Excel oracle (E1): `pytest -m oracle` (never under xdist) drives Excel for Mac
+  through `tests/oracle.py` and `tools/excel_resave.applescript`: one machine-wide lock in
+  the Office group container, skipped when Excel runs or the lock is held, a repair prompt
+  answered No and reported, only an Excel it started quit, results cached by content.
+  The shop fixture (`tests/shop.py`, made in code) in five variants, as made, edited and
+  undone: 15 of 15 open in Excel for Mac 16.106 without a repair; the control (a
+  shared-string index out of range) is asked to repair.
+
 - What a name that is no workbook tool means (round 9, N5; ooxml-edit 0.47.0): "no tool
   'xlsx_pivot': use xlsx_derive", with the best few tools in `valid_options` instead of
   every one. ooxml-edit reads the tools' names; `TOOL_HINTS` (`FORMAT.tool_hints`) adds the
