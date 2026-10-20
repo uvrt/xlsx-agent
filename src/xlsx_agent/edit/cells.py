@@ -73,7 +73,8 @@ row named by its address (``capacity_row``).  An *expectation* goes with any val
 formula; a formula whose result is empty text is a ``formula``, never empty), ``"text"``,
 ``"number"``, ``"bool"``, ``"error"``, ``"formula"`` (any formula cell, whatever it
 caches) -- and ``"value"`` (text, a number, a boolean: what the cell shows, a formula's
-cached value) or ``"date"``; a cell holding something else refuses the call
+cached value), ``"date"``, or ``"shown"`` (the value as text, as the tool gives it: a
+text's own, a number's digits, ``true``/``false``, a date ``YYYY-MM-DD``); a cell holding something else refuses the call
 (``not_expected``), the error's :attr:`~xlsx_agent.edit.EditError.held` naming what each
 holds by type, never by value.  ``revision``: the workbook's :attr:`version
 <xlsx_agent.Workbook.version>` the call was made for, refused (``revision``) before
@@ -457,6 +458,32 @@ EXPECT_TYPES = ("blank", "empty", "text", "number", "bool", "error", "formula")
 _ANY = object()
 
 
+@dataclass(frozen=True)
+class _Shown:
+    """An expected value given as text (``"shown"``, the tool's ``expect_value``): the text
+    a text or error cell holds, a number's digits, ``true``/``false``, a date as
+    ``YYYY-MM-DD`` (``serial``, in the workbook's date system)."""
+
+    text: str
+    serial: "int | float | None" = None
+
+    def meets(self, content: Any) -> bool:
+        held, kind = content.value, content.kind
+        if kind in ("text", "error"):
+            return held == self.text
+        if kind == "bool":
+            return self.text.strip().lower() == ("true" if held else "false")
+        if kind == "number":
+            if self.serial is not None and float(held) == float(self.serial):
+                return True
+            try:
+                number = float(self.text.strip())
+            except ValueError:
+                return False
+            return math.isfinite(number) and float(held) == number
+        return False
+
+
 def _expectation(workbook: Any, label: str, expect: Any,
                  refusals: "_Refusals") -> "tuple[str | None, Any] | None":
     """``expect`` as ``(type, value)`` (``None`` and ``_ANY`` when not given), checked;
@@ -464,9 +491,10 @@ def _expectation(workbook: Any, label: str, expect: Any,
     from ooxml_edit.sheets import date_serial
 
     if not isinstance(expect, Mapping) or not expect \
-            or set(expect) - {"type", "value", "date"} \
-            or ("value" in expect and "date" in expect):
-        refusals.add("bad_value", label, 'expect is "type", "value" or both (or "date")')
+            or set(expect) - {"type", "value", "date", "shown"} \
+            or len(set(expect) & {"value", "date", "shown"}) > 1:
+        refusals.add("bad_value", label, 'expect is "type", and one of "value", "date" or '
+                     '"shown"')
         return None
     kind = expect.get("type")
     if kind is not None and kind not in EXPECT_TYPES:
@@ -492,6 +520,20 @@ def _expectation(workbook: Any, label: str, expect: Any,
         if day is None:
             return None
         value = date_serial(day, date1904=workbook.date1904)
+    if "shown" in expect:
+        text = expect["shown"]
+        if not isinstance(text, str):
+            refusals.add("bad_value", label, "an expected value shown is text")
+            return None
+        serial = None
+        match = _ISO_DAY.fullmatch(text.strip())
+        if match is not None:
+            try:
+                serial = date_serial(_dt.date(*(int(g) for g in match.groups())),
+                                     date1904=workbook.date1904)
+            except ValueError:
+                serial = None
+        value = _Shown(text, serial)
     return kind, value
 
 
@@ -513,6 +555,8 @@ def _meets(content: Any, kind: str | None, value: Any) -> bool:
     if value is _ANY:
         return True
     held = content.value
+    if isinstance(value, _Shown):
+        return value.meets(content)
     if isinstance(value, bool):
         return content.kind == "bool" and held is value
     if isinstance(value, (int, float)):

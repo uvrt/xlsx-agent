@@ -32,11 +32,14 @@ error's ``details`` giving each refusal by ``code`` and address (``problems``). 
 the key now, wherever it is; a key two rows share, a key no row has, a row by place
 (``#3``) and a table with no key column declared refuse.  ``new_rows: true`` starts a row
 for each key no row has, in the first free row of the table's declared capacity (none
-left: refused).  Each item's ``expect`` -- a ``type`` (``empty`` or ``blank``: no value
-and no formula; ``text``, ``number``, ``bool``, ``error``; ``formula``: any formula cell,
-whatever it caches) and at most one of ``text``, ``number``, ``bool``, ``date`` (the value,
-a formula's cached one) -- refuses the call when the cell holds something else, the
+left: refused).  Each item's ``expect`` -- the cell's type now (``empty`` or ``blank``:
+no value and no formula; ``text``, ``number``, ``bool``, ``error``; ``formula``: any
+formula cell, whatever it caches) -- and ``expect_value`` -- its value now as a read gave
+it, as text (a text's own, a number's digits, ``true``/``false``, a date ``YYYY-MM-DD``; a
+formula's cached value) -- refuse the call when the cell holds something else, the
 error's ``details`` giving each such cell's type as it is (``held``), never its value.
+Both are flat fields of the item: a nested object made the strict schema too complex for
+Claude (HTTP 400 "Schema is too complex", measured online by the main session).
 ``revision`` (the version a result gave) refuses it when the workbook has changed since.
 The application's write policy (``xlsx_agent.tools.policy``; ``describe``'s ``writable``)
 and a protected sheet refuse the cells outside it, by key too.  All of them before
@@ -75,8 +78,6 @@ VALUE_FIELDS = ("text", "number", "bool", "date", "formula", "blank", "markdown"
 #: The types an item's ``expect`` names (:data:`xlsx_agent.edit.cells.EXPECT_TYPES`).
 EXPECT_TYPES = ("empty", "blank", "text", "number", "bool", "error", "formula")
 
-#: The value fields of an ``expect``, at most one of which it gives.
-EXPECT_FIELDS = ("text", "number", "bool", "date")
 
 GROUP = "xlsx_edit"
 
@@ -100,10 +101,10 @@ GROUP = "xlsx_edit"
            "blank": boolean("true: remove the value, keep the format.", optional=True),
            "markdown": string("**bold**, *italic*, ~~strike~~, lines, - and 1. lists.",
                               optional=True),
-           "expect": obj({"type": string(enum=EXPECT_TYPES, optional=True),
-                          "text": string(optional=True), "number": number(optional=True),
-                          "bool": boolean(optional=True), "date": string(optional=True)},
-                         "What the cell holds now, else refused.", optional=True)}),
+           "expect": string("The cell's type now, else refused.", enum=EXPECT_TYPES,
+                            optional=True),
+           "expect_value": string("Its value now as read (dates YYYY-MM-DD), else refused.",
+                                  optional=True)}),
            f"At most {MAX_CELLS:,}.", min_items=1),
        "replace_formulas": boolean("Write over cells holding a formula. Default false.",
                                    optional=True),
@@ -188,20 +189,16 @@ def _value(item: dict, index: int) -> Any:
 
 
 def _expected(item: dict, index: int, value: Any) -> Any:
-    """``value`` with the item's ``expect``, as :meth:`Workbook.set_cells` takes one: a
-    ``type`` and at most one typed value."""
-    expect = item.get("expect")
-    if expect is None:
+    """``value`` with the item's ``expect`` (a type) and ``expect_value`` (the value as
+    text), as :meth:`Workbook.set_cells` takes them: ``{"type": ..., "shown": ...}``."""
+    kind, shown = item.get("expect"), item.get("expect_value")
+    if kind is None and shown is None:
         return value
-    given = [name for name in EXPECT_FIELDS if expect.get(name) is not None]
-    kind = expect.get("type")
-    if len(given) > 1 or not given and kind is None:
-        raise ToolError("invalid_arguments", "expect gives a type, one of "
-                        f"{', '.join(EXPECT_FIELDS)}, or both", field=f"cells[{index}].expect")
-    out: dict[str, Any] = {} if kind is None else {"type": kind}
-    if given:
-        (name,) = given
-        out["date" if name == "date" else "value"] = expect[name]
+    out: dict[str, Any] = {}
+    if kind is not None:
+        out["type"] = kind
+    if shown is not None:
+        out["shown"] = shown
     if isinstance(value, dict):
         return {**value, "expect": out}
     return {"value": value, "expect": out}

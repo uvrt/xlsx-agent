@@ -77,9 +77,10 @@ share, a key no row has, a row by place (`#3`) and a table without a declared ke
 refuse (named `cells[n]`, never by the key). `new_rows: true` starts a row for each key no
 row has, in the first free row of the table's declared `capacity` (`describe` shows
 `capacity` and `free`; none left: `capacity_full`); a free capacity row named by its
-address is refused. Each item's `expect` (`type`: `empty`/`blank`, `text`, `number`,
-`bool`, `error`, `formula` -- a formula cell is never empty; and at most one of `text`,
-`number`, `bool`, `date`) refuses the call when the cell holds something else, `details`'
+address is refused. Each item's `expect` (the type now: `empty`/`blank`, `text`,
+`number`, `bool`, `error`, `formula` -- a formula cell is never empty) and `expect_value`
+(the value now as read, as text: a number's digits, `true`/`false`, a date `YYYY-MM-DD`)
+refuse the call when the cell holds something else, `details`'
 `held` naming each such cell's type, never its value; `revision` (a result's `version`)
 refuses it when the workbook has changed since. A protected sheet (`sheetProtection`) is
 never written, unlocked cells included (not measured in Excel yet). The application's

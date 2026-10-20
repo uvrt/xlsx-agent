@@ -461,22 +461,28 @@ def test_the_session_s_policy_is_shown_by_describe_and_refuses_outside_it(box):
 def test_expectations_and_the_revision_through_the_tool(box):
     session, _ = _session(box)
     refused = box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "cells": [
-        {"address": "Stock!B10", "text": "Pen", "expect": {"text": "Pencil"}},
-        {"address": "Stock!B11", "text": "Pad", "expect": {"type": "empty"}},
-        {"address": "Stock!H10", "date": "2026-02-01", "expect": {"date": "2026-01-02"}}]})
-    assert refused.error.details["code"] == "not_expected"
-    assert refused.error.details["held"] == {"Stock!B11": "text", "Stock!H10": "number"}
+        {"address": "Stock!B10", "text": "Pen", "expect_value": "Pencil"},
+        {"address": "Stock!B11", "text": "Pad", "expect": "empty"},
+        {"address": "Stock!H10", "date": "2026-02-01", "expect_value": "2026-01-02"},
+        {"address": "Stock!D10", "number": 1, "expect_value": "12"}]})
+    assert refused.error.details["code"] == "not_expected", refused.to_json()
+    assert refused.error.details["held"] == {"Stock!B11": "text", "Stock!H10": "number",
+                                             "Stock!D10": "number"}
     assert "Notebook" not in json.dumps(refused.to_json())
     ok = box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "revision": 0, "cells": [
-        {"address": "Stock!B10", "text": "Pen", "expect": {"type": "text", "text": "Pencil"}},
-        {"address": "Stock!D10", "blank": True, "expect": {"number": 120}}]})
-    assert ok.ok and ok.version == 1
+        {"address": "Stock!B10", "text": "Pen", "expect": "text", "expect_value": "Pencil"},
+        {"address": "Stock!D10", "blank": True, "expect_value": "120"},
+        {"address": "Stock!G10", "bool": False, "expect_value": "TRUE"},
+        {"address": "Stock!H10", "date": "2026-02-01", "expect_value": "2026-01-01"},
+        {"address": "Stock!I10", "number": 0.1, "expect": "formula",
+         "expect_value": "0.06"}], "replace_formulas": True})
+    assert ok.ok and ok.version == 1, ok.to_json()
     stale = box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "revision": 0, "cells": [
         {"address": "Stock!B10", "text": "Pens"}]})
     assert stale.error.details["code"] == "revision" and stale.error.field == "revision"
     bad = box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "cells": [
-        {"address": "Stock!B10", "text": "Pens", "expect": {"text": "a", "number": 1}}]})
-    assert bad.error.code == "invalid_arguments" and bad.error.field == "cells[0].expect"
+        {"address": "Stock!B10", "text": "Pens", "expect": "colour"}]})
+    assert bad.error.code == "invalid_arguments", bad.to_json()
 
 
 def test_a_session_policy_the_workbook_cannot_meet_refuses_the_open(box):
@@ -552,3 +558,22 @@ def test_no_key_or_value_reaches_the_log(caplog):
                        ("Lampshade", "Clipboard", "Teapot", "Kettle"))
     text = " ".join(record.getMessage() for record in caplog.records)
     assert not any(word in text for word in ("Lampshade", "Brassware", "Kettle", "Teapot"))
+
+
+def test_an_expected_value_given_as_text_is_compared_as_a_read_gives_it():
+    _, wb = _open(tables=())
+    assert wb.set_cells({
+        "Stock!B10": {"value": "Pen", "expect": {"shown": "Pencil"}},
+        "Stock!D10": {"value": 1, "expect": {"shown": "120"}},
+        "Stock!E11": {"value": 1, "expect": {"type": "number", "shown": "2.5"}},
+        "Stock!G10": {"value": False, "expect": {"shown": "true"}},
+        "Stock!H10": {"date": "2026-02-01", "expect": {"shown": "2026-01-01"}}}).changed == 5
+    error = _refused(wb, {"Stock!D11": {"value": 1, "expect": {"shown": "forty"}},
+                          "Stock!B12": {"value": "x", "expect": {"shown": "kettle"}},
+                          "Stock!B4": {"value": "x", "expect": {"shown": ""}}})
+    assert error.code == "not_expected" and len(error.addresses) == 3
+    assert _refused(wb, {"Stock!B4": {"value": "x", "expect": {"shown": 3}}}).code \
+        == "bad_value"
+    assert _refused(wb, {"Stock!B4": {"value": "x", "expect": {"shown": "a",
+                                                               "value": "a"}}}).code \
+        == "bad_value"

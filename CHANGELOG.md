@@ -15,7 +15,8 @@ has the detail of every milestone.
   allowlist is read-only. Raw addresses, cells by key, new rows, formulas and batch ops are
   all checked, and `Editor.write` asks again. `describe` shows `writable`. Preconditions:
   any value may carry `expect` (`type` -- `empty`/`blank`, `text`, `number`, `bool`,
-  `error`, `formula`; a formula returning `""` is never empty -- and a `value` or `date`),
+  `error`, `formula`; a formula returning `""` is never empty -- and a `value`, `date` or
+  `shown` text),
   and `set_cells(revision=)` the workbook's version; an unmet one refuses with the cell's
   current type (`EditError.held`), never its value. A protected sheet (`sheetProtection`)
   is never written (`protected`), unlocked cells included until Excel is measured
@@ -30,10 +31,14 @@ has the detail of every milestone.
   capacity row is never written by address (`capacity_row`). The table's rows follow the
   cells after every write, rollback, undo and redo; `describe` shows `capacity` and
   `free`. `Written.new_rows` lists the new rows' key cells.
-- **`xlsx_set_cells`** takes an address by key, each cell's `expect` (`type` and one of
-  `text`, `number`, `bool`, `date`), `new_rows` and `revision`; a refusal's `details`
-  carry `held`. Definitions: `xlsx_set_cells` 378 -> 553 estimated, every definition
-  4,686 -> 4,861 (the guard 4,690 -> 4,870); the core unchanged. Excel oracle: rows written
+- **`xlsx_set_cells`** takes an address by key, each cell's `expect` (its type now) and
+  `expect_value` (its value now as read, as text: a number's digits, `true`/`false`, a
+  date `YYYY-MM-DD`; Python's `{"shown": ...}`), `new_rows` and `revision`; a refusal's
+  `details` carry `held`. Flat fields: a nested `expect` object made Claude refuse the
+  strict schema ("Schema is too complex"); `tests/test_tools_schema.py` now holds the
+  strict tools to the complexity Claude compiled (two object levels, 13 optional
+  parameters, 8 free strings). Definitions: `xlsx_set_cells` 378 -> 533 estimated, every
+  definition 4,686 -> 4,840 (the guard 4,690 -> 4,850); the core unchanged. Excel oracle: rows written
   by key into a capacity, plain, `r`-less and inline-string, open without a repair.
 - **Markdown rich text in cells** (lane X, X3b; ooxml-edit 0.54.0): `wb.set_cells({address:
   {"markdown": "**Total** due *now*"}})` writes a shared string of runs (`<si><r><rPr>`)
