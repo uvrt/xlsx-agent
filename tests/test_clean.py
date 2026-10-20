@@ -338,8 +338,9 @@ def test_cleaning_changes_no_tool_definition():
                        groups=GROUPS).definitions("anthropic", defer=False)
     assert cleaning == plain
     # this repository's own tools, character for character as main had them before X6
-    # (X10's sentence on xlsx_compare's summary and T19's wording aside)
-    own = [d for d in plain if d["name"].startswith("xlsx_")]
+    # (X10's sentence on xlsx_compare's summary and T19's wording aside); the read tools
+    # only (E3's xlsx_set_cells is new)
+    own = [d for d in plain if d["name"].startswith("xlsx_") and d["name"] != "xlsx_set_cells"]
     assert len(json.dumps(own, separators=(",", ":"), ensure_ascii=False)) == XLSX_CHARS
 
 

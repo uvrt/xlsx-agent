@@ -61,7 +61,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
-ALL_GUARD = 4300
+ALL_GUARD = 4650
 
 
 @pytest.fixture(scope="module")
@@ -112,12 +112,13 @@ def test_the_groups_are_the_roadmaps():
     groups: dict[str, set[str]] = {}
     for tool in TOOLS:
         groups.setdefault(tool.group, set()).add(tool.name)
-    # the read tools, save_document, undo and batch are the core; edits (0.2) will be
-    # deferred groups of their own
+    # the read tools, save_document, undo and batch are the core; edits (0.2) are
+    # deferred groups of their own: xlsx_edit from E3
     assert groups == {"core": {"open_document", "describe", "find_text", "xlsx_read",
                                "xlsx_profile", "xlsx_query", "xlsx_derive", "xlsx_compare",
                                "xlsx_validate_data", "save_document", "undo", "batch"},
-                      "shared_misc": {"close_document", "read_blob"}}
+                      "shared_misc": {"close_document", "read_blob"},
+                      "xlsx_edit": {"xlsx_set_cells"}}
 
 
 def test_the_loaded_core_is_within_budget_and_every_definition_within_its_guard(box):
