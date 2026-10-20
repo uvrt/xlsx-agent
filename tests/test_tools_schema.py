@@ -56,6 +56,12 @@ X5 (integrity compare, validation inspection): ``xlsx_compare``'s ``cells`` and
 ``formula_text`` (330 -> 395) and ``xlsx_read``'s ``validations`` (556 -> 593): the core
 4,096 -> 4,198 estimated, about 6,062 -> 6,213 counted by the proxy, under 6,500; every
 definition 4,840 -> 4,942, the guard 4,850 -> 4,950.  No strict tool changed.
+X6 (the contract's gaps): ``xlsx_set_cells``' ``new_rows`` (the next free row) gives way to
+each cell's ``row`` (the capacity row the application allocates to a new key): 533 -> 529,
+the strict tool's optional parameters still 13, its free strings still 8; ``xlsx_compare``'s
+``cells`` names the structure it compares (395 -> 409): the core 4,198 -> 4,212 estimated,
+about 6,213 -> 6,234 counted by the proxy, under 6,500; every definition 4,942 -> 4,953,
+the guard 4,950 -> 4,960.
 """
 
 from __future__ import annotations
@@ -74,7 +80,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
-ALL_GUARD = 4950
+ALL_GUARD = 4960
 
 
 @pytest.fixture(scope="module")

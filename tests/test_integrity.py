@@ -22,7 +22,7 @@ from ooxml_edit.tools import Toolbox
 from xlsx_agent import Workbook
 from xlsx_agent.edit.report import MAX_RANGES
 from xlsx_agent.formula import normalise
-from xlsx_agent.integrity import KINDS
+from xlsx_agent.integrity import KINDS, STRUCTURE_KINDS
 from xlsx_agent.tools import FORMAT, GROUPS, TOOLS, policy
 
 from shop import FIRST_INPUT, ITEMS, Shop
@@ -328,6 +328,99 @@ def test_a_recalculated_value_is_never_outside_and_a_sheet_change_always_is():
                                                                          "sheets": 1}
 
 
+# -- structure (X6) ---------------------------------------------------------------------------
+
+_QUANTITY_RULE = (f'<dataValidation type="whole" operator="greaterThanOrEqual" allowBlank="1" '
+                  f'showErrorMessage="1" errorTitle="Quantity" error="Whole numbers from 0" '
+                  f'sqref="D{FIRST_INPUT}:D200"><formula1>0</formula1></dataValidation>')
+_DATE_RULE = (f'<dataValidation type="date" allowBlank="1" showInputMessage="1" '
+              f'sqref="H{FIRST_INPUT}:H200"><formula1>36526</formula1></dataValidation>')
+_LOW = '<cfRule type="cellIs" dxfId="0" priority="2" operator="lessThan"><formula>5</formula>'
+
+
+def _structure(a: bytes, b: bytes, **options) -> dict[str, str]:
+    return {change.address: change.kind for change in _cells(a, b, **options).structure}
+
+
+def test_names_validations_merges_and_conditional_formats_are_compared_apart():
+    b = _changed(
+        workbook=[('<definedName name="Markup">1.4</definedName>',
+                   '<definedName name="Markup">1.5</definedName>'
+                   '<definedName name="Shelf" localSheetId="0">Stock!$B$4</definedName>'),
+                  ('<definedName name="TaxRates">Lists!$B$2:$B$5</definedName>', '')],
+        stock=[('<mergeCell ref="A2:I2"/>', '<mergeCell ref="A4:B4"/>'),
+               (_QUANTITY_RULE, _QUANTITY_RULE.replace("greaterThanOrEqual", "greaterThan")),
+               (_DATE_RULE, ''),
+               ('</dataValidations>', '<dataValidation type="list" sqref="J10:J20 G10:G20">'
+                '<formula1>"Yes,No"</formula1></dataValidation></dataValidations>'),
+               (_LOW, _LOW.replace("<formula>5</formula>", "<formula>6</formula>")),
+               ('</conditionalFormatting><dataValidations',
+                '</conditionalFormatting><conditionalFormatting sqref="E10:E14"><cfRule '
+                'type="colorScale" priority="3"><colorScale><cfvo type="min"/><cfvo type="max"/>'
+                '<color rgb="FFF8696B"/><color rgb="FF63BE7B"/></colorScale></cfRule>'
+                '</conditionalFormatting><dataValidations')])
+    diff = Workbook.compare(Workbook.open(Shop().to_bytes()), Workbook.open(b), cells=True)
+    assert diff.cells.edits == ()                      # no cell changed
+    assert _structure(Shop().to_bytes(), b) == {
+        "Markup": "name_changed", "Stock!Shelf": "name_added", "TaxRates": "name_removed",
+        "Stock!A4:B4": "merge_added", "Stock!A2:I2": "merge_removed",
+        f"Stock!D{FIRST_INPUT}:D200": "validation_changed",
+        "Stock!G10:G20 J10:J20": "validation_added",
+        f"Stock!H{FIRST_INPUT}:H200": "validation_removed",
+        f"Stock!D{FIRST_INPUT}:D{LAST}": "conditional_format_changed",
+        "Stock!E10:E14": "conditional_format_added"}
+    assert diff.totals() == {"name_added": 1, "name_removed": 1, "name_changed": 1,
+                             "validation_added": 1, "validation_removed": 1,
+                             "validation_changed": 1, "merge_added": 1, "merge_removed": 1,
+                             "conditional_format_added": 1, "conditional_format_changed": 1}
+    assert set(diff.cells.structure_counts()) <= set(STRUCTURE_KINDS) and not diff.same
+
+
+def test_what_carries_no_meaning_is_no_structural_change():
+    b = _changed(
+        workbook=[('<definedName name="Categories">Lists!$A$2:$A$5</definedName>',
+                   '<definedName name="categories">lists!$a$2:$a$5</definedName>')],
+        stock=[(_DATE_RULE, ''),          # the same rule, stored as x14 instead
+               ('</x14:dataValidations>', '<x14:dataValidation type="date" allowBlank="1">'
+                '<x14:formula1><xm:f>36526</xm:f></x14:formula1>'
+                f'<xm:sqref>H{FIRST_INPUT}:H200</xm:sqref></x14:dataValidation>'
+                '</x14:dataValidations>'),
+               ('error="Whole numbers from 0"', 'error="From 0 up"'),     # a message
+               ('<mergeCell ref="A1:I1"/><mergeCell ref="A2:I2"/>',
+                '<mergeCell ref="A2:I2"/><mergeCell ref="a1:i1"/>'),       # order, case
+               (_LOW, _LOW.replace('dxfId="0" priority="2"', 'dxfId="3" priority="7"'))])
+    assert _structure(Shop().to_bytes(), b) == {}
+
+
+def test_structural_formulas_only_when_asked_and_never_a_redacted_one():
+    b = _changed(workbook=[('<definedName name="Markup">1.4</definedName>',
+                            '<definedName name="Markup">TaxRates*2</definedName>')],
+                 stock=[(_LOW, _LOW.replace("<formula>5</formula>", "<formula>6</formula>"))])
+    plain = _cells(Shop().to_bytes(), b).structure
+    assert [(c.a, c.b) for c in plain] == [((), ()), ((), ())]
+    assert plain[0].as_dict() == {"kind": "name_changed", "at": "Markup"}
+    named, rule = _cells(Shop().to_bytes(), b, formula_text=True).structure
+    assert (named.a, named.b, rule.a, rule.b) == (("1.4",), ("TaxRates*2",), ("5",), ("6",))
+    old, new = Workbook.open(Shop().to_bytes()), Workbook.open(b)
+    for wb in (old, new):
+        wb.redact([{"redact": ["TaxRates"]}])
+    named, rule = Workbook.compare(old, new, cells=True, formula_text=True).cells.structure
+    assert (named.a, named.b, named.withheld) == (("1.4",), (), True)   # its own side
+    assert rule.b == ("6",)
+
+
+def test_every_structural_change_is_outside_a_policy_and_the_list_is_capped():
+    merges = "".join(f'<mergeCell ref="K{n}:L{n}"/>' for n in range(20, 20 + MAX_RANGES + 10))
+    b = _changed(stock=[('<mergeCell ref="A2:I2"/>', '<mergeCell ref="A2:I2"/>' + merges)])
+    cells = _cells(Shop().to_bytes(), b, policy={"cells": ["Stock!"]})
+    shown = cells.as_dict()
+    assert shown["structure"]["counts"] == {"merge_added": MAX_RANGES + 10}
+    assert len(shown["structure"]["changes"]) == MAX_RANGES
+    assert shown["structure"]["cut"] == 10
+    assert shown["structure"]["changes"][0] == {"kind": "merge_added", "at": "Stock!K20:L20"}
+    assert shown["outside"] == {"count": 0, "structure": MAX_RANGES + 10}
+
+
 # -- xlsx_compare -----------------------------------------------------------------------------
 
 
@@ -381,3 +474,23 @@ def test_xlsx_compare_formula_text_pages_the_formulas(box):
                                                      "formula_text": True})
     assert refused.error.code == "invalid_arguments"
     assert refused.error.field == "formula_text"
+
+
+def test_xlsx_compare_cells_lists_the_structure_apart_and_pages_its_formulas(box):
+    b = _changed(workbook=[('<definedName name="Markup">1.4</definedName>',
+                            '<definedName name="Markup">1.5</definedName>')],
+                 stock=[('<mergeCell ref="A2:I2"/>', '')])
+    session = _session(box, Shop().to_bytes(), b, given={"cells": ["Stock!B4"]})
+    result = box.dispatch(session, "xlsx_compare", {"a": "d1", "b": "d2", "cells": True})
+    assert result.ok, result.error
+    assert result.data["cells"]["structure"] == {
+        "counts": {"name_changed": 1, "merge_removed": 1},
+        "changes": [{"kind": "name_changed", "at": "Markup"},
+                    {"kind": "merge_removed", "at": "Stock!A2:I2"}]}
+    assert result.data["cells"]["outside"] == {"count": 0, "structure": 2}
+    assert result.summary.startswith("d1 and d2: 0 tables compared, cells of 3 sheets (2 "
+                                     "outside the write policy); 1 name changed")
+    texts = box.dispatch(session, "xlsx_compare", {"a": "d1", "b": "d2", "cells": True,
+                                                   "formula_text": True})
+    assert texts.data["differences"] == [{"structure": "name_changed", "at": "Markup",
+                                          "a": ["1.4"], "b": ["1.5"]}]

@@ -73,12 +73,20 @@ table placed from them says `stale` and the counts in its `from`.
 
 **Guards** (`xlsx_set_cells`, X4). An `address` may name a value by its row's key,
 `t:stock/P-7/Quantity`: the row holding the key now, wherever it moved; a key two rows
-share, a key no row has, a row by place (`#3`) and a table without a declared key column
-refuse (named `cells[n]`, never by the key). `new_rows: true` starts a row for each key no
-row has, in the first free row of the table's declared `capacity` (`describe` shows
-`capacity` and `free`; none left: `capacity_full`); a free capacity row named by its
-address is refused. Each item's `expect` (the type now: `empty`/`blank`, `text`,
-`number`, `bool`, `error`, `formula` -- a formula cell is never empty) and `expect_value`
+share, a key no row has, a row by place (`#3`), a table without a declared key column and
+one whose key column holds formulas (`formula_key`: keys are values the application
+supplies) refuse (named `cells[n]`, never by the key). A key no row has starts a row only
+where an item's `row` allocates it (X6): the sheet row number of a free row of the table's
+declared `capacity` (`describe` shows `capacity` and `free`), continuing its data rows with
+no blank row between -- the application allocates the rows, in its instructions or by a
+write policy over the capacity rows it opens. A row outside the capacity (`not_capacity`),
+one of the data rows (`data_row`), a row not empty (`not_free`: a formula returning `""`
+too), a row or key allocated twice (`allocated_twice`), a gap (`capacity_gap`, naming the
+next free row), a key a row already has (`existing_key`) and a full capacity
+(`capacity_full`) refuse, as `allocate[n]`; a free capacity row named by its address is
+refused. There is no "next free row" form in the tool. Each item's `expect` (the type
+now: `empty`/`blank`, `text`, `number`, `bool`, `error`, `formula` -- a formula cell is
+never empty) and `expect_value`
 (the value now as read, as text: a number's digits, `true`/`false`, a date `YYYY-MM-DD`)
 refuse the call when the cell holds something else, `details`'
 `held` naming each such cell's type, never its value; `revision` (a result's `version`)
@@ -257,6 +265,14 @@ kind (`formula_changed`, `formula_to_literal`, `literal_to_formula`, `formula_re
 most) and, when the session has a write policy (`xlsx_agent.tools.policy`), `outside`: the
 changes it does not allow. `formula_text: true` pages each changed formula's text as a
 difference (`{"formula": "formula_changed", "at": "Stock!I10", "a": ..., "b": ...}`).
+`cells` also has `structure` (X6), apart from the cells: counts by kind and the first 50
+changes (`{"kind": "validation_changed", "at": "Stock!D10:D200"}`) of defined names
+(`name_added`, `name_removed`, `name_changed`), data validations (standard and `x14` alike),
+merged areas and conditional formats (`conditional_format_added`, ...); every one is
+outside the write policy (`outside`'s `structure`). With `formula_text` each one's formulas
+are a difference too (`{"structure": "name_changed", "at": "Markup", "a": ["1.4"], "b":
+["1.5"]}`). A table compared by key whose key cells hold formulas says `formula_key`: its
+rows are paired by cached keys, which move with the rows.
 
 **Data validations.** `xlsx_read`'s `validations: true` lists the rules over the target
 (the range as asked, not clipped to the used range, since input cells are often empty), on

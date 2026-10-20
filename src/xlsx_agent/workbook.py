@@ -468,6 +468,7 @@ class Workbook:
 
     def set_cells(self, cells: "Mapping[str, Any] | Sequence[tuple[str, Any]]", *,
                   replace_formulas: bool = False, new_rows: bool = False,
+                  allocate: "Mapping[str, int] | Sequence[tuple[str, int]] | None" = None,
                   revision: int | None = None) -> "Written":
         """Write cells by address, typed and guarded (:mod:`xlsx_agent.edit.cells`):
         ``{"Stock!D10": 12, "Stock!H10": {"date": "2026-10-20"}, "Stock!J10":
@@ -483,15 +484,18 @@ class Workbook:
         write).
 
         Guarded (X4): a cell by key (``"t:stock/P-7/Quantity"``: the row holding the key,
-        wherever it is; :mod:`xlsx_agent.edit.keys`), a new row in a declared table's
-        capacity only with ``new_rows``; the host's write policy (:attr:`policies`), a
+        wherever it is; :mod:`xlsx_agent.edit.keys`); a new row only in a declared
+        table's capacity, in the free row ``allocate`` names for its key (``{"t:stock/Lamp":
+        15}``; ``new_rows=True``, the next free row, as a convenience the write policy must
+        allow), and never from a key column of formulas; the host's write policy
+        (:attr:`policies`), a
         protected sheet, an expectation of what a cell holds now (``{"value": 12,
         "expect": {"type": "number", "value": 10}}``) and ``revision`` (the
         :attr:`version` the call was made for) each refuse before anything changes."""
         from .edit.cells import set_cells
 
         return set_cells(self, cells, replace_formulas=replace_formulas, new_rows=new_rows,
-                         revision=revision)
+                         allocate=allocate, revision=revision)
 
     def _forget(self) -> None:
         """Forget everything read from the package: it changed (an edit, a rollback, an

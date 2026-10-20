@@ -88,7 +88,8 @@ KEYS_SHOWN = 10
                      optional=True),
        "columns": array(string(), "Compare only these columns' cells.", optional=True),
        "cells": boolean("Every cell by address instead: formulas by text, even if values "
-                        "match; changes outside the write policy.", optional=True),
+                        "match; names, validations, merges, conditional formats; changes "
+                        "outside the write policy.", optional=True),
        "formula_text": boolean("With cells: formulas' text.", optional=True),
        "cursor": CURSOR},
       group=CORE, kind=KIND, documents=("a", "b"))
@@ -205,6 +206,8 @@ def _table(table: Any) -> dict[str, Any]:
     out.update({"range_a": table.range_a, "range_b": table.range_b, "key": table.key})
     if table.label is not None:
         out["label"] = table.label
+    if table.formula_key:
+        out["formula_key"] = True
     out.update({"rows": [table.rows_a, table.rows_b], "paired": table.paired,
                 "unchanged": table.unchanged})
     totals = table.totals()
@@ -283,6 +286,9 @@ def _items(diff: Diff):
         for change in table.changed:
             yield lambda cap, cells, change=change, where=where: _cell_change(where, change, cap)
     if diff.cells is not None and diff.cells.formula_text:
+        for change in diff.cells.structure:
+            if change.a or change.b or change.withheld:
+                yield lambda cap, cells, change=change: _structure(change, cap)
         for edit in diff.cells.edits:
             if edit.a is not None or edit.b is not None or edit.withheld:
                 yield lambda cap, cells, edit=edit: _formula(edit, cap)
@@ -378,6 +384,26 @@ def _formula(edit: Any, cap: int) -> tuple[dict, int]:
     return out, cut
 
 
+def _structure(change: Any, cap: int) -> tuple[dict, int]:
+    """A structural change with its formulas (``formula_text``): its kind, where, and each
+    side's formulas, each cut at ``cap`` characters."""
+    out: dict[str, Any] = {"structure": change.kind, "at": change.address}
+    cut = 0
+    if change.withheld:
+        out["withheld"] = True
+    for side in ("a", "b"):
+        texts = getattr(change, side)
+        if not texts:
+            continue
+        shown = []
+        for text in texts:
+            kept, n = _text(text, cap)
+            shown.append(kept)
+            cut += n
+        out[side] = shown
+    return out, cut
+
+
 def _fit(item: Item, room: int) -> tuple[dict, int]:
     """A page's first difference, too big for the page as it is: its text cut, then a row's
     cells, until it fits ``room`` characters."""
@@ -405,7 +431,9 @@ def _summary(a: str, b: str, diff: Diff, totals: dict[str, int], first: int, las
     if diff.cells is not None:
         text += f", cells of {len(diff.cells.sheets)} sheets"
         if diff.cells.outside is not None:
-            text += f" ({len(diff.cells.outside)} outside the write policy)"
+            outside = len(diff.cells.outside) + len(diff.cells.structure) \
+                + diff.cells.sheets_outside
+            text += f" ({outside} outside the write policy)"
     if not totals:
         return text + "; no differences"
     counts = ", ".join(f"{n} {name.replace('_', ' ')}" for name, n in totals.items())
