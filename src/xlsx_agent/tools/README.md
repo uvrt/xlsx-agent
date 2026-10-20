@@ -69,8 +69,28 @@ model -- comes before anything changes, each by code and address in the error's
 `details`; at most 5,000 cells a call, one undo step. Afterwards every formula value the
 workbook gives reads `cache: invalidated` (Excel recalculates when it opens the file;
 nothing here does), and a dataset derived from those values is stale; a deck or document
-table placed from them says `stale` and the counts in its `from`. The application's write
-policy and expected-value preconditions are X4's.
+table placed from them says `stale` and the counts in its `from`.
+
+**Guards** (`xlsx_set_cells`, X4). An `address` may name a value by its row's key,
+`t:stock/P-7/Quantity`: the row holding the key now, wherever it moved; a key two rows
+share, a key no row has, a row by place (`#3`) and a table without a declared key column
+refuse (named `cells[n]`, never by the key). `new_rows: true` starts a row for each key no
+row has, in the first free row of the table's declared `capacity` (`describe` shows
+`capacity` and `free`; none left: `capacity_full`); a free capacity row named by its
+address is refused. Each item's `expect` (`type`: `empty`/`blank`, `text`, `number`,
+`bool`, `error`, `formula` -- a formula cell is never empty; and at most one of `text`,
+`number`, `bool`, `date`) refuses the call when the cell holds something else, `details`'
+`held` naming each such cell's type, never its value; `revision` (a result's `version`)
+refuses it when the workbook has changed since. A protected sheet (`sheetProtection`) is
+never written, unlocked cells included (not measured in Excel yet). The application's
+write policy -- `xlsx_agent.tools.policy(session, {"cells": ["Stock!D10:E209"],
+"tables": [{"table": "stock", "columns": ["Quantity"], "new_rows": true}], "formulas":
+false})` before the session opens the workbook (`{"cells": []}`: nothing writable), or
+`Workbook.open(..., policy=...)` in Python; `narrow(session, ...)` only narrows it --
+refuses every cell outside it, by address, by key, in a batch op alike (`not_writable`,
+`formulas_not_allowed`), and `describe` shows it as `writable`. Without a policy a
+session writes as its `edit` role allows. A policy naming a sheet, table or column the
+workbook lacks refuses `open_document` (`bad_policy`, with the entry's `path`).
 
 ## Setup (every provider)
 

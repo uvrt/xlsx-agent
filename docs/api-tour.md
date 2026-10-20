@@ -542,6 +542,33 @@ wb.derive("t:Stock!A9", measures=[{"fn": "sum", "column": "Value", "as": "v"}]).
 wb.undo(); wb.undo(); wb.cell("Totals!B1").cache    # 'cached_unverified' again
 ```
 
+- **Guards** (X4). The host says where the workbook may be written, once, at open
+  (`policy=`: cells, ranges, whole sheets, a table's columns; `{"cells": []}` writes
+  nothing), and may only narrow it; a protected sheet is never written; a value by key
+  is the row holding the key; a new row goes only into a declared table's empty
+  `capacity`; an expectation and the revision refuse a write made on a stale reading.
+  Everything is checked before anything changes:
+
+```python
+wb = Workbook.open(data, policy={
+    "cells": ["Stock!B4"],
+    "tables": [{"table": "stock", "columns": ["Quantity", "Category"], "new_rows": True}],
+    "formulas": False})
+wb.declare_tables([{"name": "stock", "sheets": "Stock", "header_row": 9, "key": "Item",
+                    "capacity": 200}])                  # rows 10 to 209 are the table's
+wb.set_cells({"t:stock/Kettle/Quantity": 4})          # Stock!D12, wherever Kettle's row is
+wb.set_cells({"t:stock/Lamp/Quantity": 2, "t:stock/Lamp/Category": "Hardware"},
+             new_rows=True).new_rows                  # ('Stock!B15',): the first free row
+wb.set_cells({"Stock!B4": {"value": "Ann", "expect": {"type": "empty"}},
+              "t:stock/Mug/Quantity": {"value": 17, "expect": {"value": 18}}},
+             revision=wb.version)
+wb.set_cells({"Stock!E10": 1})          # EditError not_writable (Stock!E10)
+wb.set_cells({"Stock!B4": {"value": "Bo", "expect": {"type": "empty"}}})
+# EditError not_expected (Stock!B4); .held == {'Stock!B4': 'text'}: a type, never the text
+wb.narrow_policy({"tables": [{"table": "stock", "columns": ["Quantity"]}]})
+wb.writable                             # [{...the first...}, {...the narrower...}]
+```
+
 The steps themselves:
 
 ```python

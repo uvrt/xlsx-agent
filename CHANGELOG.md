@@ -5,6 +5,36 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **Guarded writes** (lane X, X4; no ooxml-edit change). The host's write policy
+  (`xlsx_agent.edit.policy`, `WritePolicy`, `PolicyError`): an immutable allowlist of
+  `cells` (cells, ranges, whole sheets) and `tables` (a table's data cells by `columns`;
+  `new_rows` its capacity too), with `formulas`/`replace_formulas` ceilings, as plain
+  data; `Workbook.open(..., policy=...)` or `xlsx_agent.tools.policy(session, ...)`, only
+  narrowed later (`Workbook.narrow_policy`, `tools.narrow`). Without a policy Python writes
+  everywhere but protected sheets and a tool session as its `edit` role allows; an empty
+  allowlist is read-only. Raw addresses, cells by key, new rows, formulas and batch ops are
+  all checked, and `Editor.write` asks again. `describe` shows `writable`. Preconditions:
+  any value may carry `expect` (`type` -- `empty`/`blank`, `text`, `number`, `bool`,
+  `error`, `formula`; a formula returning `""` is never empty -- and a `value` or `date`),
+  and `set_cells(revision=)` the workbook's version; an unmet one refuses with the cell's
+  current type (`EditError.held`), never its value. A protected sheet (`sheetProtection`)
+  is never written (`protected`), unlocked cells included until Excel is measured
+  (ROADMAP open question 9); structure protection refuses no cell write.
+- **Cells by key and new rows in a capacity** (`xlsx_agent.edit.keys`):
+  `t:<table>/<key>/<column>` writes the cell of the row holding the key now, in any region
+  whose key column is declared; a duplicate or missing key, a row by place, a key set or a
+  wildcard refuses -- no positional fallback -- each named `cells[n]`, never by its key.
+  Declared tables take `capacity` (the most data rows; one sheet; the rows below the data
+  empty, or `capacity_not_empty`); `set_cells(new_rows=True)` starts each new key's row in
+  the first free one (`capacity_full` past it, `no_capacity` without one), and a free
+  capacity row is never written by address (`capacity_row`). The table's rows follow the
+  cells after every write, rollback, undo and redo; `describe` shows `capacity` and
+  `free`. `Written.new_rows` lists the new rows' key cells.
+- **`xlsx_set_cells`** takes an address by key, each cell's `expect` (`type` and one of
+  `text`, `number`, `bool`, `date`), `new_rows` and `revision`; a refusal's `details`
+  carry `held`. Definitions: `xlsx_set_cells` 378 -> 553 estimated, every definition
+  4,686 -> 4,861 (the guard 4,690 -> 4,870); the core unchanged. Excel oracle: rows written
+  by key into a capacity, plain, `r`-less and inline-string, open without a repair.
 - **Markdown rich text in cells** (lane X, X3b; ooxml-edit 0.54.0): `wb.set_cells({address:
   {"markdown": "**Total** due *now*"}})` writes a shared string of runs (`<si><r><rPr>`)
   -- `**bold**`, `*italic*`/`_italic_`, `***both***`, `~~strike~~`, backslash escapes, code
