@@ -84,7 +84,7 @@ Excel workbooks
 their key column, each column's type, fill and values, sample rows, flags and problems. \
 cut says what a large workbook's catalogue left out, next which tool gives it.
 - xlsx_read reads cells by any address, paged; xlsx_profile gives a region's columns in full; \
-xlsx_query gives a region's rows that meet filters, sorted, with the count of all matches; \
+xlsx_query gives a region's or dataset's rows that meet filters, sorted, with the count of all matches; \
 xlsx_derive computes figures (counts, sums, means, shares, groups, pivots) and keeps them as \
 a dataset, d:<id>, each value with its source cells; xlsx_compare compares two open \
 workbooks by row key; xlsx_validate_data checks one against a schema, problems by address.

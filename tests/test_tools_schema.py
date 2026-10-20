@@ -62,6 +62,11 @@ the strict tool's optional parameters still 13, its free strings still 8; ``xlsx
 ``cells`` names the structure it compares (395 -> 409): the core 4,198 -> 4,212 estimated,
 about 6,213 -> 6,234 counted by the proxy, under 6,500; every definition 4,942 -> 4,953,
 the guard 4,950 -> 4,960.
+Round 10, item 4 (ooxml-edit 0.55.0): ``xlsx_query`` takes a dataset (O5: ``doc`` optional,
+``table`` and the description name ``d:``), 457 -> 474, and the shared ``undo``'s ``scope``
+names a sheet as well as a slide, 158 -> 159: the core 4,212 -> 4,230 estimated, about
+6,234 -> 6,261 counted by the proxy, under 6,500; every definition 4,953 -> 4,971, the
+guard 4,960 -> 4,975.  The strict set is unchanged: neither tool is strict.
 """
 
 from __future__ import annotations
@@ -80,7 +85,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
-ALL_GUARD = 4960
+ALL_GUARD = 4975
 
 
 @pytest.fixture(scope="module")

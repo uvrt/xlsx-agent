@@ -19,6 +19,11 @@ gives the type each filtered or sorted column was taken as; ``not_compared``, pe
 column, the cells of another type a comparing test never matches, counted with their first
 addresses.
 
+**A dataset** (``d:by_region``; round 10, O5) is queried as a table is, no ``doc``
+needed: its values as it reports them, each with its ``d:`` address
+(``d:by_region/#2/total``), and ``dataset`` says where it came from and whether it is
+stale, as ``xlsx_read`` of it does.
+
 **Content.**  Rows are a result; the summary names the region and counts rows, and errors
 name columns, tests and types: never a filter's value, which may be a cell's.
 """
@@ -28,12 +33,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ooxml_edit.tools import (CORE, Result, ToolError, array, boolean, integer, obj, string,
-                              tool)
+from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, boolean, integer,
+                              obj, string, tool)
 
 from ..address import TableAddress, parse_address
-from ..query import OPS, matches, read_rows, select
-from .docformat import KIND, handler
+from ..query import OPS, dataset_matches, matches, read_rows, select
+from .docformat import handler
 from .read import (_CUT_ROOM, _FIRST, _MARGIN, CURSOR, DOC, READ_ROWS, TEXT_SHOWN, _Annotations,
                    _cursor, _forms, _page, _read_cursor, _sheet, _size, cleaned_count)
 
@@ -58,24 +63,31 @@ SORT = array(obj({"column": string(), "desc": boolean(optional=True)}),
 
 
 @tool("xlsx_query",
-      "Rows of a table or region that meet every filter, sorted, each cell typed with its "
-      "address; total is the count of all matches. A filter on a column of another type "
-      "is refused, naming the type. Paged as xlsx_read.",
-      {"doc": DOC,
-       "table": string("A table or region (t:Products, t:Stock!A1)."),
+      "Rows of a table, region or dataset that meet every filter, sorted, each cell typed "
+      "with its address; total is the count of all matches. A filter on a column of another "
+      "type is refused, naming the type. Paged as xlsx_read.",
+      {"doc": string("Document id; not needed for a dataset (d:).", optional=True),
+       "table": string("A table or region (t:Products, t:Stock!A1) or dataset (d:by_region)."),
        "columns": array(string(), "Columns to give, by name. Default all.", optional=True),
        "where": WHERE,
        "sort": SORT,
        "limit": integer(f"Rows per page. Default 50, at most {READ_ROWS}.", minimum=1,
                         maximum=READ_ROWS, optional=True),
        "cursor": CURSOR},
-      group=CORE, kind=KIND)
+      group=CORE, datasets=("table",))
 @handler
-def xlsx_query(call: Any, doc: str, table: str, columns: list[str] | None = None,
+def xlsx_query(call: Any, table: str, doc: str | None = None, columns: list[str] | None = None,
                where: list[dict] | None = None, sort: list[dict] | None = None,
                limit: int | None = None, cursor: str | None = None) -> Result:
-    """``xlsx_query``'s workbook handler (see the module's notes)."""
-    workbook = call.document
+    """``xlsx_query``'s handler, for a workbook's table or region, or a dataset (see the
+    module's notes)."""
+    from .derive import workbook_of
+
+    where = [{k: v for k, v in item.items() if v is not None} for item in where or ()]
+    sort = [{k: v for k, v in item.items() if v is not None} for item in sort or ()]
+    if isinstance(table, str) and table.startswith(DATASET_PREFIX):
+        return _query_dataset(call, table, columns, where, sort, limit, cursor)
+    workbook = workbook_of(call, doc)
     address = parse_address(table)
     if not isinstance(address, TableAddress) or not address.is_whole:
         raise ToolError("invalid_arguments", "xlsx_query takes a table or region (t:Products); "
@@ -83,8 +95,6 @@ def xlsx_query(call: Any, doc: str, table: str, columns: list[str] | None = None
     region = workbook.region(address)
     label = region.address.text
     names = select(region, columns)
-    where = [{k: v for k, v in item.items() if v is not None} for item in where or ()]
-    sort = [{k: v for k, v in item.items() if v is not None} for item in sort or ()]
     # A cursor belongs to one query: its region (as it is now), columns, filters and sort.
     key = json.dumps([label, region.where, region.columns, names, where, sort],
                      ensure_ascii=False, sort_keys=True)
@@ -141,6 +151,75 @@ def xlsx_query(call: Any, doc: str, table: str, columns: list[str] | None = None
     if cut:
         data["cut"] = cut
     summary = _summary(label, start_row + 1, start_row + len(shown), total, region.rows,
+                       next_cursor is not None)
+    return Result(summary=summary, data=data, total=total, next_cursor=next_cursor)
+
+
+def _query_dataset(call: Any, target: str, columns: list[str] | None, where: list, sort: list,
+                   limit: int | None, cursor: str | None) -> Result:
+    """``xlsx_query`` of a dataset (round 10, O5): its rows as a table's, filtered and
+    sorted as a table's are (:func:`~xlsx_agent.query.dataset_matches`), each value with
+    its ``d:`` address, paged as ``xlsx_read`` pages a dataset; ``dataset`` says where it
+    came from (stale, closed), as there."""
+    from .derive import _NONE, _TEXT, _about, _entry
+
+    entry, address, dataset = _entry(call, target, "table")
+    if address.kind != "dataset":
+        raise ToolError("invalid_arguments", f"xlsx_query takes a whole dataset "
+                        f"({dataset.address.text}); name its columns in columns",
+                        field="table", valid_options=[dataset.address.text])
+    label = dataset.address.text
+    names = select(dataset, columns)
+    offsets = tuple(dataset.column_index(name) for name in names)
+    # A cursor belongs to one query of one definition of the dataset (an id defined again
+    # is another dataset).
+    key = json.dumps([label, entry.defined_at, entry.version, dataset.rows, names, where, sort],
+                     ensure_ascii=False, sort_keys=True, default=str)
+    found = dataset_matches(dataset, where=where, sort=sort)
+    total = len(found.rows)
+    start_row, start_column = _read_cursor(cursor, key, total, len(names), label)
+    rows_limit = min(limit or call.limits.max_list_items, READ_ROWS)
+    chars = call.limits.max_result_chars
+
+    data: dict[str, Any] = {"target": label, "dataset": _about(entry)}
+    names_cut = 0
+    if _size(list(names)) <= chars // 4:
+        data["columns"] = list(names)
+    else:
+        names_cut = len(names)
+    if found.types:
+        data["types"] = found.types
+    if found.not_compared:
+        data["not_compared"] = {n: c.as_dict() for n, c in found.not_compared.items()}
+    data["rows"] = []
+    if not total:
+        return Result(summary=_summary(label, 1, 0, 0, dataset.rows, False), data=data, total=0)
+
+    page = found.rows[start_row:start_row + rows_limit]
+    budget = chars - _MARGIN - _size({**data, "cut": _CUT_ROOM}) \
+        - len(_summary(label, 1, total, total, dataset.rows, True))
+    values = ([dataset.value(position, o) for o in offsets] for position in page)
+    shown, cut_text, stop, full = _page(values, start_row, start_column, budget, _NONE, False,
+                                        _TEXT)
+    if stop is None and start_row + len(page) < total:
+        stop = (start_row + len(page), 0)
+    data["rows"] = shown
+    cut: dict[str, Any] = {}
+    next_cursor = None
+    if stop is not None:
+        cut["rows"] = total - stop[0]
+        if stop[1]:
+            cut["cells"] = len(names) - stop[1]
+        if full:
+            cut["chars"] = True
+        next_cursor = _cursor(key, *stop)
+    if cut_text:
+        cut["text"] = {"count": len(cut_text), "first": cut_text[:_FIRST]}
+    if names_cut:
+        cut["column_names"] = names_cut
+    if cut:
+        data["cut"] = cut
+    summary = _summary(label, start_row + 1, start_row + len(shown), total, dataset.rows,
                        next_cursor is not None)
     return Result(summary=summary, data=data, total=total, next_cursor=next_cursor)
 

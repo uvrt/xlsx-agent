@@ -5,6 +5,12 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **`xlsx_query` takes a dataset** (round 10, O5; ooxml-edit 0.55.0): `table` may be
+  `d:by_region`, no `doc` needed; its rows are filtered and sorted as a table's
+  (`xlsx_agent.query.dataset_matches`) over the values as the dataset reports them, each
+  with its `d:` address, paged as `xlsx_read` pages a dataset, `dataset` saying where it
+  came from. The shared `undo`'s `scope` names a sheet (workbooks) beside a slide (decks).
+  Every definition 4,953 -> 4,971 estimated (guard 4,975); strict set unchanged.
 - **The contract's gaps closed** (lane X, X6; no ooxml-edit change). *Formula keys*: a
   write by key, a new row or an allocation into a table whose key column holds a formula
   in any data row is refused (`formula_key`: declare a key column of values the
