@@ -348,8 +348,9 @@ def test_cleaning_changes_no_tool_definition():
 #: since X10 described xlsx_compare's summary (+41), since T19 said what key_column,
 #: sources and xlsx_derive's sort name (+55), and since L8 renamed xlsx_read's key_column
 #: key and added its columns (+97), and since X3b added xlsx_read's markdown (+97), and
-#: since X5 added xlsx_compare's cells and formula_text and xlsx_read's validations (+356).
-XLSX_CHARS = 10_801
+#: since X5 added xlsx_compare's cells and formula_text and xlsx_read's validations (+356),
+#: and since lane X's X6 named the structure xlsx_compare's cells compares (+49).
+XLSX_CHARS = 10_850
 
 
 def test_a_deck_table_from_a_cleaned_table_warns_in_the_tools_result():

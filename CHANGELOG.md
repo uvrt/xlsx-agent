@@ -5,6 +5,29 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **The contract's gaps closed** (lane X, X6; no ooxml-edit change). *Formula keys*: a
+  write by key, a new row or an allocation into a table whose key column holds a formula
+  in any data row is refused (`formula_key`: declare a key column of values the
+  application supplies); `compare` still pairs such rows by cached keys and says
+  `formula_key` on the table (and in `xlsx_compare`). *Explicit allocation*:
+  `set_cells(..., allocate={"t:stock/Lamp": 15})` names the free capacity row each new key
+  starts in; refused before any change, as `allocate[n]`: `no_capacity`, `capacity_full`,
+  `not_capacity`, `data_row`, `not_free` (a formula returning `""` too), `allocated_twice`,
+  `existing_key`, `capacity_gap` (the rows allocated continue the data rows, with the next
+  free row named). `new_rows=True` (the next free row) stays a Python convenience, refused
+  under a policy whose table entry lacks `new_rows` (`not_allocated`). `xlsx_set_cells`:
+  each cell's `row` allocates; `new_rows` is gone from the tool. *Structure in the
+  integrity compare*: `cells=True` also lists, apart from the cells
+  (`CellsDiff.structure`, `StructureChange`, `STRUCTURE_KINDS`), defined names, data
+  validations (standard and `x14` as one), merged areas and conditional formats added,
+  removed or changed, by name or `sqref` and rule, formulas normalised; bounded (counts,
+  first 50); formulas only with `formula_text`; every one outside a write policy
+  (`outside`'s `structure`) and counted in `Diff.totals`. The sheet reader keeps conditional
+  formats (`SheetReader.conditional_formats`) and the key index the key cells holding
+  formulas (`KeyIndex.formulas`). Definitions: `xlsx_set_cells` 533 -> 529, `xlsx_compare`
+  395 -> 409; the core 4,198 -> 4,212 (about 6,234 counted by the proxy); every definition
+  4,942 -> 4,953 (the guard 4,950 -> 4,960); the strict tool's complexity unchanged (13
+  optional parameters, 8 free strings).
 - **Formula-aware integrity compare** (lane X, X5; no ooxml-edit change).
   `Workbook.compare(a, b, cells=True)` compares every cell of the sheets both workbooks
   have by address (`Diff.cells`, `xlsx_agent.integrity`, `CellsDiff`, `CellEdit`):
