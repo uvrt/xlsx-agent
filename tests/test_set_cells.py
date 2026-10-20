@@ -548,3 +548,22 @@ def test_xlsx_set_cells_refuses_a_column_withheld_from_the_model(box):
     assert refused.error.code == "refused" and refused.error.details["code"] == "withheld"
     assert box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "cells": [
         {"address": "Stock!D10", "number": 1}]}).ok
+
+
+def test_a_workbook_without_cell_formats_takes_no_date():
+    import re
+
+    parts = _parts(Shop().to_bytes())
+    del parts["xl/styles.xml"]
+    rels = parts["xl/_rels/workbook.xml.rels"].decode()
+    parts["xl/_rels/workbook.xml.rels"] = re.sub(r'<Relationship Id="rId4"[^>]*/>', "",
+                                                 rels).encode()
+    for part in ("xl/worksheets/sheet1.xml", "xl/worksheets/sheet3.xml"):
+        parts[part] = re.sub(rb' s="[0-9]+"', b"", parts[part])
+    wb = Workbook.open(_zip(parts))
+    assert wb.editor.cells.styles is None
+    assert _refused(wb, {"Stock!H10": dt.date(2026, 1, 1)}).code == "date_format"
+    assert _refused(wb, {"Stock!H10": {"date": "2026-01-01", "format": "yyyy-mm-dd"}}).code \
+        == "date_format"
+    wb.set_cells({"Stock!D10": 3})
+    assert wb.cell("Stock!D10").v == 3

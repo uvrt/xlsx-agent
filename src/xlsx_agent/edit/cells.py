@@ -418,6 +418,10 @@ def _dated(workbook: Any, facts: _SheetFacts, label: str, sheet: Any, cell: Cell
     style = facts.writer.style(cell, inherited=True)
     own = facts.writer.style(cell)
     if date_format is not None:
+        if workbook.editor.cells.styles is None:
+            refusals.add("date_format", label, "the workbook has no cell formats to give it "
+                         "one: write the date as text")
+            return None
         return Planned(label, sheet, cell, day, "date", old, format=date_format)
     shows = _shows_day(workbook, style)
     if shows is not True:
