@@ -567,3 +567,19 @@ def test_a_workbook_without_cell_formats_takes_no_date():
         == "date_format"
     wb.set_cells({"Stock!D10": 3})
     assert wb.cell("Stock!D10").v == 3
+
+
+def test_a_change_says_which_sheets_it_changed_for_the_application(box):
+    # Round 13, R2: ooxml-edit's Result.touched, by sheet; never in what the model reads.
+    session = _session(box)
+    result = box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "cells": [
+        {"address": "Stock!D15", "number": 3}, {"address": "Stock!B15", "text": "new"}]})
+    assert result.ok, result.to_json()
+    sheets = [entry for entry in result.touched if "sheet" in entry]
+    assert sheets == [{"doc": "d1", "sheet": "Stock"}]
+    assert all(set(entry) == {"doc", "part"} for entry in result.touched if entry not in sheets)
+    assert "touched" not in result.to_json()
+    undone = box.dispatch(session, "undo", {"doc": "d1"})
+    assert undone.touched == result.touched
+    read = box.dispatch(session, "xlsx_read", {"doc": "d1", "target": "Stock!B15"})
+    assert read.touched == []

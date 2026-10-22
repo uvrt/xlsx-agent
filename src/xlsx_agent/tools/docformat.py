@@ -439,7 +439,45 @@ def workbook_format(*, grouping: bool = True, local_dates: bool = False,
         problem_key=problem_key, warnings=(KindMismatchWarning, CleanedWarning), prompt=PROMPT,
         errors=dict(ERRORS), summary=summary, strict_first=STRICT_FIRST,
         datasets={"t:": resolve_table}, merge_sources=merge_sources, tool_hints=TOOL_HINTS,
-        undo_scope=undo_scope, undo_shared=undo_shared, restored=_restored)
+        undo_scope=undo_scope, undo_shared=undo_shared, restored=_restored,
+        touched=touched)
+
+
+def touched(workbook: Workbook, change: Any) -> list[dict[str, Any]]:
+    """What a call changed (``DocumentFormat.touched``; ooxml-edit's ``Result.touched``, for
+    the application, never the model): ``{"sheet": name}`` for each sheet whose part --
+    or a part it draws from, a chart or a drawing, found through the relationships --
+    changed, in the workbook's order; ``{"part": name}`` for every other part (the
+    workbook part, shared strings, styles), as ooxml-edit's default.  Cells are not
+    listed: comparing a changed sheet's cells would read the whole sheet twice."""
+    package = workbook.package
+    names = {sheet.part: sheet.name for sheet in workbook._every_sheet if sheet.part}
+    sheets: dict[str, None] = {}
+    parts: dict[str, None] = {}
+
+    def owner_sheets(part: str, seen: set[str]) -> list[str]:
+        if part in names:
+            return [names[part]]
+        if part in seen:
+            return []
+        seen.add(part)
+        found: list[str] = []
+        for owner, _ in package.relationship_sources(part):
+            if owner and owner != package.main_document_part():
+                found += owner_sheets(owner, seen)
+        return found
+
+    for part in sorted(change.parts):
+        if part.endswith(".rels"):
+            directory, name = part.rsplit("/", 1) if "/" in part else ("", part)
+            part = f"{directory.rsplit('_rels', 1)[0]}{name[:-5]}".lstrip("/")
+        found = owner_sheets(part, set()) if part else []
+        if found:
+            sheets.update(dict.fromkeys(found))
+        elif part and part != "[Content_Types].xml":
+            parts[part] = None
+    order = [name for name in names.values() if name in sheets]
+    return [{"sheet": name} for name in order] + [{"part": part} for part in parts]
 
 
 def _restored(workbook: Workbook) -> None:
