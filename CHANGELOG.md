@@ -5,6 +5,14 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **What a call changed, by sheet** (round 13, R2; ooxml-edit 0.57.0): every tool result's
+  `touched` (for the application, never in what the model reads) names `{"sheet": name}`
+  for each sheet whose part, or a chart or drawing it relates to, changed -- in the
+  workbook's order, undo and redo included -- and `{"part": name}` for the rest (the
+  workbook part, shared strings, styles, the calculation chain), from the bytes that
+  changed (the format's `touched`). Cells are not listed: finding them would compare every
+  changed sheet's cells, reading both versions of the sheet. No token change.
+
 - **`xlsx_query` takes a dataset** (round 10, O5; ooxml-edit 0.55.0): `table` may be
   `d:by_region`, no `doc` needed; its rows are filtered and sorted as a table's
   (`xlsx_agent.query.dataset_matches`) over the values as the dataset reports them, each
