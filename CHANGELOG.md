@@ -5,6 +5,14 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **The shared `save_document` takes `clean`** (ooxml-edit 0.60.0, round 16, F11): what
+  Word keeps but never draws taken out of a document's file. A workbook's handler takes
+  none, so ooxml-edit refuses `clean: true` for a workbook (`invalid_arguments`, `field:
+  "clean"`); no code change here. Workbooks have no rsids or web divisions; orphaned parts
+  they can carry (`OpcPackage.drop_orphans`) are not taken out yet. Core 4,230 -> 4,272
+  estimated (about 6,323 counted, under 6,500); every definition 4,971 -> 5,013 (guard
+  4,975 -> 5,015); strict set's members unchanged.
+
 - **What a call changed, by sheet** (round 13, R2; ooxml-edit 0.57.0): every tool result's
   `touched` (for the application, never in what the model reads) names `{"sheet": name}`
   for each sheet whose part, or a chart or drawing it relates to, changed -- in the
