@@ -67,6 +67,12 @@ Round 10, item 4 (ooxml-edit 0.55.0): ``xlsx_query`` takes a dataset (O5: ``doc`
 names a sheet as well as a slide, 158 -> 159: the core 4,212 -> 4,230 estimated, about
 6,234 -> 6,261 counted by the proxy, under 6,500; every definition 4,953 -> 4,971, the
 guard 4,960 -> 4,975.  The strict set is unchanged: neither tool is strict.
+Round 16, F11 (ooxml-edit 0.60.0): the shared ``save_document``'s ``clean`` (documents:
+what Word never draws taken out of the file saved; a workbook's handler takes none, so
+ooxml-edit refuses ``clean: true`` for it), +42: the core 4,230 -> 4,272 estimated, about
+6,261 -> 6,323 counted by the proxy, under 6,500; every definition 4,971 -> 5,013, the
+guard 4,975 -> 5,015.  The strict set's members are unchanged: save_document is strict on
+OpenAI only, where ``clean`` is one more nullable boolean.
 """
 
 from __future__ import annotations
@@ -85,7 +91,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
-ALL_GUARD = 4975
+ALL_GUARD = 5015
 
 
 @pytest.fixture(scope="module")
