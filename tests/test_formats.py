@@ -7,8 +7,9 @@ import pytest
 
 from build import WorkbookBuilder, zip_parts
 from xlsx_agent import Locale, Workbook
-from xlsx_agent.read.styles import (BUILTIN_FORMATS, LANGUAGE_FORMATS, builtin_format,
-                                    classify_format)
+from ooxml_common.numfmt import DATE_KINDS, MEASURED
+from xlsx_agent.read.styles import (BUILTIN_FORMATS, LANGUAGE_FORMATS, NumberFormat,
+                                    builtin_format, classify_format)
 
 # What each id of §18.8.30's all-languages table is, read from its code by hand.
 ALL_LANGUAGES = {

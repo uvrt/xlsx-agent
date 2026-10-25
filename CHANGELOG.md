@@ -5,6 +5,22 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## 0.1.2 (2026-10-25) -- one reading of a number format code
+
+- **Format codes read as the libraries read them** (review, S1): `read.styles.classify_format`
+  is now `ooxml_common.numfmt.classify` (same `(kind, elapsed, lcid)`); its own tokenizer is
+  gone. The shared reading is held to Excel's answers, measured in Excel for Mac 16.106
+  (`numfmt.MEASURED`, 108 codes), and `tests/test_formats.py` runs that table through
+  `classify_format`. What changes: a first section with `[$-F800]`/`[$-x-sysdate]` is a
+  date and one with `[$-F400]`/`[$-x-systime]` a time (Excel shows the system's long date
+  and time there: `[$-x-sysdate]` alone was a number), and `上午/下午` alone is a time;
+  every other code Excel opens classifies as before. `set_cells` asks the same reading whether a cell's
+  format, or the `format` a date is given, shows a day, instead of ooxml-edit's
+  `dates.is_date_code` as well: a Thai or era date code (`[$-th-TH]ว/ด/ปปปป`, `ggge`) is
+  accepted, as Excel shows a date in it, and a refused cell format whose code shows no day
+  says "give one" (`0;[Red]d` said the format was not known in the workbook's language).
+- The ooxml-common floor is raised from 0.15.0 to 0.29.0, the first with `numfmt`.
+
 ## 0.1.1 (2026-10-25) -- production feedback and 0.2's edit foundation
 
 What came after 0.1.0: production feedback and 0.2's edit foundation (E1, E3). 0.2 stays
@@ -542,9 +558,10 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   addresses are built on). 0.54.0 carries `ooxml_edit.markdown` and `sheets.RichText`,
   the Markdown cells (X3b); 0.57.0 the format's `touched` hook, by which a result names
   the sheets a call changed (round 13, R2) -- the floor.
-- `ooxml-common>=0.15.0`: standard library only, named for what is imported from it
+- `ooxml-common>=0.29.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
-  widths, and from 0.15.0 the shared locale (`locales.Locale`), the reader's locale.
+  widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, and from
+  0.29.0 the shared reading of a number format code (`numfmt`) -- the floor.
 - `lxml>=4.9`: the XML tree every part is read and written in.
 - `pptx-agent` and `pptx2svg>=0.2.0` (`test` extra only): a deck filled from a workbook's
   table in one session (`tests/test_sources_deck.py`); 0.2.0 is pptx2svg's first tagged
