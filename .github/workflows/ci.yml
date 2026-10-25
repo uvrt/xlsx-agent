@@ -44,7 +44,6 @@ jobs:
           python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@main"
           python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@main"
           # Test only: a deck filled from a workbook's table (tests/test_sources_deck.py).
-          # point this line back at @main then.
           python -m pip install "pptx2svg @ git+https://github.com/uvrt/pptx2svg@main"
           python -m pip install "pptx-agent @ git+https://github.com/uvrt/pptx-agent@main"
           python -m pip install -e .[test]
