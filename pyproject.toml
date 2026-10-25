@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xlsx-agent"
-version = "0.1.0"
+version = "0.1.1"
 description = "Workbooks as a source an agent can describe, query and derive from, every figure traceable to its cells"
 readme = "README.md"
 license = { text = "MIT" }
@@ -24,34 +24,14 @@ classifiers = [
   "Topic :: Office/Business :: Financial :: Spreadsheet",
   "Topic :: Text Processing :: Markup :: XML",
 ]
-# lxml, ooxml-edit and ooxml-common, and nothing else at runtime (ROADMAP.md, "Decisions
-# already made", 6).  ooxml-edit is the format-neutral editing core the siblings share: the
-# OPC package (parts as their original bytes, content types, relationships), the safe parser,
-# the history and the tool layer as pptx-agent and docx-agent use it -- from 0.18.0 with
-# workbooks a kind of the shared tools (O1), which xlsx_agent.tools needs, and from 0.19.0
-# the session's locale (Toolbox(locale=...)), which the xlsx format reads workbooks in, and
-# from 0.20.0 the session's datasets (d:<id>, O2), which xlsx_derive keeps; its sheets
-# (charts.workbook before 0.51.0) carries the cell and area types xlsx-agent's addresses
-# build on; from
-# 0.22.0 the sources resolver hook (O3: DocumentFormat.datasets and merge_sources), by which
-# a deck or document tool takes a workbook's table as its rows (from: "t:Products").
-# ooxml-common (standard library only) is named for what xlsx-agent imports from it
-# directly: the package kinds (ooxml_common.kinds: xlsx, xlsm, xltx, xltm), and from 0.14.0
-# the themes and measured text widths the later edit and render milestones need, and from
-# 0.15.0 the shared locale (ooxml_common.locales.Locale), the reader's locale.  Neither is
-# on PyPI yet: install them first from sibling checkouts (`pip install -e ../ooxml-common
-# -e ../ooxml-edit`) or from GitHub.
-# ooxml-edit 0.47.0: DocumentFormat.tool_hints, which TOOL_HINTS fills (round 9, N5).
-# ooxml-edit 0.51.0: ooxml_edit.sheets (O4), the lossless cell writer 0.2's edits are built
-# on and where Cell, Area and the grid's limits are imported from (charts.workbook before).
-# ooxml-edit 0.54.0: ooxml_edit.markdown and sheets.RichText, the Markdown cells (X3b).
-dependencies = ["lxml>=4.9", "ooxml-edit>=0.54.0", "ooxml-common>=0.15.0"]
+# lxml, ooxml-edit and ooxml-common, and nothing else at runtime; why each, and why at its
+# version: CHANGELOG.md, "Dependencies".
+dependencies = ["lxml>=4.9", "ooxml-edit>=0.57.0", "ooxml-common>=0.15.0"]
 
 [project.optional-dependencies]
 # pptx-agent (and pptx2svg, which its layout checks measure text with) for the tests only:
-# a deck filled from a workbook's table in one session (tests/test_sources_deck.py).  Neither
-# is on PyPI yet: CI installs them from their repositories first, as it does the siblings.
-test = ["pytest>=7", "pptx-agent", "pptx2svg>=0.1"]
+# a deck filled from a workbook's table in one session (tests/test_sources_deck.py).
+test = ["pytest>=7", "pptx-agent", "pptx2svg>=0.2.0"]
 
 [project.urls]
 Repository = "https://github.com/uvrt/xlsx-agent"
