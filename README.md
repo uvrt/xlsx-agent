@@ -6,7 +6,7 @@ third library beside `pptx-agent` and `docx-agent`, on `ooxml-edit` and `ooxml-c
 
 ## Status
 
-**0.1.0: read and derive** (milestones R0-R14 of [ROADMAP.md](ROADMAP.md)). A workbook is
+**0.1.1** (0.1.0: read and derive, milestones R0-R14 of [ROADMAP.md](ROADMAP.md)). A workbook is
 opened, catalogued, read, queried, profiled and searched by address; figures are derived
 here, each with its source cells, and kept as datasets (`d:<id>`); two workbooks are
 compared by key, and a workbook is checked against a declared schema. Since 0.1.0: the

@@ -44,7 +44,9 @@ jobs:
           python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@main"
           python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@main"
           # Test only: a deck filled from a workbook's table (tests/test_sources_deck.py).
-          python -m pip install "pptx2svg @ git+https://github.com/uvrt/pptx2svg@main"
+          # TEMPORARY (n3): pptx2svg 0.2.0 is on its versions-n3 branch until it is merged;
+          # point this line back at @main then.
+          python -m pip install "pptx2svg @ git+https://github.com/uvrt/pptx2svg@versions-n3"
           python -m pip install "pptx-agent @ git+https://github.com/uvrt/pptx-agent@main"
           python -m pip install -e .[test]
 
@@ -63,6 +65,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # pyproject.toml's version, and __version__, must be the one CHANGELOG.md's top
+      # version section names: the tag workflow tags that version when it reaches main.
+      - name: The version agrees with CHANGELOG.md
+        run: python tools/check_version.py
       - name: Build distributions
         run: |
           python -m pip install --upgrade pip build twine
