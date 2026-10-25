@@ -5,6 +5,10 @@ has the detail of every milestone.
 
 ## Unreleased
 
+- **CI runs nightly** (03:27 UTC) and on demand, so a sibling's change that breaks this
+  suite shows the next morning; ooxml-edit's own CI now runs this suite on its pull
+  requests too. No code change.
+
 - **The shared `save_document` takes `clean`** (ooxml-edit 0.60.0, round 16, F11): what
   Word keeps but never draws taken out of a document's file. A workbook's handler takes
   none, so ooxml-edit refuses `clean: true` for a workbook (`invalid_arguments`, `field:
