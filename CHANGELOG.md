@@ -15,7 +15,11 @@ the version that edits (ROADMAP.md).
   version. Each version that reaches `main` is tagged by the new tag workflow, and CI's
   `build` job checks that `pyproject.toml`'s version is the one this file's top version
   section names (`tools/check_version.py`). The dependency notes moved from
-  `pyproject.toml` to [Dependencies](#dependencies) below. No code change.
+  `pyproject.toml` to [Dependencies](#dependencies) below. The ooxml-edit floor is raised
+  from 0.54.0 to 0.57.0, the first whose `DocumentFormat` takes the `touched` hook the
+  workbook format passes (round 13, R2): with 0.56.0 the tools fail to build. Checked by
+  running this suite against each: 0.57.0 passes, 0.56.0 does not; ooxml-common 0.15.0
+  passes, so its floor stays. No code change.
 
 - **CI runs nightly** (03:27 UTC) and on demand, so a sibling's change that breaks this
   suite shows the next morning; ooxml-edit's own CI now runs this suite on its pull
@@ -469,7 +473,7 @@ the version that edits (ROADMAP.md).
 - **Text lengths** (X5): `xlsx_profile` gives median and max words beside characters and
   the address of the longest text; the `words_gt` filter finds text over a word limit.
 
-Requires Python 3.11-3.15, lxml, ooxml-edit 0.54.0 and ooxml-common 0.15.0 (neither on
+Requires Python 3.11-3.15, lxml, ooxml-edit 0.57.0 and ooxml-common 0.15.0 (neither on
 PyPI yet: install them from source first).
 
 ## 0.1.0 (2026-10-13) -- read and derive
@@ -531,12 +535,13 @@ each earlier version added is in that package's CHANGELOG. `pyproject.toml`'s ve
 the one this file's top version section names, and `xlsx_agent.__version__` the same
 (`tools/check_version.py`, run by CI's `build` job).
 
-- `ooxml-edit>=0.54.0`: the format-neutral editing core the siblings share (the OPC
+- `ooxml-edit>=0.57.0`: the format-neutral editing core the siblings share (the OPC
   package with parts as their original bytes, the safe parser, the history, the tool
   layer with workbooks a kind of the shared tools, the session's locale and datasets, the
   sources resolver hook, and `ooxml_edit.sheets`, the lossless cell writer the edits and
   addresses are built on). 0.54.0 carries `ooxml_edit.markdown` and `sheets.RichText`,
-  the Markdown cells (X3b).
+  the Markdown cells (X3b); 0.57.0 the format's `touched` hook, by which a result names
+  the sheets a call changed (round 13, R2) -- the floor.
 - `ooxml-common>=0.15.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
   widths, and from 0.15.0 the shared locale (`locales.Locale`), the reader's locale.
