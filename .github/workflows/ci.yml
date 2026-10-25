@@ -4,6 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  # Nightly, so a sibling's change that breaks this repository shows the next morning
+  # rather than at the next push here.  The seven repositories' crons are staggered,
+  # libraries first: ooxml-common 02:07, ooxml-edit 02:17, pptx2svg 02:37, docx2svg 02:47,
+  # pptx-agent 03:07, docx-agent 03:17, xlsx-agent 03:27 (UTC).  The whole matrix, as a
+  # push runs it.
+  schedule:
+    - cron: "27 3 * * *"
 
 jobs:
   test:
