@@ -158,6 +158,12 @@ def test_a_date_into_a_cell_that_shows_no_date_is_refused_unless_a_format_is_giv
         == "date_format"
     assert _refused(wb, {"Stock!H17": {"date": "2026-01-02", "format": "h:mm"}}).code \
         == "date_format"
+    # Read as Excel shows them (ooxml_common.numfmt): a Thai date is a date, and a code
+    # whose first section is a number is not, whatever its negative section shows.
+    assert _refused(wb, {"Stock!H17": {"date": "2026-01-02", "format": "0;[Red]d"}}).code \
+        == "date_format"
+    wb.set_cells({"Stock!H18": {"date": "2026-01-04", "format": "[$-th-TH]ว/ด/ปปปป"}})
+    assert wb.cell("Stock!H18").v == "2026-01-04" and wb.cell("Stock!H18").t == "date"
 
 
 def test_a_new_cell_takes_its_column_s_format_as_one_typed_there():

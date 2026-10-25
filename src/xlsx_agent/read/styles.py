@@ -25,10 +25,12 @@ An Excel probe in E1 confirms the list on Excel itself (ROADMAP.md, "Values and 
 and a difference wins over the standard.
 
 A format code is classified by its tokens (:func:`classify_format`), as §18.8.31
-(``numFmts``) describes them: date and time tokens outside quotes, escapes and brackets
-(``[h]``, ``[mm]``, ``[ss]`` being elapsed time), ``m`` read as minutes right after an hour
-or right before a second, ``%`` outside the same; ``General``, ``@``.  Only the first
-section (before any ``;``) decides: it is the one a positive number is shown with.  No
+(``numFmts``) describes them, with :mod:`ooxml_common.numfmt`, the one reading of a code
+the libraries share, measured in Excel: date and time tokens outside quotes, escapes and
+brackets (``[h]``, ``[mm]``, ``[ss]`` being elapsed time), ``m`` read as minutes right
+after an hour or right before a second, ``%`` outside the same; ``General``, ``@``.  Only
+the first section decides: it is the one a positive number is shown with (measured, Excel
+for Mac 16.106: ``0;[Red]d`` shows a positive serial as a number).  No
 display string is made from a code (ROADMAP.md: none before 0.3).
 """
 
@@ -36,6 +38,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ooxml_common import numfmt as _numfmt
 from ooxml_edit.xml import Element
 
 #: ECMA-376 Part 1, §18.8.30: the built-in number formats, "All Languages".
@@ -122,12 +125,6 @@ KINDS = ("general", "number", "percent", "date", "time", "datetime", "text", "un
 #: The kinds whose numbers are read as dates and times.
 DATE_KINDS = ("date", "time", "datetime")
 
-# Date and time letters of the th-th table (§18.8.30), read as its parallels in the
-# all-languages table show them: ว day, ด month, ป year; ช hour, น minute, ท second.
-_THAI_DATE = frozenset("วดป")
-_THAI_TIME = frozenset("ชนท")
-
-
 @dataclass(frozen=True)
 class NumberFormat:
     """A number format as a cell's style gives it.
@@ -157,116 +154,14 @@ def classify_format(code: str) -> tuple[str, bool, int | None]:
     """``(kind, elapsed, lcid)`` for a format code: ``kind`` is ``"general"``,
     ``"number"``, ``"percent"``, ``"date"``, ``"time"``, ``"datetime"`` or ``"text"``.
 
-    The first section decides (the one a positive number is shown with).  Outside quoted
-    text, ``\\`` escapes, ``_``/``*`` and the character after them, and brackets: ``y``,
-    ``d``, ``e``, ``g``, ``b`` (and the Thai ``ว ด ป``) are dates; ``h``, ``s``, ``AM/PM``,
-    ``A/P`` (and ``ช น ท``) are times; ``m`` is minutes right after an hour or right before
-    a second, else a month.  ``[h]``, ``[mm]``, ``[ss]`` are elapsed time; ``[$-409]``
-    gives ``lcid``; any other bracket (a colour, a condition) is passed over.  ``E+`` and
-    ``E-`` are an exponent, not a year."""
-    tokens: list[str] = []
-    percent = general = at = digits = elapsed = False
-    lcid = None
-    i, n = 0, len(code)
-    while i < n:
-        ch = code[i]
-        if ch == ";":
-            break
-        if ch == '"':
-            end = code.find('"', i + 1)
-            i = n if end < 0 else end + 1
-            continue
-        if ch in "\\_*":
-            i += 2
-            continue
-        if ch == "[":
-            end = code.find("]", i + 1)
-            inner = code[i + 1:] if end < 0 else code[i + 1:end]
-            i = n if end < 0 else end + 1
-            low = inner.lower()
-            if low and set(low) <= {"h"}:
-                tokens.append("h")
-                elapsed = True
-            elif low and set(low) <= {"m"}:
-                tokens.append("minute")
-                elapsed = True
-            elif low and set(low) <= {"s"}:
-                tokens.append("s")
-                elapsed = True
-            elif inner and set(inner) <= _THAI_TIME and len(set(inner)) == 1:
-                tokens.append({"ช": "h", "น": "minute", "ท": "s"}[inner[0]])
-                elapsed = True
-            elif inner.startswith("$") and "-" in inner:
-                try:
-                    lcid = int(inner.rpartition("-")[2], 16)
-                except ValueError:
-                    pass
-            continue
-        low = ch.lower()
-        if code[i:i + 7].lower() == "general":
-            general = True
-            i += 7
-            continue
-        if code[i:i + 5].upper() == "AM/PM":
-            tokens.append("ampm")
-            i += 5
-            continue
-        if code[i:i + 3].upper() == "A/P":
-            tokens.append("ampm")
-            i += 3
-            continue
-        if low == "e" and i + 1 < n and code[i + 1] in "+-":
-            digits = True
-            i += 2
-            continue
-        if low in "ydhsegbm" or ch in _THAI_DATE or ch in _THAI_TIME:
-            j = i
-            while j < n and code[j] == ch:
-                j += 1
-            if low == "m":
-                tokens.append("m")
-            elif low in "ydegb" or ch in _THAI_DATE:
-                tokens.append("date")
-            elif ch == "น":
-                tokens.append("minute")
-            else:
-                tokens.append("h" if low == "h" or ch == "ช" else "s")
-            i = j
-            continue
-        if ch == "%":
-            percent = True
-        elif ch == "@":
-            at = True
-        elif ch in "0#?":
-            digits = True
-        i += 1
-
-    has_date = has_time = False
-    for k, token in enumerate(tokens):
-        if token == "m":
-            before = tokens[k - 1] if k else None
-            after = tokens[k + 1] if k + 1 < len(tokens) else None
-            if before == "h" or after == "s":
-                has_time = True
-            else:
-                has_date = True
-        elif token == "date":
-            has_date = True
-        else:
-            has_time = True
-    if has_date and has_time:
-        return "datetime", elapsed, lcid
-    if has_date:
-        return "date", False, lcid
-    if has_time:
-        return "time", elapsed, lcid
-    if percent:
-        return "percent", False, lcid
-    if at and not digits:
-        return "text", False, lcid
-    if general and not digits:
-        return "general", False, lcid
-    return "number", False, lcid
+    The code's first section decides (the one a positive number is shown with), read by
+    :func:`ooxml_common.numfmt.classify`, the reading the libraries share and hold to
+    Excel's answers (``numfmt.MEASURED``): ``y``, ``d``, ``e``, ``g``, ``b`` (and the
+    Thai ``ว ด ป``) are dates; ``h``, ``s``, ``AM/PM``, ``A/P`` (and ``ช น ท``) are
+    times; ``m`` is minutes right after an hour or right before a second, else a month;
+    ``[h]``, ``[mm]``, ``[ss]`` are elapsed time; ``[$-409]`` gives ``lcid``."""
+    found = _numfmt.classify(code)
+    return found.kind, found.elapsed, found.lcid
 
 
 def builtin_format(number_format_id: int, language: str | None = None) -> NumberFormat:

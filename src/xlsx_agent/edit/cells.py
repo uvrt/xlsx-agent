@@ -33,8 +33,9 @@ time zone is never dropped silently); a naive one is taken as its date when its 
 midnight, and refused otherwise: times and durations come later.  A ``time`` and a
 ``timedelta`` are refused.  The cell must show a date: its number format (its own, or for a
 new cell the one its row or column gives it) is one whose code shows a day
-(:meth:`ooxml_edit.sheets.Styles.is_date`, and xlsx-agent's reading of the
-language-dependent built-in ids in the workbook's locale, :mod:`xlsx_agent.read.styles`);
+(xlsx-agent's reading, :mod:`xlsx_agent.read.styles`: its code read by
+:func:`ooxml_common.numfmt.classify`, or a language-dependent built-in id read in the
+workbook's locale);
 a format that shows only a time, or none that shows a day, is refused naming the cell,
 unless the call gives one: ``{"date": "2026-10-20", "format": "yyyy-mm-dd"}`` (a code that
 shows a day), which the cell is given, reusing an identical format.
@@ -114,7 +115,6 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping
 
 from ooxml_common.locales import DATE_ORDERS
-from ooxml_edit.dates import is_date_code
 from ooxml_edit.markdown import plain
 from ooxml_edit.sheets import MAX_TEXT, Area, Cell, Formula, RichText
 
@@ -825,20 +825,21 @@ def _shows_day(workbook: Any, style: int) -> "bool | str":
     styles = workbook.editor.cells.styles
     if styles is None:
         return f"the workbook has no cell formats; give one: {_GIVE}"
-    if styles.is_date(style) is False:
-        return f"give one: {_GIVE}"
-    kind = workbook.styles.format(style).kind
-    if kind in ("date", "datetime"):
+    found = workbook.styles.format(style)
+    if found.kind in ("date", "datetime"):
         return True
-    if kind == "time":
+    if found.kind == "time":
         return f"it shows only a time; give a date format: {_GIVE}"
-    return f"it is not known to show one in the workbook's language; give one: {_GIVE}"
+    if found.builtin and styles.is_date(style) is None:
+        # A built-in id whose code depends on the application's language.
+        return f"it is not known to show one in the workbook's language; give one: {_GIVE}"
+    return f"give one: {_GIVE}"
 
 
 def _format_problem(code: Any) -> str | None:
     if not isinstance(code, str) or not code.strip():
         return "a format is a number format code, as yyyy-mm-dd"
-    if not is_date_code(code) or classify_format(code)[0] not in ("date", "datetime"):
+    if classify_format(code)[0] not in ("date", "datetime"):
         return "the format given does not show a day"
     return None
 
