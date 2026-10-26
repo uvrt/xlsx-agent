@@ -165,7 +165,9 @@ class _Scan:
             if last is not None and (last.row is None) == (first.row is None) \
                     and (last.column is None) == (first.column is None):
                 self.out.append(Reference("cells", sheets, first, last))
+                assert other is not None   # last was read from it
                 return _spill(self, other.end())
+
         if first is not None and first.row is not None and first.column is not None:
             if j < n and text[j] == "#":
                 self.out.append(Reference("cells", sheets, first, Bound(None, None)))

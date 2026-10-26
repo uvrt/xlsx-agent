@@ -130,7 +130,7 @@ def test_each_kind_by_address():
                 f'<c r="D{FIRST_INPUT}" s="5"><v>121</v></c>'),
                (f'<c r="E{FIRST_INPUT + 1}" s="3"><v>2.5</v></c>',      # literal_to_formula
                 f'<c r="E{FIRST_INPUT + 1}" s="3"><f>2+0.5</f><v>2.5</v></c>'),
-               (f'<c r="B4" s="5"/>', '<c r="B4" s="5"><f>A4</f></c>')],  # formula_added
+               ('<c r="B4" s="5"/>', '<c r="B4" s="5"><f>A4</f></c>')],  # formula_added
         totals=[('<f>COUNTIF(Stock!G10:G14,FALSE)</f><v>2</v>', ''),      # formula_removed
                 ('<f>INDEX(TaxRates,2)</f><v>0.21</v>',                    # cache_changed
                  '<f>index( TaxRates , 2 )</f><v>0.2</v>')])

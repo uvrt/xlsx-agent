@@ -54,7 +54,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 from fractions import Fraction
-from typing import Any
+from typing import Any, cast
 
 from ooxml_common.locales import DATE_ORDERS, EN_US
 
@@ -227,7 +227,8 @@ class Value:
     def as_dict(self) -> dict:
         """``{"a": ..., "v": ..., "t": ...}`` and whichever of the rest are set (a list's
         ``v`` as a list)."""
-        out = {"a": self.a, "v": list(self.v) if self.t == "list" else self.v, "t": self.t}
+        out = {"a": self.a, "v": list(cast("list[str]", self.v)) if self.t == "list" else self.v,
+               "t": self.t}
         if self.formula:
             out["formula"] = True
         for name in ("cache", "issue", "serial", "format", "shared_from", "array"):
@@ -415,7 +416,9 @@ def text_date(text: str, locale: Any = EN_US, *, local_dates: bool = False) -> s
     if _ISO_DATE.fullmatch(stripped):
         return stripped.replace(" ", "T", 1)
     match = _LOCAL_DATE.fullmatch(stripped)
-    parts = dict(zip(locale.date_order, (match.group(1), match.group(3), match.group(4))))
+    assert match is not None   # looks_like_date matched it
+    parts = dict(
+zip(locale.date_order, (match.group(1), match.group(3), match.group(4))))
     if len(parts["y"]) != 4:
         return None
     return f"{parts['y']}-{int(parts['m']):02d}-{int(parts['d']):02d}"

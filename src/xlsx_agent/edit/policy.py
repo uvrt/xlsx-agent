@@ -264,6 +264,7 @@ def _areas(workbook: "Workbook", policy: WritePolicy) -> dict[str, list[Area]]:
     out: dict[str, list[Area]] = {}
     for n, text in enumerate(policy.cells):
         address = parse_address(text)
+        assert isinstance(address, RangeAddress)   # as_policy took only ranges
         try:
             sheet = workbook.sheet_of(address)
         except (NameNotFound, KeyError, ValueError):
@@ -289,10 +290,10 @@ def _areas(workbook: "Workbook", policy: WritePolicy) -> dict[str, list[Area]]:
                                   f"{column!r}", valid_options=list(region.columns)) from None
         data = region.data
         for index in own:
-            column = region.area.first.column + index
+            at = region.area.first.column + index
             if data is not None:
-                for sheet_name, area in _located(region, Area(Cell(data.first.row, column),
-                                                              Cell(data.last.row, column))):
+                for sheet_name, area in _located(region, Area(Cell(data.first.row, at),
+                                                              Cell(data.last.row, at))):
                     out.setdefault(_part(workbook, sheet_name), []).append(area)
         if entry.new_rows:
             room = capacity_rows(region)
@@ -305,10 +306,10 @@ def _areas(workbook: "Workbook", policy: WritePolicy) -> dict[str, list[Area]]:
             wanted = set(own) | {region.column_index(region.key)}
             part = _part(workbook, room.sheet)
             for index in sorted(wanted):
-                column = room.columns[index]
+                at = room.columns[index]
                 if room.last < room.end:
                     out.setdefault(part, []).append(
-                        Area(Cell(room.last + 1, column), Cell(room.end, column)))
+                        Area(Cell(room.last + 1, at), Cell(room.end, at)))
     return out
 
 
@@ -320,7 +321,10 @@ def _located(region: Any, area: Area) -> list[tuple[str, Area]]:
 
 
 def _part(workbook: "Workbook", sheet_name: str) -> str:
-    return workbook.sheet_of(SheetRef(name=sheet_name)).part
+    part = workbook.sheet_of(SheetRef(name=sheet_name)).part
+    assert part is not None   # a table's sheet holds cells
+    return part
+
 
 
 __all__ = ["Allowed", "MAX_DESTINATIONS", "POLICY_KEYS", "PolicyError", "TABLE_ENTRY_KEYS",

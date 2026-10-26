@@ -19,7 +19,7 @@ import pytest
 from lxml import etree
 
 from ooxml_common.locales import Locale
-from ooxml_edit.sheets import Formula, outside_footprint
+from ooxml_edit.sheets import outside_footprint
 from ooxml_edit.tools import Toolbox
 
 from xlsx_agent import Workbook
@@ -436,7 +436,10 @@ def test_queries_derives_compares_validations_and_profiles_say_the_cache_status(
     ("[1]Prices!$B$2*B3", 1, 0, "[1]Prices!$B$2*B4"),
     ("A1#+@B2", 1, 0, "A2#+@B3"),
     ("Stock!#REF!+1E3", 1, 0, "Stock!#REF!+1E3"),
+    # A name of letters past U+FFFF (U+1D400 here) is a name, as one of Été's is.
+    ("A1+\U0001d400Rate", 1, 0, "A2+\U0001d400Rate"),
 ])
+
 def test_references_move_by_the_offset_and_nothing_else_does(text, rows, columns, moved):
     assert shift(text, rows, columns) == moved
     assert "".join(t.text for t in tokens(text)) == text

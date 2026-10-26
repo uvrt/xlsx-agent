@@ -272,8 +272,8 @@ def _items(diff: Diff):
         yield lambda cap, cells, name=name: ({"table": "removed", "a": name}, 0)
     for table in diff.tables:
         where = table.a
-        for change in table.columns:
-            yield lambda cap, cells, change=change, where=where: (
+        for column in table.columns:
+            yield lambda cap, cells, change=column, where=where: (
                 {"table": where, "column": change.change, **_drop(change.as_dict(), "change")}, 0)
         for duplicate in table.duplicates:
             yield lambda cap, cells, d=duplicate, where=where: _duplicate(where, d, cap)
@@ -283,12 +283,13 @@ def _items(diff: Diff):
                     {"table": where, "unkeyed": side, **count.as_dict()}, 0)
         for row in (*table.added, *table.removed):
             yield lambda cap, cells, row=row, where=where: _row(where, row, cap, cells)
-        for change in table.changed:
-            yield lambda cap, cells, change=change, where=where: _cell_change(where, change, cap)
+        for cell in table.changed:
+            yield lambda cap, cells, change=cell, where=where: _cell_change(where, change, cap)
     if diff.cells is not None and diff.cells.formula_text:
-        for change in diff.cells.structure:
-            if change.a or change.b or change.withheld:
-                yield lambda cap, cells, change=change: _structure(change, cap)
+        for structure in diff.cells.structure:
+            if structure.a or structure.b or structure.withheld:
+                yield lambda cap, cells, change=structure: _structure(change, cap)
+
         for edit in diff.cells.edits:
             if edit.a is not None or edit.b is not None or edit.withheld:
                 yield lambda cap, cells, edit=edit: _formula(edit, cap)

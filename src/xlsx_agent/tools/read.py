@@ -70,7 +70,7 @@ from __future__ import annotations
 import json
 import zlib
 from dataclasses import replace
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from ooxml_edit.sheets import Area, Cell
 from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, boolean, integer,
@@ -212,6 +212,7 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
         more = start_row + len(pages) < total
         single = False
     else:
+        assert area is not None   # returned above when there is none
         top = area.first.row + start_row
         bottom = min(area.last.row, top + rows_limit - 1)
         pages = [Area(Cell(top, area.first.column), Cell(bottom, area.last.column))]
@@ -246,6 +247,7 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     if found.rows is not None:
         covered = pages[:given]
     else:
+        assert area is not None
         covered = [Area(Cell(top, area.first.column),
                         Cell(top + given - 1, area.last.column))]
     data.update(_extras(workbook, found.places(covered), merges))
@@ -275,7 +277,7 @@ def cleaned_count(addresses: list[str]) -> dict:
     return {"count": len(addresses), "first": addresses[:_FIRST]}
 
 
-def _page(rows: Iterable[list[Value]], start_row: int, start_column: int, budget: int,
+def _page(rows: Iterable[Sequence[Value]], start_row: int, start_column: int, budget: int,
           annotate: "_Annotations", formulas: bool, cap: int | None,
           cleaned: "list[str] | None" = None
           ) -> tuple[list[list[dict]], list[str], tuple[int, int] | None, bool]:
@@ -433,6 +435,7 @@ def _cells(workbook: Any, target: str, key: str | None, columns: list[str] | Non
             rows = [a.area for a in selection.areas]
         return _Found(selection.address, region.range.sheet, _forms(workbook, sheet), sheet,
                       area, columns=columns, label=label, rows=rows, **chosen)
+    assert isinstance(address, RangeAddress)   # a d: target is read before (xlsx_read)
     sheet = _sheet(workbook, workbook.sheet_of(address))
     ref = SheetRef(name=sheet.name) if sheet.name else SheetRef(id=sheet.id)
     area = address.area
@@ -594,10 +597,10 @@ class _Annotations:
 
     def hidden(self, place: tuple[str, int, int]) -> bool:
         """Whether the cell is withheld: a column hidden from the model."""
-        areas = self.withheld.get(place[0])
-        return bool(areas) and any(a.first.row <= place[1] <= a.last.row
-                                   and a.first.column <= place[2] <= a.last.column
-                                   for a in areas)
+        areas = self.withheld.get(place[0]) or []
+        return any(a.first.row <= place[1] <= a.last.row
+                   and a.first.column <= place[2] <= a.last.column for a in areas)
+
 
     def link(self, sheet: str, cell: Cell) -> Any:
         found = self.links.get((sheet, cell))

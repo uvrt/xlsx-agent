@@ -43,7 +43,8 @@ from ..xml import iterparse_xml
 from ooxml_edit.markdown import Run
 
 from .strings import SharedStrings, item_runs, item_text, text_markdown
-from .styles import DATE_KINDS, Styles
+from .styles import DATE_KINDS, NumberFormat, Styles
+
 from .types import (TEXT_LIMIT, Problem, Value, _letters, looks_like_date, looks_like_number,
                     serial_text)
 
@@ -363,7 +364,7 @@ class SheetReader:
         #: the range it fills (its ``ref``), for what its cells reach
         #: (:meth:`Regions.formula_withheld <xlsx_agent.read.regions.Regions.formula_withheld>`).
         self.shared_groups: dict[str, tuple[str, str | None]] = {}
-        self._format_cache: dict[str | None, object] = {}
+        self._format_cache: dict[str | None, NumberFormat] = {}
         # Each shared string's text and what it looks like, once per pass (as many as the
         # table, which is held already); dates by serial, at most _CACHE_LIMIT at a time.
         self._string_cache: dict[int, tuple[str, str | None, bool]] = {}
@@ -395,7 +396,7 @@ class SheetReader:
         cell_tags, row_tags = _C, _ROW
         marks, hidden_order = self.marks, self.hidden_order
         elements = 0
-        source = self.data
+        source: "bytes | _Resumed" = self.data
         if start is not None:
             index, checkpoint = start
             source = _Resumed(index.header, self.data, checkpoint.offset)
@@ -485,7 +486,7 @@ class SheetReader:
         k = bisect_right(spans, (column, MAX_COLUMN + 1)) - 1
         return k >= 0 and spans[k][0] <= column <= spans[k][1]
 
-    def _format(self, style: str | None):
+    def _format(self, style: str | None) -> NumberFormat:
         number_format = self._format_cache.get(style)
         if number_format is None:
             number_format = self._format_cache[style] = self.styles.format(_int(style) or 0)
@@ -573,7 +574,7 @@ class SheetReader:
         value.v, value.t, value.at_limit = cached[0], "text", cached[2]
         if not value.formula:
             value.issue = cached[1]
-        if self.markdown:
+        if self.markdown and index is not None:   # it is: a string was found by it
             value.markdown = self.strings.markdown(index)
 
     def _looks(self, text: str) -> str | None:
@@ -602,6 +603,7 @@ class SheetReader:
         if not v_text:
             return
         text = v_text.strip()
+        number: int | float
         if text.isdigit() and text.isascii():   # most numbers: a whole one, no sign
             number = int(text)
         else:
@@ -771,10 +773,10 @@ def read_area(reader: SheetReader, area: Area, ordered: bool,
             yield _row(reader, row, left, width, pending.pop(row, None))
         return
     next_row = top
-    current: dict[int, Value] | None = None
+    current: dict[int, Value] = {}
     current_row = None
     checkpoint = index.before(top) if index is not None else None
-    start = (index, checkpoint) if checkpoint is not None else None
+    start = (index, checkpoint) if index is not None and checkpoint is not None else None
     for row, column, row_hidden, node in reader._walk(start):
         if row < top:
             continue

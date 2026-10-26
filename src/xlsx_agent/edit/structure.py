@@ -83,7 +83,8 @@ class _Found:
         return [Problem(code, address, count) for (code, _), (address, count) in items]
 
 
-def check_structure(workbook: Any, *, sheets: Iterable[str] | None = None) -> list[Problem]:
+def check_structure(workbook: Any, *, sheets: "Iterable[str | None] | None" = None
+                    ) -> list[Problem]:
     """The structure issues of ``workbook`` (an :class:`xlsx_agent.Workbook`), each by
     code with its first address and count; empty when there are none.  ``sheets`` limits
     the worksheet checks (cells, dimension, tables' headers) to those sheet parts; the

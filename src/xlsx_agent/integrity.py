@@ -314,7 +314,7 @@ def _sheet_changes(a: "Workbook", b: "Workbook") -> int:
     return sum(1 for _ in _sheets(a.sheets, b.sheets))
 
 
-def _outside(edit: CellEdit, allowed: Any, part: str) -> bool:
+def _outside(edit: CellEdit, allowed: Any, part: str | None) -> bool:
     if edit.kind == "cache_changed":
         return False
     if not allowed.allows(part, Cell(edit.row, edit.column)):
@@ -331,7 +331,7 @@ def _names(a: "Workbook", b: "Workbook", formula_text: bool) -> list[StructureCh
     """The defined names added, removed, or whose refers-to (normalised as a formula is) or
     hidden flag changed, by name and scope, case aside."""
     def by_key(workbook: "Workbook") -> dict:
-        out = {}
+        out: dict[tuple[str, str | None], Any] = {}
         for name in workbook.names:
             if name.bad_scope is not None:
                 continue
@@ -350,7 +350,9 @@ def _names(a: "Workbook", b: "Workbook", formula_text: bool) -> list[StructureCh
         else:
             kind = "name_added" if one is None else "name_removed"
         shown = two if two is not None else one
+        assert shown is not None   # a key of one of them
         sheet = quote_sheet(shown.scope) if shown.scope else None
+
         texts: list[tuple[str, ...]] = [(), ()]
         withheld = False
         if formula_text:
@@ -416,9 +418,10 @@ def _grouped(items: Iterable) -> dict[str, list]:
 
 def _sqref(text: str) -> str:
     parts = text.upper().split()
-    areas = [_area(part) for part in parts]
-    if all(area is not None for area in areas):
+    areas = [area for area in (_area(part) for part in parts) if area is not None]
+    if len(areas) == len(parts):
         return " ".join(_ref(area) for area in sorted(set(areas), key=_area_order))
+
     return " ".join(parts)
 
 

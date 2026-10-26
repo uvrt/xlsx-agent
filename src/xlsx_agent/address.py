@@ -121,7 +121,7 @@ from __future__ import annotations
 import difflib
 import re
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Union
+from typing import Iterable, Mapping, NoReturn, Union
 
 from ooxml_edit.sheets import (MAX_COLUMN, MAX_ROW, Area, Cell, column_index,
                                         column_letters)
@@ -295,7 +295,7 @@ def is_address_name(name: object) -> bool:
 def _on_grid(text: str) -> bool:
     """``text`` is an A1 reference to a cell on Excel's grid (``$`` allowed)."""
     match = re.fullmatch(r"\$?([A-Za-z]{1,3})\$?([0-9]{1,7})", text)
-    return bool(match) and column_index(match.group(1)) <= MAX_COLUMN \
+    return match is not None and column_index(match.group(1)) <= MAX_COLUMN \
         and 1 <= int(match.group(2)) <= MAX_ROW
 
 
@@ -344,7 +344,7 @@ class SheetRef:
     @property
     def text(self) -> str:
         """``Stock``, ``'Q3 sales'`` or ``#3``."""
-        return f"#{self.id}" if self.id is not None else quote_sheet(self.name)
+        return f"#{self.id}" if self.id is not None else quote_sheet(self.name or "")
 
     def __str__(self) -> str:
         return self.text
@@ -526,6 +526,7 @@ class _Selection:
         elif self.keys is not None:
             row = "{" + ",".join(_set_item(k) for k in self.keys) + "}"
         else:
+            assert self.key is not None   # a row named by key: the one form left
             row = _segment(self.key, row=True)
         if self.any_column:
             column = "/" + ANY
@@ -588,6 +589,7 @@ class TableAddress(_Selection):
     @property
     def text(self) -> str:
         if self.name is None:
+            assert self.region is not None   # a region's, or a name's (__post_init__)
             base = self.region.text
         elif self.scope is not None:
             base = f"{self.scope.text}!{self.name}"
@@ -724,7 +726,8 @@ class _Parser:
         # What an error offers when it has no correction: the forms of the place it is in.
         self.forms: list[str] = list(FORMS.values())
 
-    def fail(self, message: str, at: int | None = None, options: Iterable[str] | None = None):
+    def fail(self, message: str, at: int | None = None,
+             options: Iterable[str] | None = None) -> NoReturn:
         position = None if at is None else self.offset + at + 1
         if position is not None:
             message = f"{message} (at character {position})"
@@ -790,7 +793,7 @@ class _Parser:
                           "'Q3 sales'!B2, 'Bob''s'!A1", at + k, options)
         return SheetRef(name=token), bang
 
-    def fail_no_sheet(self, at: int) -> None:
+    def fail_no_sheet(self, at: int) -> NoReturn:
         rest = self.body[at:]
         if at:
             self.fail("a detected region names its sheet and its header's first cell: "
@@ -1040,7 +1043,9 @@ class _Parser:
 
     def bracketed(self, at: int) -> tuple[str, int]:
         """A column in ``[ ]``, Excel's escapes inside (``'`` before ``[ ] # '``)."""
-        body, out, i = self.body, [], at + 1
+        body, i = self.body, at + 1
+        out: list[str] = []
+
         while i < len(body):
             ch = body[i]
             if ch == "]":

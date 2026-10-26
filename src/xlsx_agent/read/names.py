@@ -141,7 +141,10 @@ def range_of(formula: str, sheets: dict[str, str]) -> tuple[RangeAddress | None,
         return None, "formula"
     if found is None:
         return None, "unknown_sheet"
+    if not isinstance(address, RangeAddress):   # a sheet and cells: always a range
+        return None, "formula"
     return address, None
+
 
 
 def _sheet_and_rest(text: str) -> tuple[str | None, str]:

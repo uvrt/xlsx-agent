@@ -246,6 +246,8 @@ class Region:
                         for sheet, area in self.span.extent())
 
     def located(self, area: Area | None) -> str | None:
+
+
         """Cells of the region (in its own rows and columns) as the sheets' ranges, as
         text: ``Stock!C2:C40``; for a :attr:`span`, each sheet's, joined by ``,``."""
         if area is None:
@@ -444,6 +446,7 @@ class Selection:
         if not self.positions:
             return [self.range] if self.range is not None else []
         region, data = self.region, self.region.data
+        assert data is not None   # positions are data rows
         if self.column is not None:
             left = right = region.area.first.column + region.column_index(self.column)
         else:
@@ -511,6 +514,7 @@ class Span:
         sheet rows, and the first of its own rows they are."""
         if self.header_rows and top <= 1 <= bottom:
             first = self.parts[0]
+            assert first.header is not None   # a span with a header row has it on its first
             yield first, first.header, first.header, 1
         offset = self.header_rows
         for part in self.parts:
@@ -595,6 +599,7 @@ class Span:
                     out.append(value)
                 if rules and at > self.header_rows:
                     for n, _, rule in rules:
+                        assert rule is not None   # rules are the columns that have one
                         clean_value(out[n], rule, workbook)
                 yield out
 
@@ -773,6 +778,7 @@ class Regions:
     def keep_table(self, region: Region) -> Region:
         """Keep a table :mod:`xlsx_agent.declare` made, usable as ``t:<name>`` from then on
         (declaring its name again replaces it, and whatever region had it)."""
+        assert region.name is not None   # a table kept is a declared one, named
         folded = region.name.casefold()
         old = self._declared.pop(folded, None)
         if old is not None and old.span is not None:
@@ -918,9 +924,9 @@ class Regions:
                     if ref.name is None:
                         return True      # [@Note] outside every table: cannot be placed
                     continue
-                area = _table_columns(table, ref)
-                if area is None or any(_overlaps(area, hidden)
-                                       for hidden in self.withheld(table.sheet)):
+                named = _table_columns(table, ref)
+                if named is None or any(_overlaps(named, hidden)
+                                        for hidden in self.withheld(table.sheet)):
                     return True
             else:
                 name = self._formula_name(ref.name, ref.sheets, sheet)
@@ -965,14 +971,16 @@ class Regions:
                         <= cell.row <= table.area.last.row and table.area.first.column \
                         <= cell.column <= table.area.last.column:
                     return table
-            elif table.name.casefold() == name.casefold():
+            elif (table.name or "").casefold() == name.casefold():
                 return table
         return None
 
-    def _formula_name(self, name: str, sheets: "tuple[str, ...] | None",
+    def _formula_name(self, name: str | None, sheets: "tuple[str, ...] | None",
                       sheet: str) -> DefinedName | None:
         """The defined name a formula on ``sheet`` means by ``name``: the one local to the
         sheet its prefix names, else to ``sheet``, else the workbook-wide one."""
+        if name is None:
+            return None
         folded = name.casefold()
         scope = sheets[0] if sheets is not None and len(sheets) == 1 else sheet
         found = [n for n in self._every_name if n.name.casefold() == folded]
@@ -999,11 +1007,12 @@ class Regions:
             if name.bad_scope is not None:
                 out.append(Problem("bad_scope", None))
         seen: set[tuple[str | None, str]] = set()
-        for name, scope in [(t.name, None) for t in self.excel_tables] + \
-                [(n.name, n.scope) for n in self.names]:
-            key = (scope.casefold() if scope else None, name.casefold())
-            if key in seen and is_address_name(name):
-                written = TableAddress(name=name, scope=SheetRef(name=scope) if scope else None)
+        named: list[tuple[str, str | None]] = [(t.name or "", None) for t in self.excel_tables]
+        named += [(n.name, n.scope) for n in self.names]
+        for text, scope in named:
+            key = (scope.casefold() if scope else None, text.casefold())
+            if key in seen and is_address_name(text):
+                written = TableAddress(name=text, scope=SheetRef(name=scope) if scope else None)
                 out.append(Problem("duplicate_name", written.text))
             seen.add(key)
         return list(dict.fromkeys(out))
@@ -1022,7 +1031,9 @@ class Regions:
         return any(_overlaps(found.area, a) for a in self.withheld(found.sheet.name))
 
     def _table_region(self, part: TablePart) -> Region:
-        sheet = next(s for s in self.workbook._every_sheet if s.name == part.sheet)
+        assert part.area is not None   # a table whose ref is a range (_every_table)
+        sheet = next(
+s for s in self.workbook._every_sheet if s.name == part.sheet)
         return Region(kind="table", name=part.name, sheet=part.sheet, area=part.area,
                       columns=part.columns, header_rows=part.header_rows,
                       totals_rows=part.totals_rows, sheet_id=sheet.id, flags=part.flags,
@@ -1067,9 +1078,11 @@ class Regions:
             return self.detect(address.region)
         if address.scope is not None:
             return self._scoped(address)
+        assert address.name is not None   # a t: address is a region's, or names one
         folded = address.name.casefold()
-        found: list[tuple[str, object]] = []
-        found += [("table", t) for t in self.excel_tables if t.name.casefold() == folded]
+        found: list[tuple[str, Any]] = []
+        found += [("table", t) for t in self.excel_tables
+                  if (t.name or "").casefold() == folded]
         found += [("name", n) for n in self.names
                   if n.scope is None and n.bad_scope is None and n.name.casefold() == folded]
         if folded in self._declared:
@@ -1080,10 +1093,9 @@ class Regions:
                               f"in the workbook ({', '.join(kinds)}); it cannot be resolved",
                               address=address.whole.text)
         if not found:
-            local = [n for n in self.names if n.scope is not None and n.name.casefold() == folded
-                     and n.address is not None]
-            if local:
-                options = [n.address.text for n in local]
+            options = [n.address.text for n in self.names if n.scope is not None
+                       and n.name.casefold() == folded and n.address is not None]
+            if options:
                 raise RegionError("scoped_name", f"t:{address.name} is local to a sheet; it is "
                                   f"written with its sheet, as {options[0]}",
                                   address=address.whole.text, valid_options=options)
@@ -1105,6 +1117,7 @@ class Regions:
         return thing
 
     def _scoped(self, address: TableAddress) -> Region:
+        assert address.scope is not None and address.name is not None   # a local name's
         sheet = self.workbook.sheet_of(address.scope)
         folded = address.name.casefold()
         found = [n for n in self.names
@@ -1127,10 +1140,11 @@ class Regions:
         """Every table, workbook-wide name over a range and declared region, as ``t:``
         addresses, in that order (sheet-local names after them)."""
         out = [t.address.text for t in self.tables if is_address_name(t.name)]
-        names = [n for n in self.names if n.is_range and n.address is not None]
-        out += [n.address.text for n in names if n.scope is None]
+        names = [(n.address.text, n.scope) for n in self.names
+                 if n.is_range and n.address is not None]
+        out += [text for text, scope in names if scope is None]
         out += [r.address.text for r in self.declared]
-        out += [n.address.text for n in names if n.scope is not None]
+        out += [text for text, scope in names if scope is not None]
         return list(dict.fromkeys(out))
 
     def _name_region(self, name: DefinedName) -> Region:
@@ -1173,7 +1187,8 @@ class Regions:
                               "TRUE, FALSE or a cell reference; at most 255 characters",
                               valid_options=["Returns", "Stock_2026"])
         folded = name.casefold()
-        taken = [t.address.text for t in self.excel_tables if t.name.casefold() == folded]
+        taken = [t.address.text for t in self.excel_tables
+                 if (t.name or "").casefold() == folded]
         taken += [n.address.text for n in self.names if n.address is not None
                   and n.scope is None and n.name.casefold() == folded]
         if taken:
@@ -1181,11 +1196,11 @@ class Regions:
                               "a region takes a name of its own", address=taken[0])
         if isinstance(header_rows, bool) or not isinstance(header_rows, int) or header_rows < 0:
             raise RegionError("bad_headers", "header_rows is a whole number from 0")
-        if isinstance(where, str):
-            where = parse_address(where)
-        if not isinstance(where, RangeAddress):
+        parsed = parse_address(where) if isinstance(where, str) else where
+        if not isinstance(parsed, RangeAddress):
             raise RegionError("bad_name", "a region is declared over a cell or range, as "
                               "Returns!A3:F200", valid_options=["Returns!A3:F200"])
+        where = parsed
         sheet = self.workbook._cell_sheet(self.workbook.sheet_of(where))
         area = where.clipped(self.workbook.used_range(sheet))
         if area is None:
@@ -1252,16 +1267,16 @@ class Regions:
         is not text is a key-value region instead, when it is one (see the module's
         notes).  A cell in a table declared from configuration is refused
         (``declared``, with the table as ``valid_options``)."""
-        if isinstance(where, str):
-            where = parse_address(where)
-        if isinstance(where, TableAddress):
-            if where.region is None:
+        parsed = parse_address(where) if isinstance(where, str) else where
+        if isinstance(parsed, TableAddress):
+            if parsed.region is None:
                 raise RegionError("no_header", "a detected region is named by its header's "
                                   "first cell, as t:Stock!A1", valid_options=["t:Stock!A1"])
-            where = where.region
-        if not isinstance(where, RangeAddress) or where.kind != "cell":
+            parsed = parsed.region
+        if not isinstance(parsed, RangeAddress) or parsed.kind != "cell":
             raise RegionError("no_header", "a detected region is named by one cell, its "
                               "header's first", valid_options=["t:Stock!A1"])
+        where = parsed
         sheet = self.workbook._cell_sheet(self.workbook.sheet_of(where))
         for region, area in self.table_areas(sheet.name):
             if area.contains(where.cell):
@@ -1356,7 +1371,9 @@ class Regions:
                                                   Cell(first.row - 2, held[0].column))))
         except RegionError:
             return region
-        return replace(region, title=held[0].v) if above.caption else region
+        title = held[0].v
+        assert isinstance(title, str)   # a text cell's value
+        return replace(region, title=title) if above.caption else region
 
     def find(self, sheet: "Sheet | str | SheetRef") -> list["Region | UnclearRegion"]:
         """The blocks of a sheet outside its tables, each detected (a :class:`Region`) or
@@ -1402,7 +1419,9 @@ class Regions:
                     if error.reason == "header_not_text" and self._lone(sheet, value):
                         column = value.column   # a lone number or date: no region either
                         continue
+                    assert error.reason is not None   # header_unclear always gives one
                     out.append(UnclearRegion(f"t:{written}!{_ref(value)}", error.reason))
+
                     column = _block_end(row, value.column)
                     bottom = max(bottom, self._blank_after(sheet, used, row_number))
                     continue
@@ -1473,7 +1492,7 @@ class Regions:
         region = self.region(address)
         sheet = region.sheet_ref
         whole = region.address
-        any_ = {"any_row": address.any_row, "any_column": address.any_column}
+        any_: dict[str, Any] = {"any_row": address.any_row, "any_column": address.any_column}
         if address.key is None and address.position is None and address.keys is None \
                 and address.row_range is None:
             if address.column is None:
@@ -1499,6 +1518,7 @@ class Regions:
         if address.row_range is not None:
             first, last = _row_range(region, address.row_range, whole)
             data = region.data
+            assert data is not None   # _row_range refuses a table with no data rows
             if column is not None:
                 left = right = region.area.first.column + region.column_index(column)
             else:
@@ -1517,8 +1537,10 @@ class Regions:
                                   f"data rows; there is no row #{position}",
                                   address=whole.text, valid_options=options)
         else:
+            assert address.key is not None   # by key: the only form left
             position = self._find_key(region, address.key, key)
         data = region.data
+        assert data is not None   # a position or key names a data row
         row = data.first.row + position - 1
         if column is not None:
             c = region.area.first.column + region.column_index(column)
@@ -1555,7 +1577,10 @@ class Regions:
         elif address.key is not None:
             positions = [index.find(address.key)]
         elif address.position is not None:
-            positions = [self.resolve(replace(address, column=None, any_column=False)).row]
+            row = self.resolve(replace(address, column=None, any_column=False)).row
+            assert row is not None   # a position's selection is a row
+            positions = [row]
+
         elif address.row_range is not None:
             first, last = _row_range(region, address.row_range, whole)
             positions = list(range(first, last + 1))
@@ -1760,8 +1785,9 @@ def key_text(value: Value) -> str | None:
     42.0); ``None`` for anything else (a blank, empty text, a fraction, a date, a time, a
     boolean, an error).  See the module's notes."""
     if value.t == "text":
-        return value.v if value.v else None
+        return value.v if isinstance(value.v, str) and value.v else None
     if value.t == "number" and not isinstance(value.v, bool):
+
         number = value.v
         if isinstance(number, int):
             return str(number)

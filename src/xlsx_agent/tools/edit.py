@@ -69,7 +69,6 @@ from typing import Any
 
 from ooxml_edit.tools import (Result, ToolError, array, boolean, integer, number, obj, string,
                               tool)
-from ooxml_edit.sheets import Formula
 
 from ..address import AddressError, RangeAddress, TableAddress, parse_address
 from ..edit import EditError

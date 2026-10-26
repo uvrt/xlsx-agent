@@ -260,13 +260,14 @@ _CATEGORIES = {"CATEGORY_DIGIT": re.compile(r"\d"), "CATEGORY_SPACE": re.compile
 def _check(text: str, pattern: "re.Pattern[str]", key: str = "strip",
            loose: int = MAX_LOOSE_REPEATS) -> None:
     try:
-        from re import _parser as parser
+        from re import _parser as parser   # type: ignore[attr-defined]  # private: no stub
     except ImportError:  # pragma: no cover - re._parser is Python 3.11's on
         raise RuleError("bad_pattern", key, "this Python cannot check a pattern's "
                         "cost; patterns are refused") from None
     parsed = parser.parse(text, pattern.flags)
     folds = bool(pattern.flags & re.IGNORECASE) or re.search(r"\(\?[a-zA-Z-]*i", text) is not None
-    state = {"loose": 0, "choices": 1, "key": key}
+    state: dict[str, Any] = {"loose": 0, "choices": 1, "key": key}
+
     _walk(list(parsed), state, folds, inside=False, last=True)
     if state["loose"] > loose:
         raise RuleError("bad_pattern", key, f"{state['loose']} repeats can give "

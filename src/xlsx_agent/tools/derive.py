@@ -82,7 +82,9 @@ def workbook_of(call: Any, doc: str | None, field: str = "doc") -> Any:
 def _entry(call: Any, target: str, field: str) -> tuple[Any, DatasetAddress, DatasetTable]:
     entry = call.dataset(target, field=field)
     address = parse_address(target)
+    assert isinstance(address, DatasetAddress)   # call.dataset took it as one
     return entry, address, DatasetTable(entry.dataset, entry.id)
+
 
 
 def _about(entry: Any) -> dict[str, Any]:

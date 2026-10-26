@@ -358,7 +358,7 @@ def test_numbers_and_dates_stored_as_text_with_the_callers_locale():
     data = book.to_bytes()
 
     def issues(wb):
-        return dict(zip(texts, (v.issue for v in next(wb.read(f"S!A1:L1")))))
+        return dict(zip(texts, (v.issue for v in next(wb.read("S!A1:L1")))))
 
     default = issues(Workbook.open(data))
     assert default == {"12": "number_as_text", "1,234.50": "number_as_text", "-3e5": "number_as_text",

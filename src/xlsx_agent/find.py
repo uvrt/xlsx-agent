@@ -56,7 +56,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 
 from ooxml_edit.sheets import Area, Cell
 
@@ -175,8 +175,10 @@ def _within(workbook: "Workbook", within) -> "list[tuple[Sheet, Area | None]]":
             if selection.range is None:
                 return []
             spread: dict[str, list[Area]] = {}
-            for found in region.span.locate(selection.range.area):
-                spread.setdefault(found.sheet.name, []).append(found.area)
+            for located in region.span.locate(selection.range.area):
+                assert located.sheet.name is not None   # a span's parts are named sheets
+                spread.setdefault(located.sheet.name, []).append(located.area)
+
             return [(workbook.sheet(name), _bounds(areas)) for name, areas in spread.items()]
         sheet = workbook._cell_sheet(workbook.sheet_of(region.range))
         return [(sheet, selection.range.area if selection.range is not None else None)]
@@ -233,10 +235,10 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
     written = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
     # What lies at a cell besides the cell itself: (row, column, order, kind, make), where
     # make(hidden) gives its matches once whether its row or column is hidden is known.
-    extras: list[tuple[int, int, int, int, object]] = []
+    extras: list[tuple[int, int, int, int, Callable[..., Iterable[Found]]]] = []
     headers: list[Area] = []
 
-    def add(cell: Cell, kind: str, make) -> None:
+    def add(cell: Cell, kind: str, make: Callable[..., Iterable[Found]]) -> None:
         extras.append((cell.row, cell.column, _ORDER[kind], len(extras), make))
 
     for region in [*workbook.tables, *workbook.regions.declared]:
@@ -273,16 +275,17 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
     # The cells of columns a declared table hides from the model: never searched, nor a
     # name over them.
     withheld = workbook.regions.withheld(sheet.name) if sheet.name else []
-    for name in workbook.names:
-        if name.range is None or (area is not None and not _overlaps(name.range.area, area)):
+    for defined in workbook.names:
+        if defined.range is None or (area is not None
+                                     and not _overlaps(defined.range.area, area)):
             continue
-        found = _cell_sheet_of(workbook, name.range)
+        found = _cell_sheet_of(workbook, defined.range)
         if found is None or found != sheet:
             continue
-        if withheld and any(_overlaps(name.range.area, w) for w in withheld):
+        if withheld and any(_overlaps(defined.range.area, w) for w in withheld):
             continue
-        add(name.range.area.first, "name",
-            lambda hidden, n=name: list(_name(n, pattern, sheet_hidden=hidden_sheet)))
+        add(defined.range.area.first, "name",
+            lambda hidden, n=defined: list(_name(n, pattern, sheet_hidden=hidden_sheet)))
     for comment in workbook.comments(sheet):
         if area is not None and not _inside(comment.cell, area):
             continue
@@ -302,6 +305,8 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
         checkpoint = scanned.index.before(area.first.row)
         start = (scanned.index, checkpoint) if checkpoint is not None else None
 
+    next_extra = 0
+
     def flush(upto: tuple[int, int, int] | None) -> Iterator[Found]:
         nonlocal next_extra
         while next_extra < len(extras) and (upto is None or extras[next_extra][:3] < upto):
@@ -315,7 +320,6 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
     # holds none is not read further.
     strings = workbook.strings
     holds: dict[int, bool] = {}
-    next_extra = 0
     for row, column, row_hidden, node in workbook._stream(sheet, lambda: reader._walk(start)):
         if area is not None and not _inside(Cell(row, column), area):
             if ordered and row > area.last.row:
@@ -327,13 +331,13 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
         if kind not in TEXT_KINDS:   # a cell of no other type is ever text
             continue
         if kind == "s":
-            index = reader.shared_index(node)
-            if index is not None and 0 <= index < len(strings):
-                found = holds.get(index)
-                if found is None:
-                    found = holds[index] = next(_occurrences(pattern, strings[index]),
+            shared = reader.shared_index(node)
+            if shared is not None and 0 <= shared < len(strings):
+                held = holds.get(shared)
+                if held is None:
+                    held = holds[shared] = next(_occurrences(pattern, strings[shared]),
                                                 None) is not None
-                if not found:
+                if not held:
                     continue
         value = reader.value(row, column, row_hidden, node)
         if value.t != "text" or not isinstance(value.v, str):

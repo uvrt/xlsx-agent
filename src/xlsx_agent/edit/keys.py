@@ -66,7 +66,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from ooxml_edit.sheets import Area, Cell
 
@@ -122,6 +122,7 @@ def resolve(workbook: "Workbook", text: str, new_rows: bool,
         return None
     try:
         region = workbook.regions.region(address.whole)
+        assert address.column is not None   # a value's address names its column
         index = region.column_index(address.column)
     except (NameNotFound, KeyError):
         refuse("bad_address", "no such table or column")
@@ -143,6 +144,7 @@ def resolve(workbook: "Workbook", text: str, new_rows: bool,
         return None
     position = keys.find(address.key)
     data = region.data
+    assert data is not None   # a key found is a data row's
     cell = Cell(data.first.row + position - 1, region.area.first.column + index)
     return _real(workbook, region, cell)
 
@@ -240,7 +242,7 @@ def allocations(workbook: "Workbook", given: Any, refuse: Any) -> "list[Allocati
 
 
 def allocate(workbook: "Workbook", wanted: "list[NewCell]",
-             explicit: "list[Allocation]" = (), first_free: bool = False
+             explicit: "Sequence[Allocation]" = (), first_free: bool = False
              ) -> "tuple[dict, dict]":
     """The rows the keys get: those of ``explicit`` (checked, see the module), then, with
     ``first_free``, the next free rows for the keys of ``wanted`` none allocates, in the
@@ -297,16 +299,16 @@ def allocate(workbook: "Workbook", wanted: "list[NewCell]",
             sheet = workbook.sheet_of(SheetRef(name=room.sheet))
             rows[key] = _row(workbook, region, item.key, sheet, item.row, room)
         taken[name] = room.last + len(good)
-    for item in wanted:
-        name = item.region.address.text
-        key = (name, item.key)
+    for new in wanted:
+        name = new.region.address.text
+        key = (name, new.key)
         if key in rows or key in refused or key in named or not first_free:
             continue
-        room = capacity_rows(item.region)
+        room = capacity_rows(new.region)
         if room is None:
             refused[key] = ("no_capacity", f"{name}: its owner declares one (capacity)")
             continue
-        if not _first_free_allowed(workbook, item.region):
+        if not _first_free_allowed(workbook, new.region):
             refused[key] = ("not_allocated", f"the write policy lets {name} take new rows "
                             "only where allocate names them")
             continue
@@ -314,17 +316,18 @@ def allocate(workbook: "Workbook", wanted: "list[NewCell]",
         sheet = workbook.sheet_of(SheetRef(name=room.sheet))
         writer = workbook.editor.cells.sheet(sheet.stored_name)
         if row > room.end or not row_empty(writer, row, room.left, room.right):
-            refused[key] = ("capacity_full", f"{name} holds {item.region.capacity} rows at "
+            refused[key] = ("capacity_full", f"{name} holds {new.region.capacity} rows at "
                             "most" if row > room.end else
                             f"row {row}, the next of {name}'s capacity, is not empty")
             continue
         taken[name] = row
-        rows[key] = _row(workbook, item.region, item.key, sheet, row, room)
+        rows[key] = _row(workbook, new.region, new.key, sheet, row, room)
     return rows, refused
 
 
 def _row(workbook: "Workbook", region: Region, key: str, sheet: "Sheet", row: int,
          room: Any) -> Row:
+    assert region.key is not None   # a row allocated by key: a keyed table's
     key_index = region.column_index(region.key)
     return Row(region, key, sheet, row, room.columns[key_index],
                _key_value(workbook, region, key))
@@ -352,7 +355,9 @@ def _key_value(workbook: "Workbook", region: Region, key: str) -> Any:
     key cell of the table holds a number, else the text."""
     if not _WHOLE.fullmatch(key) or not region.rows:
         return key
+    assert region.key is not None
     area = region.column_area(region.key)
+    assert area is not None   # it has rows
     for row in workbook.read(RangeAddress(region.sheet_ref, area)):
         if row[0].t != "number":
             return key
@@ -368,7 +373,9 @@ def free_rows(workbook: "Workbook") -> dict[str, list[Area]]:
         if room is None or room.last >= room.end:
             continue
         part = workbook.sheet_of(SheetRef(name=room.sheet)).part
-        out.setdefault(part, []).append(Area(Cell(room.last + 1, room.left),
+        assert part is not None   # a sheet that holds a table is stored
+        out.setdefault(
+part, []).append(Area(Cell(room.last + 1, room.left),
                                              Cell(room.end, room.right)))
     return out
 

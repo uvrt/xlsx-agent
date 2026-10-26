@@ -208,7 +208,8 @@ class Redaction:
 
     def holds(self, text: str | None) -> bool:
         """Whether ``text`` holds a match (a formula's text, a name)."""
-        return bool(text) and self.text(text) != text
+        return text is not None and bool(text) and self.text(text) != text
+
 
 
 def _constant(text: str):

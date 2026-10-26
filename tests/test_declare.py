@@ -16,6 +16,7 @@ from ooxml_edit.tools import Toolbox
 from xlsx_agent import (DeclarationError, NameNotFound, RegionError, Workbook,
                         table_dataset)
 from xlsx_agent.catalogue import estimate_tokens
+from xlsx_agent.declare import parse_declarations
 from xlsx_agent.tools import GROUPS, TOOLS, declare, format as xlsx_format
 
 HEADER = ["Ref", "Topic", "Rating (1 to 5, in halves)", "Note", "Remark"]
@@ -293,6 +294,8 @@ def test_the_form_of_a_declaration_is_checked_with_its_path():
            ({**CHECKS, "first_row": 2}, "bad_rows", "tables[0].first_row"),
            ({**CHECKS, "columns": "F:A"}, "bad_columns", "tables[0].columns"),
            ({**CHECKS, "fields": [{"id": "x"}]}, "bad_declaration", "tables[0].fields[0]"),
+           ({**CHECKS, "fields": [{"header": None}]}, "bad_declaration",
+            "tables[0].fields[0].header"),
            ({**CHECKS, "fields": [{"header": "Note", "id": " x"}]}, "bad_id",
             "tables[0].fields[0].id"),
            ({**CHECKS, "description": "x" * 301}, "bad_declaration", "tables[0].description")]
@@ -303,6 +306,17 @@ def test_the_form_of_a_declaration_is_checked_with_its_path():
     with pytest.raises(DeclarationError) as caught:
         opened(None, CHECKS, {**CHECKS, "name": "Checks"})
     assert (caught.value.code, caught.value.path) == ("duplicate_name", "tables[1].name")
+
+
+def test_a_row_given_as_null_is_the_row_left_out():
+    """``header_row: null`` (JSON's) is the default row, as when it is not given; a
+    first or last row given as null is none."""
+    plain = {key: value for key, value in CHECKS.items() if key != "header_row"}
+    given = parse_declarations([{**plain, "header_row": None, "first_row": None,
+                                 "last_row": None}])
+    assert given == parse_declarations([plain])
+    assert given[0].header_row == 1 and given[0].first_row is None
+
 
 
 def test_a_name_an_excel_table_has_is_refused():

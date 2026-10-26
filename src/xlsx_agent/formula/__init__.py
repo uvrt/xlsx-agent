@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterator, TypeGuard
 
 from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, column_index, column_letters
 
@@ -60,7 +60,7 @@ _COLUMN = re.compile(r"(\$?)([A-Za-z]{1,3})")
 _ROW = re.compile(r"(\$?)([0-9]{1,7})")
 _NUMBER = re.compile(r"[0-9]+(?:\.[0-9]*)?(?:[eE][+-]?[0-9]+)?|\.[0-9]+(?:[eE][+-]?[0-9]+)?")
 # A run of what a name, a function, a sheet or a reference is spelled with.
-_WORD = re.compile(r"[A-Za-z0-9_.\\?$À-￿]+")
+_WORD = re.compile(r"[A-Za-z0-9_.\\?$\u00c0-\U0010ffff]+")
 _BOOK = re.compile(r"\[[0-9]+\]")
 
 
@@ -148,11 +148,14 @@ def _lex(text: str) -> Iterator[Token]:
                 i = row
                 continue
             number = _NUMBER.match(text, i)
+            assert number is not None   # a digit, or . and a digit, starts a number
             yield Token("number", number.group(0), i)
             i = number.end()
         elif char == "$" or char.isalpha() or char in "_\\" or ord(char) >= 0xC0:
             word = _WORD.match(text, i)
+            assert word is not None   # a letter, $, _ or \ starts a word
             end = word.end()
+
             # A sheet range (Jan:Mar!A1) or a sheet (Stock!A1)
             if end < n and text[end] == "!":
                 yield from _reference(text, i, end + 1)
@@ -228,7 +231,7 @@ def _brackets(text: str, i: int) -> int:
     raise ShiftError("a bracket is not closed")
 
 
-def _cell(match: "re.Match | None") -> bool:
+def _cell(match: "re.Match[str] | None") -> "TypeGuard[re.Match[str]]":
     return match is not None and column_index(match.group(2)) <= MAX_COLUMN \
         and 1 <= int(match.group(4)) <= MAX_ROW
 

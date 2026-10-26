@@ -17,7 +17,7 @@ import pytest
 from lxml import etree
 
 from ooxml_edit.markdown import Run
-from ooxml_edit.sheets import Cell, Formula, outside_footprint
+from ooxml_edit.sheets import Cell, outside_footprint
 from ooxml_edit.tools import Toolbox
 
 from xlsx_agent import Workbook

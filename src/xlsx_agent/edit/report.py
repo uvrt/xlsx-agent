@@ -11,7 +11,7 @@ value, no text, no formula is in it, nor in what :mod:`xlsx_agent.edit` logs.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from ..read.types import Problem, _letters
 
@@ -116,7 +116,8 @@ def _ref(row: int, column: int) -> str:
     return f"{_letters(column)}{row}"
 
 
-def capped(cells: dict[str, Iterable[tuple[int, int]]]) -> tuple[dict[str, list[str]], int, int]:
+def capped(cells: Mapping[str, Iterable[tuple[int, int]]]
+           ) -> tuple[dict[str, list[str]], int, int]:
     """Each sheet's cells compressed (:func:`compress`), at most :data:`MAX_RANGES` ranges
     over all sheets: the ranges kept by sheet, how many were cut, and how many cells there
     were."""

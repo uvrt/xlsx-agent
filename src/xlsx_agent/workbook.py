@@ -82,8 +82,9 @@ from ooxml_edit.tools import Dataset
 from ooxml_edit.tools.limits import Limits
 from ooxml_edit.xml import Element
 
-from .address import (NameNotFound, RangeAddress, SheetRef, TableAddress, nearest,
+from .address import (Address, NameNotFound, RangeAddress, SheetRef, TableAddress, nearest,
                       parse_address, quote_sheet)
+
 from .catalogue import DEFAULT_TOKENS, catalogue
 from .compare import Diff, compare
 from .dataset import table_dataset
@@ -632,7 +633,7 @@ class Workbook:
 
     def _sheet_withheld(self, name: str | None) -> bool:
         """Whether the sheet called ``name`` is withheld from the model."""
-        return bool(name) and name.casefold() in self._withheld_sheets
+        return bool(name) and (name or "").casefold() in self._withheld_sheets
 
     def sheet(self, name: str) -> Sheet:
         """The sheet called ``name``, matched as Excel matches names (case aside);
@@ -663,18 +664,19 @@ class Workbook:
         range (``Stock!F2``, ``#3!A:A``), a detected region (``t:Stock!A1``), or such an
         address as text.  By name, matched case aside; by id, its ``sheetId``.  A table,
         dataset or ref names no sheet by itself: ``ValueError``."""
-        if isinstance(address, str):
-            address = parse_address(address)
-        if isinstance(address, TableAddress) and address.region is not None:
-            address = address.region
-        if isinstance(address, RangeAddress):
-            address = address.sheet
-        if not isinstance(address, SheetRef):
-            raise ValueError(f"a {getattr(address, 'kind', type(address).__name__)} address "
+        target: "Address | SheetRef" = parse_address(address) if isinstance(address, str) \
+            else address
+        if isinstance(target, TableAddress) and target.region is not None:
+            target = target.region
+        if isinstance(target, RangeAddress):
+            target = target.sheet
+        if not isinstance(target, SheetRef):
+            raise ValueError(f"a {getattr(target, 'kind', type(target).__name__)} address "
                              "names no sheet by itself")
-        if address.id is not None:
-            return self.sheet_by_id(address.id)
-        return self.sheet(address.name)
+        if target.id is not None:
+            return self.sheet_by_id(target.id)
+        assert target.name is not None   # a sheet is named by its name or its id
+        return self.sheet(target.name)
 
     @staticmethod
     def sheet_refs(sheet: Sheet) -> tuple[SheetRef | None, SheetRef | None]:
@@ -883,6 +885,7 @@ class Workbook:
         if not isinstance(address, TableAddress) or address.kind != "column":
             raise ValueError("a column address names one column of a table, as t:Products[Price]")
         region = self.table(address.whole, key=key)
+        assert address.column is not None   # a column address names its column
         return Column(self, region, address.column)
 
     def profile(self, address: "str | TableAddress | Region",
@@ -1127,6 +1130,7 @@ class Workbook:
                                                                     set())]
         if not links:
             return []
+        assert sheet.part is not None   # links were read from it
         rels = self.package.relationships(sheet.part)
         out = []
         for link in links:
@@ -1203,20 +1207,20 @@ class Workbook:
               markdown: bool = False) -> Iterator[list[Value]]:
         """:meth:`read`, typing the cells of ``columns`` (sheet columns) only, for a pass
         that looks at no other (:func:`~xlsx_agent.read.stream.read_area`)."""
-        if isinstance(address, str):
-            address = parse_address(address)
-        if isinstance(address, TableAddress):
-            selection = self.resolve(address)
+        target: Address = parse_address(address) if isinstance(address, str) else address
+        if isinstance(target, TableAddress):
+            selection = self.resolve(target)
             if selection.positions:
                 return self._read_rows(selection.areas, formats=formats, columns=columns,
                                        markdown=markdown)
             selected = selection.range
             if selected is None:
                 return iter(())
-            address = selected
-        if not isinstance(address, RangeAddress):
-            raise ValueError(f"a {address.kind} address is read from a later milestone; "
+            target = selected
+        if not isinstance(target, RangeAddress):
+            raise ValueError(f"a {target.kind} address is read from a later milestone; "
                              "give a cell or range, as Stock!A1:H40")
+        address = target
         span = self.regions.span(address.sheet)
         if span is not None:   # a declared table read as one: its own rows and columns
             return span.read(self, address.area, formats=formats, columns=columns,
@@ -1258,14 +1262,15 @@ class Workbook:
                 text, fill = groups.get(anchor, (value.formula_text, None))
                 if not text:
                     continue
-                fill = _area(fill)
-                if fill is None and value.shared_from:   # a group without its range
+                filled = _area(fill)
+                if filled is None and value.shared_from:   # a group without its range
                     first = _area(anchor.rpartition("!")[2])
                     if first is not None:
-                        fill = Area(first.first, Cell(max(first.first.row, value.row),
-                                                      max(first.first.column, value.column)))
-                origin = fill.first if fill is not None else Cell(value.row, value.column)
-                if regions.formula_withheld(text, sheet, origin, fill):
+                        filled = Area(first.first, Cell(max(first.first.row, value.row),
+                                                        max(first.first.column, value.column)))
+                origin = filled.first if filled is not None else Cell(value.row, value.column)
+                if regions.formula_withheld(text, sheet, origin, filled):
+
                     value.formula_text = None
                     value.formula_withheld = True
             yield row
@@ -1299,13 +1304,13 @@ class Workbook:
              formats: bool = False, markdown: bool = False) -> Value:
         """One cell's value (``Stock!F2``, or a ``t:`` value such as
         ``t:Products/SKU-0042/Price``); ``blank`` when the sheet stores nothing there."""
-        if isinstance(address, str):
-            address = parse_address(address)
-        if isinstance(address, TableAddress):
-            address = self.resolve(address).range
-        if not isinstance(address, RangeAddress) or address.kind != "cell":
+        target: "Address | None" = parse_address(address) if isinstance(address, str) \
+            else address
+        if isinstance(target, TableAddress):
+            target = self.resolve(target).range
+        if not isinstance(target, RangeAddress) or target.kind != "cell":
             raise ValueError("a cell address names one cell, as Stock!F2")
-        return next(iter(self.read(address, formats=formats, markdown=markdown)))[0]
+        return next(iter(self.read(target, formats=formats, markdown=markdown)))[0]
 
     def _read_sheets(self) -> list[Sheet]:
         holder = self._child("sheets")
@@ -1322,7 +1327,7 @@ class Workbook:
             if part is not None and not self.package.has_part(part):
                 part = None
             kind = rel.type.rpartition("/")[2] if rel is not None else None
-            kind = SHEET_TYPES.get(kind, kind)
+            kind = SHEET_TYPES.get(kind, kind) if kind is not None else None
             out.append(Sheet(name=node.get("name") or "", id=_int(node.get("sheetId")),
                              state=node.get("state") or "visible",
                              protected=part is not None and self._protected(part, kind), type=kind, part=part))

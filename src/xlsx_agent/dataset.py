@@ -64,8 +64,9 @@ from typing import Any, Iterable, Iterator, Sequence
 from ooxml_edit.sheets import Area, Cell
 from ooxml_edit.tools import DATASET_PREFIX, Dataset
 
-from .address import (AddressError, DatasetAddress, NameNotFound, RangeAddress, SheetRef,
-                      TableAddress, format_address, nearest, parse_address)
+from .address import (Address, AddressError, DatasetAddress, NameNotFound, RangeAddress,
+                      SheetRef, TableAddress, format_address, nearest, parse_address)
+
 from .clean import CleanedWarning
 from .profile import FIRST_ADDRESSES, Count
 from .read.regions import RegionError, key_text
@@ -131,9 +132,9 @@ def as_dataset(derived: Any) -> Dataset:
     module's notes): rows rounded, sources as range text, the :class:`Derived` as
     ``detail``."""
     columns = tuple(derived.columns)
-    rows = [tuple(row[c] for c in columns) for row in derived.rows]
-    sources = [tuple(tuple(str(s) for s in where[c].sources) for c in columns)
-               for where in derived.provenance]
+    rows = tuple(tuple(row[c] for c in columns) for row in derived.rows)
+    sources = tuple(tuple(tuple(str(s) for s in where[c].sources) for c in columns)
+                    for where in derived.provenance)
     return Dataset(columns, rows, sources=sources, keys=derived.key_columns,
                    types=tuple(derived.types.get(c) for c in columns), detail=derived,
                    cache=getattr(derived, "cache", None) or None)
@@ -263,7 +264,7 @@ class DatasetTable:
             raise RegionError("no_key_set", f"a dataset's rows are named one by one, by key "
                               f"or by position ({whole.text}/#1); a key set is for tables",
                               address=whole.text, valid_options=[f"{whole.text}/#1"])
-        any_ = {"any_row": address.any_row, "any_column": address.any_column}
+        any_: dict[str, Any] = {"any_row": address.any_row, "any_column": address.any_column}
         if address.row_range is not None:
             first, last = address.row_range
             end = self.rows if last is None else last
@@ -287,6 +288,7 @@ class DatasetTable:
                 raise RegionError("position_out_of_range", f"{whole.text} has {self.rows} "
                                   "rows", address=whole.text)
         else:
+            assert address.key is not None   # by key: the only form left
             position = self._find_key(address.key)
         text = DatasetAddress(self.id, column=column, position=position,
                               any_column=address.any_column).text
@@ -335,7 +337,8 @@ def join_units(units: Sequence[tuple[Any, str]]) -> list[str]:
     """Units (:func:`source_units`) as sources again: a run of keys of one column as one
     key set."""
     out: list[str] = []
-    column, keys = None, []
+    column: Any = None
+    keys: list[Any] = []   # a run's keys: text, as every unit with a column holds
     for unit_column, text in list(units) + [(None, None)]:
         if unit_column is not None and unit_column == column:
             keys.append(text)
@@ -445,12 +448,12 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
     ``cache`` counts the formula cells read by their cache status and ``external``
     (ooxml-edit's ``Dataset.cache``): rows read from an invalidated cache are placed
     ``stale``, and the placed values' ``from`` carries the counts."""
-    if isinstance(address, str):
-        address = parse_address(address)
-    if not isinstance(address, TableAddress):
+    target = parse_address(address) if isinstance(address, str) else address
+    if not isinstance(target, TableAddress):
         raise AddressError("rows come from a table, name or region: t:Products, "
                            "t:Products[Price] or t:Products/{SKU-0003,SKU-0007}",
-                           text=format_address(address))
+                           text=format_address(target))
+    address = target
     selection = workbook.resolve(address)
     region = selection.region
     whole = region.address
@@ -499,7 +502,8 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
     for position in positions:
         sheet_row = data.first.row + position - 1
         cells_of = found.get(sheet_row, {})
-        values, where = [], []
+        values: list[Any] = []
+        where: list[tuple[str]] = []
         for n, (name, offset) in enumerate(zip(columns, offsets)):
             value = cells_of.get(left + offset)
             if value is not None and value.cache is not None:
@@ -524,11 +528,11 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
                 where.append((value.a,))      # its own cell, a declared table's too
             else:
                 cell = Cell(sheet_row, left + offset)
-                where.append((region.located(Area(cell, cell)),))
+                where.append((region.located(Area(cell, cell)) or "",))
         rows.append(tuple(values))
         sources.append(tuple(where))
     types = tuple(next(iter(t)) if len(t) == 1 else None for t in seen)
-    first_is_key = keys is not None and columns[0] == index.column
+    first_is_key = keys is not None and index is not None and columns[0] == index.column
     detail = None
     if cleaned_count:
         detail = {"cleaned": Count(cleaned_count, tuple(cleaned))}
@@ -536,7 +540,8 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
             f"{whole.text}: {cleaned_count} values were cleaned by the table's declared "
             f"rules, the first at {', '.join(cleaned)}; a list is placed as its items, one "
             "line each"), stacklevel=2)
-    return Dataset(columns, rows, sources=sources, keys=1 if first_is_key else 0,
+    return Dataset(columns, tuple(rows), sources=tuple(sources), keys=1 if first_is_key else 0,
+
                    types=types, detail=detail, cache=cache or None)
 
 
@@ -599,9 +604,10 @@ def _column_area(text: str) -> tuple | None:
     otherwise."""
     if text in _AREAS:
         return _AREAS[text]
-    found = None
+    found: tuple | None = None
     try:
-        address = parse_address(text)
+        address: "Address | None" = parse_address(text)
+
     except (AddressError, ValueError):
         address = None
     if isinstance(address, RangeAddress) and address.span == "cells" \

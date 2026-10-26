@@ -112,7 +112,7 @@ import datetime as _dt
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping
+from typing import Any, Literal, Mapping
 
 from ooxml_common.locales import DATE_ORDERS
 from ooxml_edit.markdown import plain
@@ -398,11 +398,11 @@ def plan(workbook: Any, items: "list[tuple[Any, Any]]", *,
     if pending or explicit:
         rows, refused = assign_rows(workbook, [new for _, _, new, _ in pending], explicit,
                                     first_free=new_rows)
-        for item in explicit:
-            key = (item.region.address.text, item.key)
+        for allocation in explicit:
+            key = (allocation.region.address.text, allocation.key)
             if key in refused:
                 code, detail = refused[key]
-                refusals.add(code, item.shown, detail)
+                refusals.add(code, allocation.shown, detail)
         keyed: set[tuple[str, str]] = set()
         for order, shown, new, given in pending:
             key = (new.region.address.text, new.key)
@@ -416,10 +416,12 @@ def plan(workbook: Any, items: "list[tuple[Any, Any]]", *,
                 keyed.add(key)
                 found.append((order, 0, row.sheet, Cell(row.row, row.key_column),
                               row.key_value, "key"))
-            column = capacity_rows(new.region).columns[new.column]
+            grows = capacity_rows(new.region)
+            assert grows is not None   # a new row is allocated in a table with a capacity
+            column = grows.columns[new.column]
             found.append((order, 1, row.sheet, Cell(row.row, column), given, "row"))
-        for n, item in enumerate(explicit):     # a row of its key alone
-            key = (item.region.address.text, item.key)
+        for n, allocation in enumerate(explicit):     # a row of its key alone
+            key = (allocation.region.address.text, allocation.key)
             if key in rows and key not in keyed:
                 keyed.add(key)
                 row = rows[key]
@@ -779,6 +781,7 @@ def _day(given: Any, workbook: Any, label: str, refusals: _Refusals) -> _dt.date
             refusals.add("bad_date", label, "a date as YYYY-MM-DD, or in the locale's date "
                          "order with a four-digit year")
             return None
+        assert order is not None   # one of DATE_ORDERS
         parts = dict(zip(order, (local.group(1), local.group(3), local.group(4))))
         if len(parts["y"]) != 4 or len(parts["m"]) > 2 or len(parts["d"]) > 2:
             refusals.add("bad_date", label, "ambiguous: a four-digit year in the locale's "
@@ -819,7 +822,8 @@ def _dated(workbook: Any, facts: _SheetFacts, label: str, sheet: Any, cell: Cell
 _GIVE = '{"date": ..., "format": "yyyy-mm-dd"}'
 
 
-def _shows_day(workbook: Any, style: int) -> "bool | str":
+def _shows_day(workbook: Any, style: int) -> "Literal[True] | str":
+
     """``True`` when cell format ``style`` shows a day; else what to do (the refusal's
     detail)."""
     styles = workbook.editor.cells.styles

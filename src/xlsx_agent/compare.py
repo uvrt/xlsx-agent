@@ -98,7 +98,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Iterator, Mapping, Sequence, cast
 
 from ooxml_edit.sheets import Area, Cell
 
@@ -371,8 +371,8 @@ def _sheets(old: "list[Sheet]", new: "list[Sheet]") -> Iterator[SheetChange]:
 def _pairs(a: "Workbook", b: "Workbook", tables: Any
            ) -> tuple[list[tuple[Region, Region]], list[str], list[str]]:
     if tables is None:
-        old = {r.name.casefold(): r for r in [*a.tables, *a.regions.declared]}
-        new = {r.name.casefold(): r for r in [*b.tables, *b.regions.declared]}
+        old = {(r.name or "").casefold(): r for r in [*a.tables, *a.regions.declared]}
+        new = {(r.name or "").casefold(): r for r in [*b.tables, *b.regions.declared]}
         pairs = [(region, new[name]) for name, region in old.items() if name in new]
         added = [r.address.text for name, r in new.items() if name not in old]
         removed = [r.address.text for name, r in old.items() if name not in new]
@@ -494,7 +494,8 @@ def _table(a: "Workbook", b: "Workbook", old: Region, new: Region, key: str | No
 
     titles = [new.columns[by_old[i]] for i in compared]
     offsets = [key_offset, *compared]
-    added, changed = [], []
+    added: list[RowChange] = []
+    changed: list[CellChange] = []
     paired_rows = unchanged = 0
     for text, found in keys_new.items():
         if text in shared:
@@ -674,6 +675,7 @@ def _by_key(region: Region, key: str, column: str | None = None) -> str:
 def _value(region: Region, position: int, offset: int, kept: _Kept) -> Value:
     """A kept cell as the reader gives it, with its address."""
     v, t, issue, formula, hidden, origin, cache, external = kept
+    assert region.data is not None   # a kept row is a data row
     return Value(_written(region), region.data.first.row + position - 1,
                  region.area.first.column + offset, v=v, t=t, issue=issue, formula=formula,
                  hidden=hidden, origin=origin, cache=cache, external=external)
@@ -706,15 +708,17 @@ def _delta(a: Value, b: Value) -> Decimal | None:
             if isinstance(a.v, bool) or isinstance(b.v, bool):
                 return None
             return Decimal(repr(b.v)) - Decimal(repr(a.v))
+        old, new = cast(str, a.v), cast(str, b.v)   # a date, datetime or time: ISO text
         if a.t == "date":
-            return Decimal((dt.date.fromisoformat(b.v) - dt.date.fromisoformat(a.v)).days)
+            return Decimal((dt.date.fromisoformat(new) - dt.date.fromisoformat(old)).days)
         if a.t == "datetime":
-            moved = dt.datetime.fromisoformat(b.v) - dt.datetime.fromisoformat(a.v)
+            moved = dt.datetime.fromisoformat(new) - dt.datetime.fromisoformat(old)
             return Decimal(moved.days) + Decimal(moved.seconds) / 86400 + \
                 Decimal(moved.microseconds) / 86_400_000_000
         day = dt.date(2000, 1, 1)
-        moved = dt.datetime.combine(day, dt.time.fromisoformat(b.v)) - \
-            dt.datetime.combine(day, dt.time.fromisoformat(a.v))
+        moved = dt.datetime.combine(day, dt.time.fromisoformat(new)) - \
+            dt.datetime.combine(day, dt.time.fromisoformat(old))
+
         return Decimal(moved.days * 86400 + moved.seconds) + \
             Decimal(moved.microseconds) / 1_000_000
     except (TypeError, ValueError, ArithmeticError):
