@@ -105,7 +105,7 @@ import math
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping, Sequence, cast
 
 from ooxml_edit.sheets import Area, Cell, column_letters
 
@@ -582,6 +582,7 @@ def _region(workbook: "Workbook", spec: _Table, index: int, out: "_Problems") ->
     try:
         if spec.table is not None:
             return workbook.region(spec.table)
+        assert spec.name is not None and spec.range is not None   # a region: its name, range
         return workbook.regions.declare(spec.name, spec.range, header_rows=spec.header_rows,
                                         headers=spec.headers, keep=False)
     except NameNotFound as error:
@@ -635,7 +636,7 @@ class _Check:
                     met.add(code)
                     emit(code, value, detail)
 
-            for item in value.v:
+            for item in cast("list[str]", value.v):
                 self._value(Value(value.sheet, value.row, value.column, v=item, t="text",
                                   origin=value.origin), once)
         else:
@@ -699,7 +700,7 @@ class _Check:
         own, folded, stripped = sets
         key = _key(value, t, self.date1904)
         if t == "text":
-            text = value.v
+            text = cast(str, value.v)
             if (text.casefold() if self.spec.case == "ignore" else text) in own:
                 return True
             if self.spec.case == "exact" and text.casefold() in folded:
@@ -783,9 +784,11 @@ def _check(workbook: "Workbook", region: Region, spec: _Table, index: int,
                     out.cache[value.cache] = out.cache.get(value.cache, 0) + 1
                     if value.external:
                         out.cache["external"] = out.cache.get("external", 0) + 1
-                check.run(value, lambda code, v, detail, check=check: out.add(
-                    index, 1, (v.row, check.offset), code, None, label, check.name, detail,
-                    cell=v))
+                def report(code: str, v: Value, detail: dict, check: _Check = check) -> None:
+                    out.add(index, 1, (v.row, check.offset), code, None, label, check.name,
+                            detail, cell=v)
+
+                check.run(value, report)
             if key_positions:
                 parts = [row[p] for p in key_positions]
                 if any(p.t == "blank" for p in parts):
@@ -843,7 +846,9 @@ class _Problems:
         details = tuple((k, tuple(v) if isinstance(v, list) else v)
                         for k, v in detail.items() if v not in (None, [], ()))
         if cell is None:
+            assert address is not None   # a problem of no one cell names where it is
             self._keep((table, phase, place, CODES.index(code)),
+
                        DataProblem(code, address, 1, label, column, details))
             return
         sheet, row, column_number = cell.place      # its own cell, a declared table's too

@@ -201,7 +201,7 @@ from array import array
 from dataclasses import dataclass, field, replace
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 from fractions import Fraction
-from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, cast
 
 from ooxml_common.locales import DATE_ORDERS
 from ooxml_edit.sheets import Area, Cell, number_text
@@ -304,7 +304,9 @@ class _Keyed:
     def __init__(self, region: Region, index: Any) -> None:
         self.whole = region.address
         self.keys = index.keys
+        assert region.data is not None   # _keyed asks only of a table with data rows
         self.first_row = region.data.first.row
+
         self.first_column = region.area.first.column
         self.columns = region.columns
         self.column = index.column
@@ -341,6 +343,13 @@ class _Sourced:
 
     __slots__ = ()
 
+    if TYPE_CHECKING:   # the fields of the dataclasses built on it
+        sheet: "SheetRef | Span | None"
+        column: int
+        runs: array
+        via: "DatasetTable | None"
+        keyed: "_Keyed | None"
+
     @property
     def sources(self) -> "tuple[TableAddress | RangeAddress | str, ...]":
         """The cells: by key when the table has a key column (``keyed``), one key set
@@ -357,7 +366,9 @@ class _Sourced:
         if isinstance(sheet, Span):    # a declared table read as one: each sheet's cells
             return tuple(r for i in range(0, len(b), 2)
                          for r in sheet.locate(Area(Cell(b[i], column), Cell(b[i + 1], column))))
+        assert sheet is not None   # a table's cells (via: a dataset's, given above)
         return tuple(RangeAddress(sheet, Area(Cell(b[i], column), Cell(b[i + 1], column)))
+
                      for i in range(0, len(b), 2))
 
     @property
@@ -628,7 +639,11 @@ class _Plan:
         self.workbook = workbook
         self.region = region
         self.via = region if isinstance(region, DatasetTable) else None
-        self.date1904 = region.date1904 if self.via is not None else workbook.date1904
+        if self.via is not None:
+            self.date1904 = self.via.date1904
+        else:
+            assert workbook is not None   # only a dataset is derived from without one
+            self.date1904 = workbook.date1904
         if id is not None:
             try:
                 DatasetAddress(id=id)
@@ -689,7 +704,8 @@ class _Plan:
         self.typed_offsets = sorted({t.offset for t in self.tests} | set(self.columns)
                                     | set(self.group_offsets)
                                     | ({self.bins.offset} if self.bins else set())
-                                    | ({self.pivot_offset} if self.pivot else set()))
+                                    | ({self.pivot_offset} if self.pivot_offset is not None
+                                       else set()))
 
     def _measures(self, measures: Any) -> list[_Measure]:
         if measures is None:
@@ -767,8 +783,9 @@ class _Plan:
         for test in self.tests:
             test.check(self.types[test.column], self.date1904)
         grouped = [(c, o, "group_by") for c, o in zip(self.group, self.group_offsets)]
-        if self.pivot_offset is not None:
+        if self.pivot is not None and self.pivot_offset is not None:
             grouped.append((self.pivot, self.pivot_offset, "pivot"))
+
         for column, o, field_name in grouped:
             if types[o] == "list":
                 raise DeriveError("wrong_type", f"{column} holds lists (its declaration "
@@ -889,7 +906,7 @@ def _area(region: Region, offsets: Iterable[int]) -> Area | None:
 
 
 def _rows(workbook: "Workbook | None", region: "Region | DatasetTable", offsets: list[int]
-          ) -> tuple[Iterable[list[Value]], int] | None:
+          ) -> tuple[Iterable[Sequence[Value]], int] | None:
     """The rows to read for the columns at ``offsets``, streamed, and the offset of each
     row's first value; ``None`` when there are no data rows.  A dataset gives every
     column, measured (unrounded)."""
@@ -900,7 +917,9 @@ def _rows(workbook: "Workbook | None", region: "Region | DatasetTable", offsets:
         return None
     left = area.first.column - region.area.first.column
     first = region.area.first.column
-    return workbook._read(RangeAddress(region.sheet_ref, area),
+    assert workbook is not None   # only a dataset is derived from without one
+    return workbook._read(
+RangeAddress(region.sheet_ref, area),
                           columns={first + o for o in offsets or [0]}), left
 
 
@@ -929,7 +948,7 @@ def _type_pass(workbook: "Workbook | None", region: "Region | DatasetTable",
                     continue
                 issue = value.issue
                 if t == "text":
-                    if issue is None and local and looks_like_date(value.v, locale,
+                    if issue is None and local and looks_like_date(cast(str, value.v), locale,
                                                                    local_dates=True):
                         issue = "local_date_text"
                     if issue in ("number_as_text", "date_as_text", "local_date_text"):
@@ -946,7 +965,7 @@ def _coerced_type(value: Value, issue: str, locale: Any) -> str:
     """The type a text cell with ``issue`` reads as, coerced; ``text`` when it does not."""
     if issue == "number_as_text":
         return "number"
-    shown = text_date(value.v, locale, local_dates=True)
+    shown = text_date(cast(str, value.v), locale, local_dates=True)
     if shown is None:
         return "text"
     return "datetime" if "T" in shown else "date"
@@ -1157,7 +1176,7 @@ def _second_pass(plan: _Plan) -> _State:
                 continue
             index = min(bisect.bisect_right(edges, key) - 1, len(edges) - 2)
         pivot_key = None
-        if plan.pivot_offset is not None:
+        if plan.pivot is not None and plan.pivot_offset is not None:
             value = row[plan.pivot_offset - left]
             if value.issue == "no_cached_value" or value.t == "list":
                 leave(plan.pivot, "no_cached_value" if value.t != "list" else "wrong_type",
@@ -1256,16 +1275,16 @@ def _use(value: Value, t: str, coerce: "frozenset[str]", locale: Any, grouping: 
     value itself (any other type); ``None`` when it is left out."""
     if value.t == t:
         if t in _NUMBERS:
-            return float(value.v) if not isinstance(value.v, float) else value.v
+            return float(cast(float, value.v)) if not isinstance(value.v, float) else value.v
         if t in _MOMENTS:
             return _key(value, t, date1904)
         return value.v
     if value.issue not in coerce:
         return None
     if t == "number" and value.issue == "number_as_text":
-        return text_number(value.v, locale, grouping=grouping)
+        return text_number(cast(str, value.v), locale, grouping=grouping)
     if t in ("date", "datetime") and value.issue == "date_as_text":
-        shown = text_date(value.v, locale, local_dates=True)
+        shown = text_date(cast(str, value.v), locale, local_dates=True)
         return _iso_key(shown, t, date1904) if shown is not None else None
     return None
 
@@ -1289,7 +1308,7 @@ def _exact(partials: list[float]) -> Fraction:
     return sum((Fraction(p) for p in partials), Fraction(0))
 
 
-def _value(m: _Measure, cell: _Cell | None, t: str, plan: _Plan, state: _State
+def _value(m: _Measure, cell: _Cell | None, t: str | None, plan: _Plan, state: _State
            ) -> tuple[Any, Any]:
     """A measure's value in one cell, and its sort key (the number it stands for)."""
     fn = m.fn
@@ -1305,26 +1324,34 @@ def _value(m: _Measure, cell: _Cell | None, t: str, plan: _Plan, state: _State
     if fn == "count":
         n = acc.count if acc is not None else 0
         return n, n
+    # Each accumulator keeps what its column's measures need (_Acc): what fn reads is there.
     if fn == "distinct":
-        n = len(acc.seen) if acc is not None else 0
+        n = len(acc.seen) if acc is not None and acc.seen is not None else 0
         return n, n
     if acc is None or not acc.count:
         return None, None
     if fn == "sum":
+        assert acc.partials is not None
         value = math.fsum(acc.partials)
         return value, value
     if fn == "share":
+        assert acc.partials is not None
         total = _exact(state.totals[m.offset][0])
         if not total:
             return None, None
         value = float(_exact(acc.partials) / total)
         return value, value
     if fn in ("min", "max", "first", "last"):
-        key, v = {"min": acc.low, "max": acc.high, "first": acc.first, "last": acc.last}[fn]
+        ends = {"min": acc.low, "max": acc.high, "first": acc.first, "last": acc.last}[fn]
+        assert ends is not None   # set with the column's first value
+        key, v = ends
         return v, key
+    assert t is not None   # a measure of a column
     if fn == "mean":
+        assert acc.partials is not None
         exact = _exact(acc.partials) / acc.count
     else:  # median
+        assert acc.kept is not None
         ordered = sorted(acc.kept)
         n = len(ordered)
         if n % 2:
@@ -1343,6 +1370,7 @@ def _output_type(m: _Measure, plan: _Plan) -> str:
         return "number"
     if m.fn == "share":
         return "percent"
+    assert m.offset is not None   # every other measure is of a column
     return plan.offset_types[m.offset]
 
 
@@ -1359,9 +1387,15 @@ def _label(v: Any, t: str) -> str:
 def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Derived:
     region = plan.region
     via = plan.via
-    sheet = (region.span or region.sheet_ref) if via is None else None
-    first_column = region.area.first.column if via is None else 0
-    keyed = _keyed(plan.workbook, region) if via is None and state.used else None
+    sheet: "SheetRef | Span | None" = None
+    first_column = 0
+    keyed = None
+    if not isinstance(region, DatasetTable):
+        sheet = region.span or region.sheet_ref
+        first_column = region.area.first.column
+        if state.used:
+            assert plan.workbook is not None   # a table is derived from with its workbook
+            keyed = _keyed(plan.workbook, region)
     bins = plan.bins
     keys = list(plan.group) + ([bins.name] if bins else [])
     # the output columns: (name, measure, pivot key)
@@ -1398,7 +1432,9 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
               if m.name in by_measure}
 
     # the result rows, in the order met (bins: every bin of every group)
+    slots: list[tuple[Any, Any]]
     if bins:
+
         slots = [(g, i) for g in state.order for i in range(len(bins.labels))]
         if not plan.group and not slots:
             slots = [((), i) for i in range(len(bins.labels))]
@@ -1409,7 +1445,7 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
     if len(slots) > MAX_GROUPS:
         raise DeriveError("too_many_groups", f"more than {MAX_GROUPS} groups with their bins; "
                           "give fewer edges or filter the rows (where)", field="bins")
-    shown_of = {}
+    shown_of: dict[Any, Any] = {}
     for (g, _), group in state.groups.items():
         shown_of.setdefault(g, group.shown)
 
@@ -1463,7 +1499,7 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
     rows = [{c: (_round(v, digits[c]) if c in digits and isinstance(v, float) else v)
              for c, v in row.items()} for row in unrounded] if digits else \
         [dict(row) for row in unrounded]
-    names_of = {}
+    names_of: dict[int, list[str]] = {}
     for m in plan.measures:
         if m.offset is not None:
             names_of.setdefault(m.offset, []).append(m.name)
@@ -1477,8 +1513,9 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
             excluded[m.name] = {r: found[r].done() for r in REASONS if r in found}
         if m.offset in state.coerced:
             coerced[m.name] = state.coerced[m.offset].done()
-    if "bins" in state.coerced:
+    if bins and "bins" in state.coerced:
         coerced[bins.name] = state.coerced["bins"].done()
+
     totals = {}
     for m in plan.measures:
         if m.fn != "share":

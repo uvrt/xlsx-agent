@@ -67,6 +67,23 @@ jobs:
       # version section names: the tag workflow tags that version when it reaches main.
       - name: The version agrees with CHANGELOG.md
         run: python tools/check_version.py
+      # Lint and type check: the same versions as pyproject.toml's dev extra (change both
+      # together); what they check is configured there.  ruff takes a few bug-finding
+      # rules (pyflakes and the like), never formatting.
+      - name: Lint (ruff)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "ruff==0.17.2"
+          ruff check .
+      # mypy, not strict, over the package: ooxml-common and ooxml-edit installed as the
+      # test job installs them, so their types are used where they ship py.typed.
+      - name: Type check (mypy)
+        run: |
+          python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@main"
+          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@main"
+          python -m pip install "mypy==2.4.0"
+          mypy
+
       - name: Build distributions
         run: |
           python -m pip install --upgrade pip build twine

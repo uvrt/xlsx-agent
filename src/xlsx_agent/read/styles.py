@@ -174,11 +174,11 @@ def builtin_format(number_format_id: int, language: str | None = None) -> Number
     tables = LANGUAGE_FORMATS
     if language is not None:
         table = tables.get(language)
-        code = table.get(number_format_id) if table else None
-        if code is None:
+        own = table.get(number_format_id) if table else None
+        if own is None:
             return NumberFormat(number_format_id, None, "unknown", builtin=True)
-        kind, elapsed, lcid = classify_format(code)
-        return NumberFormat(number_format_id, code, kind, elapsed, lcid, builtin=True)
+        kind, elapsed, lcid = classify_format(own)
+        return NumberFormat(number_format_id, own, kind, elapsed, lcid, builtin=True)
     found = [(classify_format(table[number_format_id]), table[number_format_id])
              for table in tables.values() if number_format_id in table]
     if not found:

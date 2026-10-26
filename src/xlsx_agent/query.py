@@ -77,7 +77,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence, cast
 
 from ooxml_edit.sheets import Area, Cell
 
@@ -215,7 +215,8 @@ def query(workbook: "Workbook", region: Region, columns: Sequence[str] | None = 
                        not_compared=found.not_compared)
 
 
-def select(region: Region, columns: Sequence[str] | None) -> tuple[str, ...]:
+def select(region: "Region | DatasetTable", columns: Sequence[str] | None
+           ) -> tuple[str, ...]:
     """The columns named, as the region spells them, each once in the order first named;
     every column when ``None`` or empty."""
     if isinstance(columns, str):
@@ -249,7 +250,7 @@ def matches(workbook: "Workbook", region: Region, *,
     left, right = first + min(span), first + max(span)
     kept: dict[int, list[Value]] | None = {} if wanted_offsets else None
     room = KEEP_CELLS
-    counted = {o: {} for o in offsets}       # offset -> type -> [count, first addresses]
+    counted: dict[int, dict] = {o: {} for o in offsets}  # offset -> type -> [count, firsts]
     typed = [t for t in tests if t.compares]
     found: list[tuple] = []                   # (row, types per typed test, keys per sort key)
     area = Area(Cell(data.first.row, left), Cell(data.last.row, right))
@@ -356,15 +357,15 @@ def read_rows(workbook: "Workbook", region: Region, columns: Sequence[str],
     left, right = first + min(offsets), first + max(offsets)
     wanted = set(rows)
     reading = {first + o for o in offsets}
-    kept: dict[int, list[Value]] = {}
+    read: dict[int, list[Value]] = {}
     for top, bottom in _runs(sorted(wanted), workbook._rows_apart(region.range)):
         area = Area(Cell(top, left), Cell(bottom, right))
         for row in workbook._read(RangeAddress(region.sheet_ref, area), columns=reading):
             number = row[0].row
             if number in wanted:
-                kept[number] = [row[first + o - left] for o in offsets]
+                read[number] = [row[first + o - left] for o in offsets]
     for number in rows:
-        yield kept[number]
+        yield read[number]
 
 
 def _runs(rows: list[int], apart: bool) -> list[tuple[int, int]]:
@@ -430,11 +431,12 @@ class _Test:
         if wanted is _BAD:
             return False
         if t == "list":                     # any of its items
+            items = cast("list[str]", value.v)
             if self.op == "eq":
-                return wanted in value.v
+                return wanted in items
             if self.op == "in":
-                return any(item in wanted for item in value.v)
-            return any(wanted in item.casefold() for item in value.v)
+                return any(item in wanted for item in items)
+            return any(wanted in item.casefold() for item in items)
         key = _key(value, t, date1904)
         if key is None:
             return False
@@ -446,9 +448,11 @@ class _Test:
             return key >= wanted
         if self.op == "lte":
             return key <= wanted
+        text = cast(str, value.v)                       # words_gt and contains: on text
         if self.op == "words_gt":
-            return len(value.v.split()) > wanted
-        return wanted in value.v.casefold()             # contains, on text
+            return len(text.split()) > wanted
+        return wanted in text.casefold()             # contains, on text
+
 
     def check(self, column_type: str, date1904: bool) -> None:
         """Refuse the test unless the column's type takes it, with a value of that type."""
@@ -479,7 +483,7 @@ class _Bad(Exception):
 _BAD = object()
 
 
-def _tests(region: Region, where: Any) -> list[_Test]:
+def _tests(region: "Region | DatasetTable", where: Any) -> list[_Test]:
     if where is None:
         return []
     out: list[_Test] = []
@@ -519,7 +523,8 @@ def _tests(region: Region, where: Any) -> list[_Test]:
     return out
 
 
-def _test(region: Region, name: str, op: Any, operand: Any, *, mapping: bool) -> _Test:
+def _test(region: "Region | DatasetTable", name: str, op: Any, operand: Any, *,
+          mapping: bool) -> _Test:
     if op not in OPS:
         raise QueryError("bad_filter", f"a filter on {name} has an unknown test; the tests are "
                          f"{', '.join(OPS)}", column=name, valid_options=OPS)
@@ -668,7 +673,7 @@ class _SortKey:
         return t, key
 
 
-def _sort_keys(region: Region, sort: Any) -> list[_SortKey]:
+def _sort_keys(region: "Region | DatasetTable", sort: Any) -> list[_SortKey]:
     if not sort:
         return []
     if isinstance(sort, (str, tuple)):

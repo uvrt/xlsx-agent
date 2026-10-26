@@ -53,7 +53,7 @@ import functools
 import io
 import weakref
 import zipfile
-from typing import Any, Callable
+from typing import Any, Callable, overload
 
 from ooxml_edit.tools import DocumentFormat, ToolError
 
@@ -61,6 +61,8 @@ from ..address import AddressError, NameNotFound
 from ..clean import CleanedWarning
 from ..dataset import merge_sources, table_dataset
 from ..declare import DeclarationError, parse_declarations
+from ..derive import DeriveError
+
 from ..edit import EditError, undo_scope, undo_shared
 from ..edit.policy import PolicyError, as_policy
 from ..package import (BIFF_BOF, CFB_SIGNATURE, KindMismatchWarning, OpenError,
@@ -188,6 +190,11 @@ QUERY_CODES: dict[str, str] = {
 }
 
 
+@overload
+def tool_error(error: "AddressError | NameNotFound | RegionError | QueryError | SchemaError "
+                      "| DeclarationError | PolicyError") -> ToolError: ...
+@overload
+def tool_error(error: BaseException) -> ToolError | None: ...
 def tool_error(error: BaseException) -> ToolError | None:
     """The tool error for one of the library's address errors, or ``None`` for any other
     exception (the toolbox maps it by :data:`ERRORS`).  The library's own code goes in
@@ -204,7 +211,8 @@ def tool_error(error: BaseException) -> ToolError | None:
             details["column"] = error.column
         if error.column_type is not None:
             details["column_type"] = error.column_type
-        if getattr(error, "issue", None) is not None:       # a derive's stored-as-text cells
+        if isinstance(error, DeriveError) and error.issue is not None \
+                and error.cells is not None:                # a derive's stored-as-text cells
             details["issue"] = error.issue
             details["cells"] = error.cells.as_dict()
         return ToolError(QUERY_CODES.get(error.code, "invalid_arguments"), error.message,
@@ -285,6 +293,8 @@ def problems(workbook: Workbook) -> list[Any]:
 
     changed = workbook.package.changed_parts()
     sheets = [s.part for s in workbook._every_sheet if s.part in changed]
+
+
     found = check_structure(workbook, sheets=sheets)
     if not sheets:
         return found

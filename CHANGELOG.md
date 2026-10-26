@@ -5,6 +5,32 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## 0.1.3 (2026-10-26) -- a linter, a type checker and py.typed
+
+- **Linted and type checked in CI** (review, S8): `ruff check .` with a small set of
+  bug-finding rules (pyflakes, syntax errors, mutable or call defaults, a return in
+  `finally`, a dropped comparison, pylint's errors; no formatting, no import sorting) and
+  `mypy`, not strict, over the package, both configured in `pyproject.toml` and run as
+  steps of CI's `build` job. The new `dev` extra is the `test` one with both, at the
+  versions CI runs. The package ships `py.typed`. What ruff found: unused imports (three
+  in the package, none part of its API) and placeholder-less f-strings in tests.
+- **What the type checker found**, each fixed rather than silenced:
+  - A formula with a name of letters past U+FFFF (`A1+𝐀Rate`) raised `AttributeError`
+    from the tokenizer, which took every character from U+00C0 on as starting a name but
+    matched names only to U+FFFF. Such a name is now a name.
+  - A declared field written `{"header": null}` passed the declaration's checks and
+    failed later with `AttributeError`; it is refused, `bad_declaration` at
+    `fields[n].header`, as an empty header is.
+  - `header_row: null` (and `first_row`/`last_row`) failed with `TypeError` when the
+    declaration was read; null is now the row left out, as JSON's `null` usually is (the
+    default header row, no first or last row).
+  - Everything else was a fact the code already relied on, now written down for the
+    checker: an `assert` where a value is known to be there (a region's data rows when a
+    row is named in them, a key when an address is by key), a variable no longer reused
+    for values of another type, annotations that said less than the code does
+    (`Workbook._read`'s `target`, `check_structure`'s `sheets`, `capped`'s mapping). One
+    `type: ignore` with its reason (`re._parser`, private and without a stub).
+
 ## 0.1.2 (2026-10-25) -- one reading of a number format code
 
 - **Format codes read as the libraries read them** (review, S1): `read.styles.classify_format`
@@ -566,3 +592,7 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
 - `pptx-agent` and `pptx2svg>=0.2.0` (`test` extra only): a deck filled from a workbook's
   table in one session (`tests/test_sources_deck.py`); 0.2.0 is pptx2svg's first tagged
   version.
+- `ruff==0.17.2` and `mypy==2.4.0` (`dev` extra only, with the `test` requirements):
+  pinned, as CI's `build` job installs them, so a new release changes nothing until both
+  are raised together.
+

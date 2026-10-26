@@ -230,7 +230,7 @@ from __future__ import annotations
 
 import fnmatch
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
 
 from ooxml_edit.sheets import Area, Cell, column_index, column_letters
 
@@ -427,6 +427,7 @@ def _table(item: Any, path: str) -> "TableSpec | HiddenSheets | RedactTerms":
                                valid_options=list(TYPES))
     match: tuple[str, ...] = ()
     within = None
+
     if isinstance(item.get("header_row"), Mapping):
         match, within = _header_match(item["header_row"], f"{path}.header_row")
         for key in ("first_row", "last_row"):
@@ -562,7 +563,8 @@ def _field(item: Any, path: str) -> FieldSpec:
                                "or by column (its letter), one of the two",
                                valid_options=["header", "column"])
     header = item.get("header")
-    if header is not None and not (isinstance(header, str) and header):
+    if "header" in item and not (isinstance(header, str) and header):
+
         raise DeclarationError("bad_declaration", f"{path}.header", "the header's text")
     column = None
     if "column" in item:
@@ -600,11 +602,17 @@ def _description(item: Mapping, path: str) -> str | None:
     return text
 
 
+@overload
+def _row(item: Mapping, key: str, path: str, *, minimum: int = 1,
+         default: None = None) -> int | None: ...
+@overload
+def _row(item: Mapping, key: str, path: str, *, minimum: int = 1,
+         default: int) -> int: ...
 def _row(item: Mapping, key: str, path: str, *, minimum: int = 1,
          default: int | None = None) -> int | None:
-    value = item.get(key, default)
-    if value is None:
-        return None
+    value = item.get(key)
+    if value is None:   # absent, or null: the default
+        return default
     if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= 1048576:
         raise DeclarationError("bad_rows", f"{path}.{key}", f"a row number from {minimum}")
     return value
@@ -645,23 +653,23 @@ def declare_tables(workbook: "Workbook", declarations: Any) -> list[Region]:
     specs = declarations if _specs(declarations) else parse_declarations(declarations)
     redacting = [spec for spec in specs if isinstance(spec, RedactTerms)]
     hiding = [spec for spec in specs if isinstance(spec, HiddenSheets)]
-    specs = [spec for spec in specs if isinstance(spec, TableSpec)]
+    tables = [spec for spec in specs if isinstance(spec, TableSpec)]
     redaction_before = workbook._redaction
     if redacting:
         _redact(workbook, redacting)
     try:
-        specs = [_redacted_spec(workbook, spec) for spec in specs]
+        tables = [_redacted_spec(workbook, spec) for spec in tables]
         before = workbook._withheld_sheets
         withheld = {spec.path: _withheld_names(workbook, spec) for spec in hiding}
         workbook._set_withheld_sheets(before.union(*withheld.values()))
         try:
-            _check_hidden_sheets(workbook, specs, withheld)
-            with workbook.regions.redeclaring([spec.name for spec in specs]):
+            _check_hidden_sheets(workbook, tables, withheld)
+            with workbook.regions.redeclaring([spec.name for spec in tables]):
                 built: list[Region | None] = []
-                for spec in specs:
-                    built.append(build(workbook, spec, after=_below(built)))
+                for table in tables:
+                    built.append(build(workbook, table, after=_below(built)))
             built = _bounded(workbook, built)
-            _check_withheld(workbook, specs, built)
+            _check_withheld(workbook, tables, built)
         except BaseException:
             workbook._set_withheld_sheets(before)   # kept whole or not at all
             raise
@@ -721,7 +729,8 @@ def _bounded(workbook: "Workbook", built: "list[Region | None]") -> "list[Region
     such table, at the sheet's last row."""
     tops: dict[str, list[int]] = {}
     others = [r for r in workbook.regions.configured
-              if r.name.casefold() not in {b.name.casefold() for b in built if b is not None}]
+              if (r.name or "").casefold() not in {(b.name or "").casefold() for b in built
+                                                   if b is not None}]
     for region in [*others, *built]:
         if region is None:
             continue
@@ -780,7 +789,7 @@ def _check_hidden_sheets(workbook: "Workbook", specs: "Sequence[TableSpec]",
     names = {spec.name.casefold() for spec in specs}
     regions = workbook.regions
     kept = {id(r): r for r in [*regions.configured, *regions.declared]
-            if r.name.casefold() not in names}
+            if (r.name or "").casefold() not in names}
     for region in kept.values():
         sheets = [p.sheet for p in region.span.parts] if region.span is not None \
             else [region.sheet]
@@ -817,7 +826,7 @@ def _check_withheld(workbook: "Workbook", specs: "Sequence[TableSpec]",
     names = {spec.name.casefold() for spec in specs}
     hiding: list[tuple[str, str, Area]] = [
         (region.address.text, sheet, area) for name, region in
-        ((r.name.casefold(), r) for r in workbook.regions.configured)
+        (((r.name or "").casefold(), r) for r in workbook.regions.configured)
         if name not in names and region.span is not None
         for sheet, area in region.span.withheld()]
     hiding += [(region.address.text, sheet, area) for region in built
@@ -866,7 +875,8 @@ def build(workbook: "Workbook", spec: TableSpec,
     regions = workbook.regions
     path = spec.path
     folded = spec.name.casefold()
-    taken = [t.address.text for t in regions.excel_tables if t.name.casefold() == folded]
+    taken = [t.address.text for t in regions.excel_tables
+             if (t.name or "").casefold() == folded]
     taken += [n.address.text for n in regions.names if n.address is not None
               and n.scope is None and n.name.casefold() == folded]
     if taken:
@@ -880,7 +890,8 @@ def build(workbook: "Workbook", spec: TableSpec,
     found = None
     if spec.header_match and used is not None:
         across = spec.columns or (used.first.column, used.last.column)
-        found = _find_header(workbook, spec, first_sheet, used, *across, after or {})
+        found = _find_header(workbook, spec, first_sheet, used, across[0], across[1],
+                             after or {})
     left, right = _extent(workbook, spec, first_sheet, used,
                           found[0] if found is not None else spec.header_row)
     parts: list[Part] = []
@@ -904,12 +915,12 @@ def build(workbook: "Workbook", spec: TableSpec,
                 raise DeclarationError("no_header", f"{path}.header_row", f"row {header} of "
                                        f"sheet {written} is below its last cell")
             row = _row_values(workbook, sheet, header, left, right)
-            found = [v.v if v.t == "text" and isinstance(v.v, str) else "" for v in row]
+            row_texts = [v.v if v.t == "text" and isinstance(v.v, str) else "" for v in row]
             if texts is None:
-                texts = found
+                texts = row_texts
                 names = _header_names(row, left, flags, written)
-            elif found != texts:
-                at = next(i for i, (a, b) in enumerate(zip(found, texts)) if a != b)
+            elif row_texts != texts:
+                at = next(i for i, (a, b) in enumerate(zip(row_texts, texts)) if a != b)
                 cell = f"{column_letters(left + at)}{header}"
                 raise DeclarationError("header_mismatch", f"{path}.sheets", f"the header of "
                                        f"sheet {written} differs from sheet "
@@ -948,7 +959,9 @@ def _check_capacity(workbook: "Workbook", spec: TableSpec, sheets: "list[Sheet]"
         raise DeclarationError("bad_capacity", where, f"the table lies on {len(sheets)} "
                                "sheets; a table with a capacity lies on one, where its new "
                                "rows go")
+    assert spec.capacity is not None   # checked for a table with a capacity only
     end = first + spec.capacity - 1
+
     if last > end:
         raise DeclarationError("bad_capacity", where, f"the table has {last - first + 1} "
                                f"data rows, more than its capacity of {spec.capacity}")
@@ -959,7 +972,9 @@ def _check_capacity(workbook: "Workbook", spec: TableSpec, sheets: "list[Sheet]"
         raise DeclarationError("bad_capacity", where, f"the capacity runs into row {stop}, "
                                "the next section's header")
     writer = workbook.editor.cells.sheet(sheet.stored_name)
+    assert writer is not None   # the table's sheet, which holds its cells
     for row in range(last + 1, end + 1):
+
         if not row_empty(writer, row, left, right):
             column = next(c for c in range(left, right + 1)
                           if not writer.is_empty(Cell(row, c)))
@@ -1014,7 +1029,7 @@ def _globbed(sheet: "Sheet", pattern: str) -> bool:
 
 
 def _extent(workbook: "Workbook", spec: TableSpec, sheet: "Sheet",
-            used: Area | None, header_row: int) -> tuple[int, int]:
+            used: Area | None, header_row: int | None) -> tuple[int, int]:
     """The table's sheet columns: declared, or the first sheet's header's (its first cell
     holding something to its last), or its used range's."""
     if used is None:
@@ -1130,13 +1145,16 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
                                        f"{column_letters(field.column)} is outside the "
                                        f"table's, {column_letters(left)}:{column_letters(right)}")
         else:
-            offset = next((i for i, name in enumerate(names)
-                           if name.casefold() == field.header.casefold()), None)
-            if offset is None:
+            header = field.header
+            assert header is not None   # a field names its column or its header
+            matched = next((i for i, name in enumerate(names)
+                            if name.casefold() == header.casefold()), None)
+            if matched is None:
                 shown = [n for i, n in enumerate(names) if not _hidden_by(spec, i, left, names)]
                 raise DeclarationError("unknown_column", f"{field.path}.header",
-                                       f"no column has the header {field.header!r}",
-                                       valid_options=nearest(field.header, shown))
+                                       f"no column has the header {header!r}",
+                                       valid_options=nearest(header, shown))
+            offset = matched
         if offset in seen:
             raise DeclarationError("duplicate_field", field.path, f"column "
                                    f"{column_letters(left + offset)} is declared twice "
@@ -1155,8 +1173,8 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
     for i in visible:
         for name in dict.fromkeys([columns[i].casefold(), names[i].casefold()]):
             if name in taken and taken[name] != i:
-                which = spec.fields[_field_of(spec, i, left, names)].path \
-                    if _field_of(spec, i, left, names) is not None else f"{path}.fields"
+                n = _field_of(spec, i, left, names)
+                which = spec.fields[n].path if n is not None else f"{path}.fields"
                 raise DeclarationError("id_taken", f"{which}.id", f"{columns[i]!r} is another "
                                        "column's name or header: a column is found by "
                                        "either, so each names one column")
@@ -1182,7 +1200,9 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
     if key is not None:
         at = next(i for i in range(width) if columns[i] == key)
         if cleans[at] is not None:
-            field_path = spec.fields[_field_of(spec, at, left, names)].path
+            n = _field_of(spec, at, left, names)
+            assert n is not None   # a column is cleaned by its field's clean
+            field_path = spec.fields[n].path
             raise DeclarationError("clean_key", f"{field_path}.clean", "the key column is "
                                    "not cleaned: an address by key names the key as its cell "
                                    "holds it, and two keys cleaned alike would name one row")
@@ -1192,12 +1212,15 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
     flags = [f for f in flags if f.address is None
              or _column_of(f.address) in (None, *sheet_columns)]
     for below in belows:
-        shown = sorted((row, column, address) for column, (row, address) in below.items()
-                       if column in sheet_columns)
-        if shown:
-            flags.append(Problem("rows_below", shown[0][2]))
+        seen_below = sorted((row, column, address) for column, (row, address) in below.items()
+                            if column in sheet_columns)
+        if seen_below:
+            flags.append(Problem("rows_below", seen_below[0][2]))
+
     header_rows = 1 if spec.header_row else 0
-    common = dict(kind="declared", name=spec.name, columns=tuple(columns[i] for i in visible),
+    common: dict[str, Any] = dict(kind="declared", name=spec.name,
+                  columns=tuple(columns[i] for i in visible),
+
                   header_rows=header_rows, key=key, flags=tuple(dict.fromkeys(flags)),
                   headers=tuple(names[i] for i in visible),
                   notes=tuple(notes[i] for i in visible), about=spec.description,
@@ -1255,12 +1278,16 @@ def _field_of(spec: TableSpec, offset: int, left: int, names: list[str]) -> int 
 def _check_keys(workbook: "Workbook", region: Region, path: str) -> None:
     """Every data row has a key no other row has: refused otherwise, naming the cells."""
     index = workbook.regions.key_index(region)
+    assert region.key is not None   # checked for a table with a key only
     offset = region.column_index(region.key)
+    data = region.data
 
     def cell(position: int) -> str:
-        row = region.data.first.row + position - 1
+        assert data is not None   # a position is a data row's
+        row = data.first.row + position - 1
+
         column = region.area.first.column + offset
-        return region.located(Area(Cell(row, column), Cell(row, column)))
+        return region.located(Area(Cell(row, column), Cell(row, column))) or ""
 
     missing = [p for p, k in enumerate(index.keys, 1) if k is None]
     if missing:

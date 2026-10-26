@@ -86,7 +86,7 @@ from __future__ import annotations
 import hashlib
 import math
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Callable, Iterable, Sequence
+from typing import TYPE_CHECKING, Callable, Iterable, Sequence, cast
 
 from ooxml_edit.sheets import Area, Cell
 
@@ -313,10 +313,11 @@ def profile(workbook: "Workbook", region: Region, columns: Sequence[str] | None 
                 observe(row)
     out = []
     for name, tally in zip(names, tallies):
-        area = region.column_area(name)
+        cells = region.column_area(name)
         allowed = tuple(column_lists(workbook, region, name))
         address = replace(region.address, column=name).text
-        stats = tally.stats(address, name, region.located(area), region.rows,
+        stats = tally.stats(address, name, region.located(cells), region.rows,
+
                             workbook.date1904, allowed)
         index = region.column_index(name)
         header = region.headers[index] if region.headers else None
@@ -335,7 +336,8 @@ def column_lists(workbook: "Workbook", region: Region, name: str) -> list[Allowe
         area = region.column_area(name)
         if area is None:
             return []
-        sheet = region.sheet if region.sheet else workbook.sheet_by_id(region.sheet_id).name
+        sheet = region.sheet if region.sheet else \
+            workbook.sheet_by_id(cast(int, region.sheet_id)).name   # unnamed: by its id
         return [_allowed(workbook, sheet, rule, area)
                 for rule in _list_rules(workbook, workbook.sheet(sheet))
                 if _covered(rule.areas, area)]
@@ -433,7 +435,7 @@ class _Tally:
                 measure = self.measures[t] = _Measure()
             measure.add(value)
         elif t == "text":
-            text = value.v
+            text = cast(str, value.v)
             length = len(text)
             self.lengths[length] = self.lengths.get(length, 0) + 1
             words = len(text.split())
@@ -466,6 +468,7 @@ class _Tally:
         if seen is None:
             return
         v = value.v
+        key: tuple[str, object]
         if isinstance(v, str) and len(v) > _KEY_TEXT:
             key = (value.t, hashlib.blake2b(v.encode("utf-8", "surrogatepass"),
                                             digest_size=16).digest())
@@ -559,7 +562,7 @@ class _Measure:
                 self.serials = False
             number = value.serial
         else:
-            number = value.v
+            number = cast("float | None", value.v)   # a number's (a bool is not measured)
         if number is not None:
             _add_partial(self.partials, float(number))
         key = number if number is not None else value.v
@@ -571,6 +574,8 @@ class _Measure:
     def result(self, t: str, date1904: bool) -> tuple:
         if not self.count:
             return None, None, None
+        assert self.low is not None and self.high is not None   # set by the first add
+
         if t not in _DATE_TYPES:
             return self.low[1], self.high[1], math.fsum(self.partials) / self.count
         if not self.serials:

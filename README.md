@@ -34,5 +34,11 @@ pip install -e ../ooxml-common -e ../ooxml-edit
 pip install -e .            # or -e '.[test]' for the test suite: python -m pytest -q
 ```
 
+`-e '.[dev]'` adds the linter and the type checker at the versions CI's `build` job runs:
+`ruff check .` (a few bug-finding rules, no formatting) and `mypy` (the package, not
+strict); both are configured in `pyproject.toml`. The package ships `py.typed`, so its
+annotations are its types for a checker in the code that imports it.
+
+
 The online check of the tool definitions calls Claude and runs only when asked:
 `ANTHROPIC_API_KEY=... python -m pytest -m provider tests/test_tools_online.py`.

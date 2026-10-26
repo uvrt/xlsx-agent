@@ -70,7 +70,7 @@ always there.  Nothing here is logged.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, cast
 
 from ooxml_edit.sheets import Area, Cell
 
@@ -398,11 +398,11 @@ def check(workbook: "Workbook", rules: "list[ValidationRule]", cell: Cell, kind:
     if rule.type == "textLength":
         if kind != "text":
             return "unchecked"
-        measured: float = len(text)
+        measured: float = len(cast(str, text))   # a text's: its string's
     else:
         if kind in ("bool", "text"):
             return "invalid"
-        measured = float(serial if kind == "date" else value)
+        measured = float(cast(float, serial if kind == "date" else value))
         if rule.type == "whole" and not measured.is_integer():
             return "invalid"
     operator = rule.operator or "between"
@@ -467,7 +467,8 @@ def _bound(workbook: "Workbook", rule: ValidationRule, formula: str | None) -> f
     if value.formula or isinstance(value.v, bool):
         return None
     if value.t in ("number", "percent"):
-        return float(value.v)
+        return float(cast(float, value.v))
+
     return float(value.serial) if value.serial is not None else None
 
 

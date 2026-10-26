@@ -228,6 +228,7 @@ class Editor:
     def batch(self) -> Iterator[Edit]:
         """One step: everything inside is kept together, or rolled back together."""
         if self._depth:
+            assert self._edit is not None   # the open batch's
             self._depth += 1
             try:
                 yield self._edit
@@ -274,7 +275,9 @@ class Editor:
             return
         snapshot = self.package.snapshot()
         edit = self._edit
+        assert edit is not None   # the open batch's
         cells = {sheet: set(found) for sheet, found in edit.cells.items()}
+
         sheets = set(edit.sheets)
         self._savepoints += 1
         try:

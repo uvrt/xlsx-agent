@@ -21,7 +21,7 @@ from xlsx_agent import DeclarationError, PolicyError, Workbook, WritePolicy
 from xlsx_agent.edit import EditError
 from xlsx_agent.tools import FORMAT, GROUPS, TOOLS, declare, narrow, policy
 
-from shop import FIRST_INPUT, Shop
+from shop import Shop
 
 STOCK = {"name": "stock", "sheets": "Stock", "header_row": 9, "key": "Item",
          "capacity": 8}
