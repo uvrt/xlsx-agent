@@ -83,7 +83,7 @@ from .integrity import CellEdit, CellsDiff
 from .validations import ValidationRule
 from .workbook import Sheet, Workbook
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellChange",
            "CellEdit", "CellsDiff", "ValidationRule",

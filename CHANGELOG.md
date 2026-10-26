@@ -5,6 +5,18 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## 0.1.4 (2026-10-26) -- error codes with ooxml-edit's typed refusals
+
+- **The codes, tested** (review, S9). ooxml-edit 0.66.0 raises an `ArgumentError` for a
+  value it refuses and a `UnitError` for one out of its range (`ooxml_edit.errors`), and its
+  dispatcher says `invalid_arguments` and `unit` for them, in a workbook as in a deck or a
+  document. Nothing changes here: `ERRORS` maps the library's own errors as before (none is
+  an ooxml-edit `ArgumentError`), each is now tested to keep its code, and nothing mapped an
+  ooxml-edit `ValueError` that the typing makes redundant. The tools check what they write
+  before ooxml-edit's sheets would refuse it, so no tool's code is known to change. New
+  `tests/test_tool_errors.py` (skipped on an ooxml-edit before 0.66.0; the requirement stays
+  `>=0.57.0`). Tool definitions are unchanged.
+
 ## 0.1.3 (2026-10-26) -- a linter, a type checker and py.typed
 
 - **Linted and type checked in CI** (review, S8): `ruff check .` with a small set of
