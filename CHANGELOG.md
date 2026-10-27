@@ -5,6 +5,43 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## 0.1.6 (2026-10-27) -- sheet-name quoting measured in Excel
+
+- **Quoting follows Excel, measured** (round 18, follow-up C). Excel for Mac 16.106 on
+  macOS, through `tests/oracle.py`: 253 made-up sheet names, each referred to from a
+  formula both in a file Excel opened and saved and through Excel's object model. Excel
+  read every name quoted (`'Name'!A1`), from a file and through the object model, giving
+  the referred cell's value; the bare form of a name Excel quotes was refused, read as
+  something else (`a-b!A1` as `a-[2]b!A1`, another workbook) or requoted. `needs_quotes`
+  now follows the `<f>` text Excel saves, and the module docstring and README.md say so in
+  place of "not a measurement" and "Excel accepts a quoted name wherever it accepts a bare
+  one". The measured names are `tests/test_sheet_quoting.py`.
+- **Now quoted** (Excel quotes them; 0.1.5 wrote them bare): a name beginning with an
+  R1C1 reference that has a row or column (`R1x`, `C1x`, `RC1x`, `R1C1x`, `R2C3D`;
+  `R1048576x`), and a `.` Excel quotes: twice (`a.b.c`, `a..b`), in a name starting with
+  `_` (`_a.b`), or after a part holding a digit, a boolean or an R1C1 reference
+  (`Q3.sales`, `A1.b`, `AB12.c`, `TRUE.x`). Bare, the first
+  kind is refused (through the object model; a file holding it did not open), the second
+  read and requoted.
+- **Now bare** (Excel writes them bare): names of letters of any script (`Überblick`,
+  `数据`, `Привет`; combining marks and digits after the first letter: `नमस्ते`, `a٣b`),
+  cell-shaped names off the grid (`XFE1`, `AB0`, `A1048577`), and R1C1-shaped names out of
+  range (`R0`, `C0`, `R1048577`, `C99999999`).
+- **Still quoted where Excel is irregular**: Excel writes many non-ASCII symbols bare
+  (`a§b`, `x²`, `a—b`, `a€b`) and quotes others (`a©b`, `a®b`, `a£b`, `a«b`, `€x`, `a，b`),
+  so every character that is not a letter, a digit or a combining mark is quoted, as is a
+  name starting with one; Excel reads them quoted. Where Excel's object model (`Formula`)
+  reads a name back bare that its saved file quotes (`_a.b`, `a..b`, `a，b`), the file is
+  followed.
+- **Compatibility.** A returned address and `canonical_address` change for the names
+  above: `Überblick!B4`, no longer `'Überblick'!B4`; `'R1x'!B4`, no longer `R1x!B4`.
+  Parsing is unchanged (either spelling of a name that needs no quotes is read). Callers
+  comparing through `canonical_address` see no difference; text kept from 0.1.5 should be
+  passed through it again.
+- **The formula lexer** (`xlsx_agent.formula.tokens`) reads the bare names Excel writes
+  with characters from U+00A1 to U+00BF (`aµb`, `x²`, `a§b`): they raised an internal
+  assertion, or `²` started a number. Tool definitions are unchanged.
+
 ## 0.1.5 (2026-10-27) -- one canonical form for every address returned
 
 - **The canonical form, documented and in one place** (production feedback, round 18, Q3).

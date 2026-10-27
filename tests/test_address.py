@@ -93,7 +93,8 @@ def test_a_whole_sheet_is_the_whole_grid_clipped_to_the_used_range():
     assert RangeAddress.parse("#3!").sheet == SheetRef(id=3)
     assert parse_address(" Stock! ").text == "Stock!"
     assert parse_address("'Stock'!").text == "Stock!"
-    assert parse_address("Überblick!").text == "'Überblick'!"
+    assert parse_address("Überblick!").text == "Überblick!"
+    assert parse_address("R1x!").text == "'R1x'!"
     # the same cells as a rectangle are a range, not the sheet
     assert parse_address("Stock!A1:XFD1048576") != parse_address("Stock!")
     with pytest.raises(ValueError, match="whole grid"):
@@ -160,7 +161,8 @@ def test_what_the_forms_hold():
     ("Stock!$C:$A", "Stock!A:C"),
     ("Stock!$5:$2", "Stock!2:5"),
     ("'Stock'!A1", "Stock!A1"),
-    ("Überblick!A1", "'Überblick'!A1"),
+    ("'Überblick'!A1", "Überblick!A1"),
+    ("R1x!A1", "'R1x'!A1"),
     ("A1!B2", "'A1'!B2"),
     ("Q3-sales!A1", "'Q3-sales'!A1"),
     ("  Stock!F2\t", "Stock!F2"),
@@ -199,10 +201,12 @@ def test_sheet_name_quoting_round_trips(name):
 
 
 def test_quotes_are_left_off_only_where_safe():
-    for name in ("Stock", "Sheet1", "_data", "data.2026", "ABCD1", "Sales_Q3"):
+    # The measured table: tests/test_sheet_quoting.py.
+    for name in ("Stock", "Sheet1", "_data", "data.2026", "ABCD1", "Sales_Q3", "Überblick",
+                 "XFE1"):
         assert not needs_quotes(name) and quote_sheet(name) == name
-    for name in ("Q3 sales", "A1", "xfd9", "R1C1", "RC", "c", "TRUE", "True", "3rd", "Überblick",
-                 "#3", "a-b", "Bob's"):
+    for name in ("Q3 sales", "A1", "xfd9", "R1C1", "RC", "c", "TRUE", "True", "3rd", "R1x",
+                 "#3", "a-b", "Bob's", "_a.b", "a©b"):
         assert needs_quotes(name)
     assert quote_sheet("Bob's") == "'Bob''s'"
     assert quote_sheet("'") == "''''"

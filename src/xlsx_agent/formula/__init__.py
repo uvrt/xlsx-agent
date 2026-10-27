@@ -59,9 +59,12 @@ _CELL = re.compile(r"(\$?)([A-Za-z]{1,3})(\$?)([0-9]{1,7})")
 _COLUMN = re.compile(r"(\$?)([A-Za-z]{1,3})")
 _ROW = re.compile(r"(\$?)([0-9]{1,7})")
 _NUMBER = re.compile(r"[0-9]+(?:\.[0-9]*)?(?:[eE][+-]?[0-9]+)?|\.[0-9]+(?:[eE][+-]?[0-9]+)?")
-# A run of what a name, a function, a sheet or a reference is spelled with.
-_WORD = re.compile(r"[A-Za-z0-9_.\\?$\u00c0-\U0010ffff]+")
+# A run of what a name, a function, a sheet or a reference is spelled with: every character
+# from U+00A1 on, as Excel writes bare sheet names of them (x², a§b, aµb; measured, 0.1.6:
+# xlsx_agent.address.needs_quotes); the ones it quotes never stand bare in its formulas.
+_WORD = re.compile(r"[A-Za-z0-9_.\\?$\u00a1-\U0010ffff]+")
 _BOOK = re.compile(r"\[[0-9]+\]")
+_DIGITS = frozenset("0123456789")
 
 
 class ShiftError(ValueError):
@@ -141,7 +144,7 @@ def _lex(text: str) -> Iterator[Token]:
             end = _brackets(text, i)
             yield Token("structured", text[i:end], i)
             i = end
-        elif char.isdigit() or (char == "." and i + 1 < n and text[i + 1].isdigit()):
+        elif char in _DIGITS or (char == "." and i + 1 < n and text[i + 1] in _DIGITS):
             row = _rows(text, i)
             if row is not None:
                 yield Token("ref", text[i:row], i)
@@ -151,7 +154,7 @@ def _lex(text: str) -> Iterator[Token]:
             assert number is not None   # a digit, or . and a digit, starts a number
             yield Token("number", number.group(0), i)
             i = number.end()
-        elif char == "$" or char.isalpha() or char in "_\\" or ord(char) >= 0xC0:
+        elif char == "$" or char.isalpha() or char in "_\\" or ord(char) >= 0xA1:
             word = _WORD.match(text, i)
             assert word is not None   # a letter, $, _ or \ starts a word
             end = word.end()

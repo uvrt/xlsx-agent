@@ -40,7 +40,7 @@ What parsing accepts beyond the canonical form, and normalises:
 * quotes around a sheet name that needs none (``'Stock'!A1`` is ``Stock!A1``), and an
   unquoted name that :func:`needs_quotes` would quote but that is unambiguous here (no
   space, quote, ``!`` or any of ``[ ] : * ? / \\``; not starting with ``#``):
-  ``Überblick!A1`` is ``'Überblick'!A1``;
+  ``R1x!A1`` is ``'R1x'!A1``, ``a-b!A1`` is ``'a-b'!A1``;
 * white space around the whole address.
 
 **The canonical form.**  Every address the library returns -- a :class:`~xlsx_agent.read.Value`'s
@@ -52,18 +52,22 @@ returned without copying these rules::
 
     canonical_address("stock!$b$4")        # 'stock!B4'
     canonical_address("'Stock'!B4:A1")     # 'Stock!A1:B4'
-    canonical_address("Überblick!a1")      # "'Überblick'!A1"
+    canonical_address("Überblick!a1")      # 'Überblick!A1'
+    canonical_address("r1x!a1")            # "'r1x'!A1"
     canonical_address("stock!b4", sheets=["Stock"])   # 'Stock!B4': the workbook's spelling
 
-* **Sheet names.**  Bare when the name is ASCII letters, digits, ``_`` and ``.``, starts
-  with a letter or ``_``, and cannot be read as a cell reference (``A1``, ``XFD9``) or an
-  R1C1 one (``R1C1``, ``R``, ``C2``) or a boolean (``TRUE``, ``FALSE``, case aside):
-  ``Stock``, ``Q3_sales``.  Any other name is quoted, ``'`` before and after, each ``'``
-  inside doubled: ``'Q3 sales'``, ``'Bob''s'``, ``'2024'``, ``'A1'``, ``'R1C1'``,
-  ``'Überblick'`` (:func:`needs_quotes`, :func:`quote_sheet`).  The name is spelled as the
-  workbook spells it in what the library returns; :func:`canonical_address` keeps the
-  spelling it is given unless it is given the workbook's names (``sheets``), as it does
-  not know the workbook (the workbook matches sheet names case aside).  A sheet by id is
+* **Sheet names.**  Bare where Excel writes them bare (measured; see below): letters of
+  any script, ASCII digits, ``_`` and a ``.``, starting with a letter or ``_``, and not
+  read as something else -- a cell on the grid (``A1``, ``XFD9``), an R1C1 reference or
+  one at its start (``R``, ``C2``, ``R1C1``, ``R1x``), a boolean (``TRUE``, case aside), or
+  a ``.`` Excel quotes (``Q3.sales``, ``_a.b``, ``a..b``): ``Stock``, ``Q3_sales``,
+  ``data.2026``, ``Überblick``, ``XFE1`` (off the grid).  Any other name is quoted, ``'``
+  before and after, each ``'`` inside doubled: ``'Q3 sales'``, ``'Bob''s'``, ``'2024'``,
+  ``'A1'``, ``'R1C1'``, ``'R1x'`` (:func:`needs_quotes`, :func:`quote_sheet`).  The name
+  is spelled as the workbook spells it in what the library returns;
+  :func:`canonical_address` keeps the spelling it is given unless it is given the
+  workbook's names (``sheets``), as it does not know the workbook (the workbook matches
+  sheet names case aside).  A sheet by id is
   ``#`` and its ``sheetId``, without leading zeros: ``#3``.
 * **Cells.**  Column letters upper case, no ``$``, the row without leading zeros:
   ``B4``.
@@ -75,13 +79,23 @@ returned without copying these rules::
   above; a key or column quoted only when it must be (see below).
 * **Refs**: ``$`` and the name.
 
-Quoting is conservative, and is this library's rule, not a measurement of Excel: Excel
-accepts a quoted name wherever it accepts a bare one, so the canonical form is always one
-Excel reads, and pastes into a formula unchanged; but which further names Excel itself
-leaves bare in the formulas it writes (names of non-ASCII letters, say) has not been
-measured (the formula lexer, E2, is where it will be), so a formula's own text may write
-bare a sheet this form quotes.  Compare through :func:`canonical_address`, never the
-formula's text.
+**Quoting, measured** (Excel for Mac 16.106, macOS, 2026-10-27; 253 made-up sheet names,
+each referred to from a formula, both written into a file Excel opened and saved, and set
+through Excel's object model and read back): the quoting follows the ``<f>`` text Excel
+saves.  Every name Excel writes bare is bare here except where it is irregular, and every
+name it quotes is quoted.  Excel accepted the quoted form, ``'Name'!A1``, for every one of
+the 253 names, giving the referred cell's value, from a file and through the object model
+alike; so a name is quoted where Excel was not measured or is irregular, and the
+canonical form always pastes into a formula unchanged.  The irregular part: Excel writes
+many non-ASCII symbols bare (``a§b``, ``x²``, ``a—b``, ``a€b``) but quotes others
+(``a©b``, ``a®b``, ``a£b``, ``a«b``, ``€x``, ``a，b``, a no-break space), so this form
+quotes every character that is not a letter, a digit or a combining mark, and a name
+starting with anything but a letter or ``_`` (``１ab``, bare in Excel, is quoted).  Excel's
+object model (``Formula``) reads a few names back bare that its saved file quotes
+(``_a.b``, ``a..b``, ``a，b``); the saved file is followed.  Given bare, a name Excel
+quotes is refused (``R1x!A1``, ``TRUE!A1``), read as something else (``a-b!A1`` as
+``a-[2]b!A1``, a name and another workbook), or read and requoted (``A1!A1``,
+``_a.b!A1``).  Compare through :func:`canonical_address`, never the formula's text.
 
 **Sheet names are not policed here.**  ECMA-376's ``sheet@name`` is an ``ST_Xstring``
 whose only constraint is that it be unique in the workbook (ISO/IEC 29500-4, ``sml.xsd``,
@@ -154,6 +168,7 @@ from __future__ import annotations
 
 import difflib
 import re
+import unicodedata
 from dataclasses import dataclass, replace
 from typing import Iterable, Mapping, NoReturn, Union
 
@@ -198,8 +213,17 @@ SPANS = ("cells", "columns", "rows", "sheet")
 #: The whole grid: what a whole sheet's area is.
 WHOLE_GRID = Area(Cell(1, 1), Cell(MAX_ROW, MAX_COLUMN))
 
-_PLAIN_SHEET = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
-_CELL_LIKE = re.compile(r"[A-Za-z]{1,3}[0-9]+")
+# What Excel quotes in a sheet name (measured: see needs_quotes).  The ASCII characters a
+# bare name may hold; an R1C1 reference the whole name is, or begins with.
+_BARE_ASCII = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.")
+_R1C1_BOTH = re.compile(r"R[0-9]*C[0-9]*")
+_R1C1_ROW = re.compile(r"R([0-9]*)")
+_R1C1_COLUMN = re.compile(r"C([0-9]*)")
+_R1C1_ROW_FIRST = re.compile(r"R([0-9]+)")
+_R1C1_COLUMN_FIRST = re.compile(r"R?C([0-9]+)")
+#: The most digits of a C<n> name Excel was seen to quote: C1000000 is quoted, C99999999
+#: bare; the bound between was not measured, so up to seven digits are quoted.
+_R1C1_COLUMN_DIGITS = 7
 _R1C1_LIKE = re.compile(r"(?:[Rr][0-9]*(?:[Cc][0-9]*)?|[Cc][0-9]*)")
 _BOOLEANS = ("TRUE", "FALSE")
 
@@ -339,13 +363,69 @@ def _on_grid(text: str) -> bool:
 
 
 def needs_quotes(name: str) -> bool:
-    """Whether a sheet name is quoted in an address: anything but ASCII letters, digits,
-    ``_`` and ``.`` starting with a letter or ``_``, and anything that reads as a cell
-    reference (``A1``, ``XFD9``, ``R1C1``, ``R``, ``C2``) or a boolean."""
-    if not _PLAIN_SHEET.fullmatch(name):
+    """Whether a sheet name is quoted in an address: as Excel quotes it in the formulas it
+    writes, measured (Excel for Mac 16.106; the module's notes), and quoted too where Excel
+    was not measured or is irregular, as Excel reads every name quoted.
+
+    Bare when every rule holds: the first character an ASCII letter, ``_`` or a letter of
+    any script; the rest ASCII letters and digits, ``_``, ``.``, letters, digits and
+    combining marks; not a cell on the grid (``A1``, ``XFD9``; ``XFE1``, ``AB0`` and
+    ``A1048577`` are off it, so bare), not TRUE or FALSE, case aside; not an R1C1
+    reference (``R``, ``C``, ``RC``, ``R2``, ``C3``, ``R1C1``; ``R0`` and ``R1048577`` are
+    not) and not beginning with one that has a row or column (``R1x``, ``C1x``, ``RC1x``;
+    ``Rx``, ``RCx`` are bare); a ``.`` only once, not in a name starting with ``_``, nor
+    after a part holding a digit (``Q3.sales``) or naming a boolean or an R1C1 reference.
+    The tests on the grid, booleans and R1C1 are made of the name's compatibility form
+    too (NFKC: ``Ａ１`` is read as ``A1``)."""
+    if not name:
         return True
-    return bool(_CELL_LIKE.fullmatch(name) or _R1C1_LIKE.fullmatch(name)
-                or name.upper() in _BOOLEANS)
+    first = name[0]
+    if not (first in _BARE_ASCII and first not in "0123456789." or not first.isascii()
+            and first.isalpha()):
+        return True
+    for ch in name[1:]:
+        if ch in _BARE_ASCII:
+            continue
+        if ch.isascii() or not (ch.isalpha() or unicodedata.category(ch) in _BARE_CATEGORIES):
+            return True
+    folded = unicodedata.normalize("NFKC", name)
+    return any(_reads_as_other(text) for text in {name, folded})
+
+
+#: The Unicode categories a bare sheet name may hold after its first character, besides
+#: letters: decimal digits and combining marks (``a٣b``, ``नमस्ते``, measured).
+_BARE_CATEGORIES = ("Nd", "Mn", "Mc", "Me")
+
+
+def _reads_as_other(text: str) -> bool:
+    """``text``, a sheet name, is something else in a formula unless it is quoted."""
+    upper = text.upper()
+    if upper in _BOOLEANS or _on_grid(text) or _is_r1c1(upper):
+        return True
+    for pattern, bound in ((_R1C1_ROW_FIRST, MAX_ROW), (_R1C1_COLUMN_FIRST, MAX_COLUMN)):
+        match = pattern.match(upper)
+        if match and match.end() < len(upper) and 1 <= int(match.group(1)) <= bound:
+            return True
+    if "." in text:
+        head = text.split(".", 1)[0]
+        return (not text.isascii() or text.startswith("_") or text.count(".") > 1
+                or any(ch.isdigit() for ch in head) or head.upper() in _BOOLEANS
+                or _is_r1c1(head.upper()))
+    return False
+
+
+def _is_r1c1(upper: str) -> bool:
+    """``upper`` (upper case) is an R1C1 reference as Excel quotes one in a sheet name."""
+    if _R1C1_BOTH.fullmatch(upper):
+        return True
+    match = _R1C1_ROW.fullmatch(upper)
+    if match:
+        return not match.group(1) or 1 <= int(match.group(1)) <= MAX_ROW
+    match = _R1C1_COLUMN.fullmatch(upper)
+    if match:
+        digits = match.group(1)
+        return not digits or len(digits) <= _R1C1_COLUMN_DIGITS and int(digits) >= 1
+    return False
 
 
 def quote_sheet(name: str) -> str:
@@ -804,10 +884,11 @@ def format_address(address: Address) -> str:
 def canonical_address(text: str, *, sheets: Iterable[str] | None = None) -> str:
     """Any spelling of an address that parsing accepts, in the canonical form every
     address the library returns is in (see the module's notes): ``"stock!$b$4"`` is
-    ``"stock!B4"``, ``"'Stock'!B4:A1"`` is ``"Stock!A1:B4"``, ``"Überblick!a1"`` is
-    ``"'Überblick'!A1"``.  ``sheets``, the workbook's sheet names (``[s.name for s in
-    wb.sheets]``), spells a sheet named in the address as the workbook does, matched case
-    aside as the workbook matches them; a name not among them is kept as given.  A
+    ``"stock!B4"``, ``"'Stock'!B4:A1"`` is ``"Stock!A1:B4"``, ``"r1x!a1"`` is
+    ``"'r1x'!A1"`` (Excel quotes it), ``"'Überblick'!a1"`` is ``"Überblick!A1"``.
+    ``sheets``, the workbook's sheet names (``[s.name for s in wb.sheets]``), spells a
+    sheet named in the address as the workbook does, matched case aside as the workbook
+    matches them; a name not among them is kept as given.  A
     canonical address is its own canonical form; :class:`AddressError` for text that is
     not an address."""
     address = parse_address(text)
