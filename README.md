@@ -29,10 +29,12 @@ writes themselves come with E3. Not released to PyPI; installed from source.
 Every address the library returns (a value's `a`, a problem's or an error's address, a
 find result, a range, a tool's output) is in one canonical form, written by one formatter:
 
-- a sheet name bare when it is ASCII letters, digits, `_` and `.`, starts with a letter or
-  `_`, and cannot be read as a cell reference (`A1`), an R1C1 one (`R1C1`, `R`, `C2`) or a
-  boolean: `Sales!B4`; any other name quoted, each `'` inside doubled: `'Q3 Sales'!B4`,
-  `'Bob''s'!B4`, `'2024'!B4`, `'A1'!B4`, `'Überblick'!B4`; a sheet by id `#3!B4`;
+- a sheet name bare where Excel writes it bare: letters of any script, digits, `_` and a
+  `.`, starting with a letter or `_`, and not read as a cell on the grid (`A1`), an R1C1
+  reference or one at its start (`R1C1`, `R`, `C2`, `R1x`), a boolean, or a `.` Excel
+  quotes (`Q3.sales`): `Sales!B4`, `Überblick!B4`; any other name quoted, each `'` inside
+  doubled: `'Q3 Sales'!B4`, `'Bob''s'!B4`, `'2024'!B4`, `'A1'!B4`, `'R1x'!B4`; a sheet by
+  id `#3!B4`;
 - column letters upper case, no `$`, rows without leading zeros;
 - a range top left to bottom right (`A1:C9`), one of one cell the cell (`B4`); whole
   columns `A:C`, rows `2:5`, a whole sheet `Sales!`;
@@ -41,9 +43,12 @@ find result, a range, a tool's output) is in one canonical form, written by one 
 `canonical_address(text)` turns any spelling an address may be given in (`sales!$b$4`,
 `'Sales'!B4:B4`) into that form; with `sheets=[s.name for s in wb.sheets]` a sheet's
 name is spelled as the workbook spells it, matched case aside. Compare addresses through
-it, never by copying the rules. The quoting is this library's rule (Excel reads a quoted
-name wherever it reads a bare one); which further names Excel itself writes bare is not yet
-measured. The full rules: the docstring of `src/xlsx_agent/address.py`.
+it, never by copying the rules. The quoting is measured (Excel for Mac 16.106 on macOS,
+2026-10-27, 253 made-up sheet names): bare where Excel's saved formulas write a name bare,
+quoted where Excel quotes it; Excel read every one of those names quoted, so a name is
+also quoted where Excel is irregular (it writes some non-ASCII symbols bare and quotes
+others, so every symbol is quoted). The full rules: the docstring of
+`src/xlsx_agent/address.py`.
 
 ## Install from source
 

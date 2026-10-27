@@ -20,7 +20,8 @@ from xlsx_agent.tools import FORMAT, GROUPS, TOOLS
 NAMES = [
     ("Sales", "Sales"),
     ("Sales_2", "Sales_2"),
-    ("v1.2", "v1.2"),
+    ("data.2026", "data.2026"),
+    ("v1.2", "'v1.2'"),
     ("Q3 Sales", "'Q3 Sales'"),
     ("Bob's", "'Bob''s'"),
     ("2024", "'2024'"),
@@ -29,8 +30,11 @@ NAMES = [
     ("R1C1", "'R1C1'"),
     ("rc", "'rc'"),
     ("TRUE", "'TRUE'"),
-    ("Überblick", "'Überblick'"),
-    ("数据", "'数据'"),
+    ("Überblick", "Überblick"),
+    ("数据", "数据"),
+    ("XFE1", "XFE1"),
+    ("R1x", "'R1x'"),
+    ("a©b", "'a©b'"),
     ("a-b", "'a-b'"),
 ]
 
@@ -46,7 +50,8 @@ def test_a_sheet_is_quoted_only_when_the_rule_says(name, written):
     ("Sales!$B$4", "Sales!B4"),
     ("sales!b4", "sales!B4"),                 # the sheet's spelling kept without the workbook
     ("'Sales'!B4", "Sales!B4"),               # quotes it needs not dropped
-    ("Überblick!a1", "'Überblick'!A1"),       # quotes it needs added
+    ("r1x!a1", "'r1x'!A1"),                   # quotes it needs added
+    ("'Überblick'!a1", "Überblick!A1"),
     ("A1!B2", "'A1'!B2"),
     ("'Bob''s'!A01", "'Bob''s'!A1"),          # an apostrophe doubled; the row's zeros dropped
     ("Sales!B4:B4", "Sales!B4"),              # a range of one cell is the cell
@@ -82,7 +87,7 @@ def test_the_workbooks_names_give_the_workbooks_spelling():
     sheets = ["Sales", "Q3 Sales", "Überblick"]
     assert canonical_address("sales!b4", sheets=sheets) == "Sales!B4"
     assert canonical_address("'q3 sales'!B4", sheets=sheets) == "'Q3 Sales'!B4"
-    assert canonical_address("ÜBERBLICK!A1", sheets=sheets) == "'Überblick'!A1"
+    assert canonical_address("ÜBERBLICK!A1", sheets=sheets) == "Überblick!A1"
     assert canonical_address("t:sales!b2", sheets=sheets) == "t:Sales!B2"
     assert canonical_address("t:'q3 sales'!Rate", sheets=sheets) == "t:'Q3 Sales'!Rate"
     assert canonical_address("Other!A1", sheets=sheets) == "Other!A1"   # not there: as given
