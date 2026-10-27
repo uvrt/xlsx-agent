@@ -110,7 +110,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping, Sequence, ca
 from ooxml_edit.sheets import Area, Cell, column_letters
 
 from .address import (AddressError, NameNotFound, RangeAddress, TableAddress, nearest,
-                      parse_address, quote_sheet)
+                      format_range, parse_address, quote_sheet)
 from .profile import ALLOWED_CAP, column_lists
 from .query import MAX_IN, _Bad, _key, _operand
 from .read.regions import Region, RegionError, key_text
@@ -565,7 +565,7 @@ def validate(workbook: "Workbook", schema: Any) -> ValidationReport:
         try:
             workbook.sheet(name)
         except NameNotFound as error:
-            out.add(-1, 0, (0, 0), "missing_sheet", f"{quote_sheet(name)}!", None, None,
+            out.add(-1, 0, (0, 0), "missing_sheet", format_range(quote_sheet(name)), None, None,
                     {"nearest": error.valid_options[:NEAREST]})
     checked: list[CheckedTable] = []
     for index, spec in enumerate(tables):

@@ -60,7 +60,8 @@ from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 
 from ooxml_edit.sheets import Area, Cell
 
-from .address import (AddressError, RangeAddress, TableAddress, parse_address, quote_sheet)
+from .address import (AddressError, RangeAddress, TableAddress, format_cell, format_sheet,
+                      parse_address)
 
 if TYPE_CHECKING:  # pragma: no cover
     from .workbook import Sheet, Workbook
@@ -232,7 +233,7 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
     """One sheet's matches: its cells streamed, the rest (tables, regions, names, headers,
     comments) merged in at their cells."""
     hidden_sheet = not sheet.visible
-    written = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
+    written = format_sheet(sheet.name, sheet.id)
     # What lies at a cell besides the cell itself: (row, column, order, kind, make), where
     # make(hidden) gives its matches once whether its row or column is hidden is known.
     extras: list[tuple[int, int, int, int, Callable[..., Iterable[Found]]]] = []
@@ -267,7 +268,7 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
             cell = Cell(row, region.area.first.column + index)
             if area is not None and not _inside(cell, area):
                 continue
-            where = f"{written}!{cell.ref}" if header is not None else None
+            where = format_cell(written, cell.row, cell.column) if header is not None else None
             add(cell, "header", lambda hidden, c=column, w=where, r=region: [
                 Found("header", replace(r.address, column=c).text, c, start, end,
                       hidden=hidden, cell=w)
@@ -291,7 +292,8 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
             continue
         if withheld and any(_inside(comment.cell, w) for w in withheld):
             continue
-        add(comment.cell, "comment", lambda hidden, c=comment, w=f"{written}!{comment.cell.ref}": [
+        at = format_cell(written, comment.cell.row, comment.cell.column)
+        add(comment.cell, "comment", lambda hidden, c=comment, w=at: [
             Found("comment", w, c.text, start, end, hidden=hidden)
             for start, end in _occurrences(pattern, c.text)])
     extras.sort(key=lambda item: item[:4])

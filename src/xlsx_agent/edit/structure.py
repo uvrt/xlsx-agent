@@ -44,10 +44,11 @@ import re
 from typing import Any, Iterable
 
 from ooxml_edit.opc import rels_path_for
-from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, column_index
+from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell, column_index
 
 from ..read.strings import SharedStrings, item_text
-from ..read.types import Problem, _letters
+from ..address import format_cell, format_range, format_sheet
+from ..read.types import Problem
 from ..xml import iterparse_xml
 
 #: Every code :func:`check_structure` gives, in the order the module lists them.
@@ -123,9 +124,7 @@ def check_structure(workbook: Any, *, sheets: "Iterable[str | None] | None" = No
 
 
 def _label(sheet: Any) -> str:
-    from ..address import quote_sheet
-
-    return quote_sheet(sheet.stored_name) if sheet.stored_name else f"#{sheet.id}"
+    return format_sheet(sheet.stored_name, sheet.id)
 
 
 def _sheet(data: bytes, label: str, found: _Found, strings: "SharedStrings | None",
@@ -158,7 +157,9 @@ def _sheet(data: bytes, label: str, found: _Found, strings: "SharedStrings | Non
                     found.add("bad_reference", f"{label}!{written}", label)
                     number = row_number + 1
                 elif number <= row_number:
-                    found.add("row_order", f"{label}!{number}:{number}", label)
+                    found.add("row_order", format_range(label, Area(Cell(number, 1),
+                                                                  Cell(number, MAX_COLUMN)),
+                                                         "rows"), label)
                 row_number = max(row_number, number)
                 column = 0
             continue
@@ -173,12 +174,13 @@ def _sheet(data: bytes, label: str, found: _Found, strings: "SharedStrings | Non
                 match = _CELL.match(written)
                 if match is None or not 1 <= column_index(match.group(1).upper()) <= MAX_COLUMN \
                         or not 1 <= int(match.group(2)) <= MAX_ROW:
-                    found.add("bad_reference", f"{label}!{_letters(col)}{row}", label)
+                    found.add("bad_reference", format_cell(label, row, col), label)
                 else:
                     col = column_index(match.group(1).upper())
                     if int(match.group(2)) != row_number:
-                        found.add("cell_row", f"{label}!{written.replace('$', '')}", label)
-            address = f"{label}!{_letters(col)}{row}"
+                        found.add("cell_row", format_cell(label, int(match.group(2)), col),
+                                  label)
+            address = format_cell(label, row, col)
             if col <= column:
                 found.add("cell_order", address, label)
             column = max(column, col)
@@ -223,11 +225,11 @@ def _sheet(data: bytes, label: str, found: _Found, strings: "SharedStrings | Non
     if dimension is not None or used is not None:
         area = _range(dimension) if dimension is not None else None
         if dimension is not None and area is None:
-            found.add("dimension", f"{label}!", label)
+            found.add("dimension", format_range(label), label)
         elif used is not None and (area is None or not (
                 area[0] <= used[0] and area[1] <= used[1]
                 and area[2] >= used[2] and area[3] >= used[3])):
-            found.add("dimension", f"{label}!", label)
+            found.add("dimension", format_range(label), label)
     return formulas, uses
 
 
@@ -390,5 +392,5 @@ def _calc_chain(workbook: Any, found: _Found, formulas: dict[str, set[tuple[int,
             continue    # a sheet not checked (or none): nothing to compare with
         position = (int(match.group(2)), column_index(match.group(1).upper()))
         if position not in formulas[sheet.part]:
-            found.add("calc_chain", f"{_label(sheet)}!{_letters(position[1])}{position[0]}",
+            found.add("calc_chain", format_cell(_label(sheet), position[0], position[1]),
                       sheet.part)

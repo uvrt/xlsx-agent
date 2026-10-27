@@ -90,7 +90,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Iterator
 
 from ooxml_edit.sheets import Area, Cell
 
-from .address import quote_sheet
+from .address import format_cell, format_sheet, quote_sheet
 from .edit.report import MAX_RANGES, capped
 from .formula import ShiftError, normalise, shift
 from .read.stream import _F, _IS, _V, _area, ConditionalFormat, Validation
@@ -138,7 +138,7 @@ class CellEdit:
 
     @property
     def address(self) -> str:
-        return f"{self.sheet}!{_letters(self.column)}{self.row}"
+        return format_cell(self.sheet, self.row, self.column)
 
     def as_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {"at": self.address, "kind": self.kind}
@@ -284,14 +284,14 @@ def compare_cells(a: "Workbook", b: "Workbook", *, formula_text: bool = False,
         other = earlier.get(_ident(sheet)) if _holds_cells(sheet) else None
         if other is None:
             continue
-        name = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
+        name = format_sheet(sheet.name, sheet.id)
         sheets.append(name)
         edits.extend(_sheet(a, other, b, sheet, name, formula_text, structure))
     structure[:0] = _names(a, b, formula_text)
     outside = None
     sheets_outside = 0
     if allowed is not None:
-        parts = {quote_sheet(s.name) if s.name else f"#{s.id}": earlier[_ident(s)].part
+        parts = {format_sheet(s.name, s.id): earlier[_ident(s)].part
                  for s in b.sheets if _ident(s) in earlier and _holds_cells(s)}
         outside = tuple(e for e in edits if _outside(e, allowed, parts[e.sheet]))
         sheets_outside = _sheet_changes(a, b)

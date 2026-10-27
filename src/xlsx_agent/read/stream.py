@@ -45,7 +45,8 @@ from ooxml_edit.markdown import Run
 from .strings import SharedStrings, item_runs, item_text, text_markdown
 from .styles import DATE_KINDS, NumberFormat, Styles
 
-from .types import (TEXT_LIMIT, Problem, Value, _letters, looks_like_date, looks_like_number,
+from ..address import format_cell
+from .types import (TEXT_LIMIT, Problem, Value, looks_like_date, looks_like_number,
                     serial_text)
 
 NS_MAIN = ("http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -664,7 +665,7 @@ class SheetReader:
         if f_node is not None and f_node.get("t") == "shared" and f_node.text:
             group = f_node.get("si")
             if group is not None:
-                anchor = f"{self.sheet}!{_letters(column)}{row}"
+                anchor = format_cell(self.sheet, row, column)
                 self._shared[group] = (anchor, is_volatile(f_node.text),
                                        is_external(f_node.text, self.external_names))
                 self.shared_groups[anchor] = (f_node.text, f_node.get("ref"))
@@ -694,8 +695,11 @@ class SheetReader:
                 value.shared_from, value.volatile, value.external = self._shared[group]
             return
         if kind == "array":
-            value.array = f_node.get("ref") or value.ref
-            block = _area(value.array)
+            written = f_node.get("ref") or value.ref
+            block = _area(written)
+            # As every address is written ($ and case aside); a ref that is no range as
+            # stored.
+            value.array = block.ref if block is not None else written
             if block is not None:
                 self.arrays.append(block)
         if text:

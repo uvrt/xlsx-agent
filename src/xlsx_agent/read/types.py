@@ -58,6 +58,8 @@ from typing import Any, cast
 
 from ooxml_common.locales import DATE_ORDERS, EN_US
 
+from ..address import _letters, format_cell
+
 #: The UI languages whose built-in number formats ECMA-376 Part 1, §18.8.30 lists: the
 #: tables a locale's ``language`` maps to (:func:`format_language`).
 FORMAT_LANGUAGES = ("zh-TW", "zh-CN", "ja-JP", "ko-KR", "th-TH")
@@ -204,11 +206,13 @@ class Value:
 
     @property
     def a(self) -> str:
-        """The cell's address: ``Stock!F2`` (its own, for a value of a declared table)."""
+        """The cell's address: ``Stock!F2`` (its own, for a value of a declared table), in
+        the canonical form (:mod:`xlsx_agent.address`: what
+        :func:`~xlsx_agent.address.canonical_address` gives of it)."""
         if self.origin is not None:
             sheet, row, column = self.origin
-            return f"{sheet}!{_letters(column)}{row}"
-        return f"{self.sheet}!{_letters(self.column)}{self.row}"
+            return format_cell(sheet, row, column)
+        return format_cell(self.sheet, self.row, self.column)
 
     @property
     def ref(self) -> str:
@@ -253,18 +257,6 @@ class Problem:
     count: int = 1
 
 
-_LETTERS: dict[int, str] = {}
-
-
-def _letters(column: int) -> str:
-    letters = _LETTERS.get(column)
-    if letters is None:
-        number, out = column, ""
-        while number:
-            number, rest = divmod(number - 1, 26)
-            out = chr(65 + rest) + out
-        letters = _LETTERS[column] = out
-    return letters
 
 
 # ------------------------------------------------------------------------------------------

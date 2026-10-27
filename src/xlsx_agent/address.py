@@ -43,11 +43,45 @@ What parsing accepts beyond the canonical form, and normalises:
   ``Überblick!A1`` is ``'Überblick'!A1``;
 * white space around the whole address.
 
-Quoting is conservative: a sheet name is left bare only when it is ASCII letters, digits,
-``_`` and ``.``, starts with a letter or ``_``, and cannot be read as a cell reference
-(``A1``, ``R1C1``) or a boolean.  Excel accepts a quoted name wherever it accepts a bare
-one, so the canonical form is always one Excel reads; which further names Excel itself
-leaves bare is for the formula lexer (E2) to measure.
+**The canonical form.**  Every address the library returns -- a :class:`~xlsx_agent.read.Value`'s
+``a``, a problem's or an error's address, a find result, a range, a tool's output -- is in
+one form, written by one formatter (:func:`format_address`, and :func:`format_sheet`,
+:func:`format_cell` and :func:`format_range` beneath it); :func:`canonical_address` turns
+any spelling parsing accepts into it, so a caller compares addresses it holds with those
+returned without copying these rules::
+
+    canonical_address("stock!$b$4")        # 'stock!B4'
+    canonical_address("'Stock'!B4:A1")     # 'Stock!A1:B4'
+    canonical_address("Überblick!a1")      # "'Überblick'!A1"
+    canonical_address("stock!b4", sheets=["Stock"])   # 'Stock!B4': the workbook's spelling
+
+* **Sheet names.**  Bare when the name is ASCII letters, digits, ``_`` and ``.``, starts
+  with a letter or ``_``, and cannot be read as a cell reference (``A1``, ``XFD9``) or an
+  R1C1 one (``R1C1``, ``R``, ``C2``) or a boolean (``TRUE``, ``FALSE``, case aside):
+  ``Stock``, ``Q3_sales``.  Any other name is quoted, ``'`` before and after, each ``'``
+  inside doubled: ``'Q3 sales'``, ``'Bob''s'``, ``'2024'``, ``'A1'``, ``'R1C1'``,
+  ``'Überblick'`` (:func:`needs_quotes`, :func:`quote_sheet`).  The name is spelled as the
+  workbook spells it in what the library returns; :func:`canonical_address` keeps the
+  spelling it is given unless it is given the workbook's names (``sheets``), as it does
+  not know the workbook (the workbook matches sheet names case aside).  A sheet by id is
+  ``#`` and its ``sheetId``, without leading zeros: ``#3``.
+* **Cells.**  Column letters upper case, no ``$``, the row without leading zeros:
+  ``B4``.
+* **Ranges.**  First corner (top left) ``:`` last (bottom right): ``A1:B4``; a range of
+  one cell is the cell (``B4``); whole columns ``A:C`` and rows ``2:5`` (one column or row
+  too: ``A:A``, ``7:7``); a whole sheet is its sheet and ``!`` (``Stock!``).
+* **Tables, names, regions and datasets** (``t:``, ``d:``): the name or id as given (the
+  workbook's spelling, in what the library returns); a region's header cell as a cell
+  above; a key or column quoted only when it must be (see below).
+* **Refs**: ``$`` and the name.
+
+Quoting is conservative, and is this library's rule, not a measurement of Excel: Excel
+accepts a quoted name wherever it accepts a bare one, so the canonical form is always one
+Excel reads, and pastes into a formula unchanged; but which further names Excel itself
+leaves bare in the formulas it writes (names of non-ASCII letters, say) has not been
+measured (the formula lexer, E2, is where it will be), so a formula's own text may write
+bare a sheet this form quotes.  Compare through :func:`canonical_address`, never the
+formula's text.
 
 **Sheet names are not policed here.**  ECMA-376's ``sheet@name`` is an ``ST_Xstring``
 whose only constraint is that it be unique in the workbook (ISO/IEC 29500-4, ``sml.xsd``,
@@ -120,7 +154,7 @@ from __future__ import annotations
 
 import difflib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable, Mapping, NoReturn, Union
 
 from ooxml_edit.sheets import (MAX_COLUMN, MAX_ROW, Area, Cell, column_index,
@@ -323,6 +357,67 @@ def quote_sheet(name: str) -> str:
     return name
 
 
+def format_sheet(name: str | None, id: int | None = None) -> str:
+    """A sheet as an address writes it: its ``name`` quoted when it must be
+    (:func:`quote_sheet`), or ``#`` and its ``id`` when it has no name: ``Stock``,
+    ``'Q3 sales'``, ``#3``."""
+    if name:
+        return quote_sheet(name)
+    if id is None:
+        raise ValueError("a sheet is written by its name or its id")
+    return f"#{id}"
+
+
+_LETTERS: dict[int, str] = {}
+
+
+def _letters(column: int) -> str:
+    """A column's letters (1 is ``A``), remembered: what every cell address is written
+    with."""
+    letters = _LETTERS.get(column)
+    if letters is None:
+        number, out = column, ""
+        while number:
+            number, rest = divmod(number - 1, 26)
+            out = chr(65 + rest) + out
+        letters = _LETTERS[column] = out
+    return letters
+
+
+def _sheet_text(sheet: "SheetRef | str") -> str:
+    return sheet if isinstance(sheet, str) else sheet.text
+
+
+def format_cell(sheet: "SheetRef | str", row: int, column: int) -> str:
+    """A cell's address: ``Stock!B4``.  ``sheet`` is a :class:`SheetRef`, or a sheet as an
+    address writes it (:func:`format_sheet`); ``row`` and ``column`` count from 1."""
+    return f"{_sheet_text(sheet)}!{_letters(column)}{row}"
+
+
+def format_range(sheet: "SheetRef | str", area: "Area | Cell | None" = None,
+                 span: str = "cells") -> str:
+    """A cell, range or whole sheet's address, as :attr:`RangeAddress.text` writes it:
+    ``Stock!A1:B4``, ``Stock!B4`` (a range of one cell), ``Stock!A:C`` and ``Stock!2:5``
+    (``span`` ``"columns"`` or ``"rows"``: the area's columns or rows), ``Stock!`` (no
+    ``area``, or ``span`` ``"sheet"``).  ``sheet`` as for :func:`format_cell`."""
+    if isinstance(area, Cell):
+        area = Area(area, area)
+    if area is None or span == "sheet":
+        where = ""
+    elif span == "columns":
+        where = f"{_letters(area.first.column)}:{_letters(area.last.column)}"
+    elif span == "rows":
+        where = f"{area.first.row}:{area.last.row}"
+    elif span == "cells":
+        first, last = area.first, area.last
+        where = f"{_letters(first.column)}{first.row}"
+        if last != first:
+            where += f":{_letters(last.column)}{last.row}"
+    else:
+        raise ValueError(f"span is one of {SPANS}")
+    return f"{_sheet_text(sheet)}!{where}"
+
+
 @dataclass(frozen=True)
 class SheetRef:
     """Which sheet: by ``name`` (as the workbook spells it) or by ``id`` (its ``sheetId``),
@@ -344,7 +439,7 @@ class SheetRef:
     @property
     def text(self) -> str:
         """``Stock``, ``'Q3 sales'`` or ``#3``."""
-        return f"#{self.id}" if self.id is not None else quote_sheet(self.name or "")
+        return f"#{self.id}" if self.id is not None else format_sheet(self.name)
 
     def __str__(self) -> str:
         return self.text
@@ -402,16 +497,8 @@ class RangeAddress:
 
     @property
     def text(self) -> str:
-        first, last = self.area.first, self.area.last
-        if self.span == "columns":
-            where = f"{column_letters(first.column)}:{column_letters(last.column)}"
-        elif self.span == "rows":
-            where = f"{first.row}:{last.row}"
-        elif self.span == "sheet":
-            where = ""
-        else:
-            where = self.area.ref
-        return f"{self.sheet.text}!{where}"
+        """The canonical address (see the module's notes): :func:`format_range`."""
+        return format_range(self.sheet, self.area, self.span)
 
     def __str__(self) -> str:
         return self.text
@@ -710,7 +797,38 @@ def parse_address(text: str) -> Address:
 
 
 def format_address(address: Address) -> str:
-    """An address's canonical text (its :attr:`text`)."""
+    """An address's canonical text (its :attr:`text`; see the module's notes)."""
+    return address.text
+
+
+def canonical_address(text: str, *, sheets: Iterable[str] | None = None) -> str:
+    """Any spelling of an address that parsing accepts, in the canonical form every
+    address the library returns is in (see the module's notes): ``"stock!$b$4"`` is
+    ``"stock!B4"``, ``"'Stock'!B4:A1"`` is ``"Stock!A1:B4"``, ``"Überblick!a1"`` is
+    ``"'Überblick'!A1"``.  ``sheets``, the workbook's sheet names (``[s.name for s in
+    wb.sheets]``), spells a sheet named in the address as the workbook does, matched case
+    aside as the workbook matches them; a name not among them is kept as given.  A
+    canonical address is its own canonical form; :class:`AddressError` for text that is
+    not an address."""
+    address = parse_address(text)
+    if sheets is None:
+        return address.text
+    spelled: dict[str, str] = {}
+    for name in sheets:
+        spelled.setdefault(name.casefold(), name)
+
+    def respell(sheet: SheetRef) -> SheetRef:
+        if sheet.name is None:
+            return sheet
+        return SheetRef(name=spelled.get(sheet.name.casefold(), sheet.name))
+
+    if isinstance(address, RangeAddress):
+        address = address.on(respell(address.sheet))
+    elif isinstance(address, TableAddress):
+        if address.region is not None:
+            address = replace(address, region=address.region.on(respell(address.region.sheet)))
+        elif address.scope is not None:
+            address = replace(address, scope=respell(address.scope))
     return address.text
 
 

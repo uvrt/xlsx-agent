@@ -234,7 +234,8 @@ from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
 
 from ooxml_edit.sheets import Area, Cell, column_index, column_letters
 
-from .address import NameNotFound, RangeAddress, SheetRef, is_name, nearest, quote_sheet
+from .address import (NameNotFound, RangeAddress, SheetRef, format_cell, is_name, nearest,
+                      quote_sheet)
 from .clean import CLEAN_KEYS, Clean, RuleError, parse_clean
 from .redact import REDACT_KEYS, RedactError, Redaction, Rule, parse_rule
 from .read.regions import KEY_VALUE_COLUMNS, Part, Region, Span, _header_names
@@ -926,8 +927,10 @@ def build(workbook: "Workbook", spec: TableSpec,
                                        f"sheet {written} differs from sheet "
                                        f"{quote_sheet(first_sheet.name)}'s at {cell}: a table "
                                        "over several sheets has one header",
-                                       valid_options=[f"{written}!{cell}",
-                                                      f"{quote_sheet(first_sheet.name)}!{cell}"])
+                                       valid_options=[
+                                           format_cell(written, header, left + at),
+                                           format_cell(quote_sheet(first_sheet.name), header,
+                                                       left + at)])
         first = spec.first_row or (header + 1 if header is not None else used.first.row)
         last, below = _last_row(workbook, spec, sheet, used, first, left, right, stop)
         if spec.capacity is not None:

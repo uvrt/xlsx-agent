@@ -77,7 +77,7 @@ from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, bo
                               string, tool)
 
 from ..address import (NameNotFound, RangeAddress, RefAddress, SheetRef, TableAddress,
-                       parse_address, quote_sheet)
+                       format_sheet, parse_address)
 from ..read.regions import RegionError
 from ..read.types import Value
 from ..workbook import _markdown_rows
@@ -615,7 +615,7 @@ class _Annotations:
 
 
 def _written(sheet: Any) -> str:
-    return quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
+    return format_sheet(sheet.name, sheet.id)
 
 
 def _cell(value: Value, annotate: _Annotations, formulas: bool,

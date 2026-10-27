@@ -154,6 +154,21 @@ rows are inserted, deleted or sorted; a position and a range do not. A key two r
 is refused (`duplicate_key`) and a row without one cannot be named by key (`no_key`), each
 with the rows by position as `valid_options`.
 
+*The canonical form* (production feedback, round 18, Q3, 2026-10-27): every address the
+library returns -- values, problems, errors, find results, ranges, tool outputs -- is
+written by one formatter (`xlsx_agent.address`: `format_address`, and `format_sheet`,
+`format_cell` and `format_range` beneath it), in Excel's own spelling, so that a returned
+address pastes into a formula unchanged: a sheet name bare when it is ASCII letters,
+digits, `_` and `.`, starting with a letter or `_`, and not a cell reference, an R1C1
+reference or a boolean, else quoted with each `'` doubled; column letters upper case, no
+`$`; a range top left to bottom right, one of one cell the cell. Not always-quoted, as
+asked as an option: a returned address stays what Excel writes for the common names.
+`canonical_address(text, sheets=None)` gives any accepted spelling in that form (with the
+workbook's sheet names, in the workbook's spelling), so a caller compares its own list with
+what is returned without copying the rules. Which names beyond these Excel leaves bare (a
+name of non-ASCII letters, say) is not measured: they are quoted, which Excel reads (E2's
+lexer is where it is measured).
+
 ---
 
 ## Values and types
