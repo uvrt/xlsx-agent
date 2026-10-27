@@ -96,7 +96,8 @@ from typing import TYPE_CHECKING, Any, Iterator, Sequence
 from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell, column_letters
 
 from ..address import (NameNotFound, RangeAddress, SheetRef, TableAddress,
-                       is_address_name, is_name, nearest, parse_address, quote_sheet)
+                       TABLE_PREFIX, format_cell, format_sheet, is_address_name, is_name,
+                       nearest, parse_address, quote_sheet)
 from .names import DefinedName
 from .tables import TablePart, name_columns
 from .types import Problem, Value
@@ -1290,8 +1291,8 @@ s for s in self.workbook._every_sheet if s.name == part.sheet)
         return self._detected[cache]
 
     def _detect(self, sheet: "Sheet", cell: Cell) -> Region:
-        written = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
-        address = f"t:{written}!{cell.ref}"
+        written = format_sheet(sheet.name, sheet.id)
+        address = TABLE_PREFIX + format_cell(written, cell.row, cell.column)
         used = self.workbook.used_range(sheet)
         if used is None or not used.contains(cell):
             raise RegionError("no_header", f"{address}: nothing is at the header cell",
@@ -1392,7 +1393,7 @@ s for s in self.workbook._every_sheet if s.name == part.sheet)
                  if t.sheet.casefold() == sheet.name.casefold()]
         taken += [area for _, area in self.table_areas(sheet.name)]
         out: list[Region | UnclearRegion] = []
-        written = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
+        written = format_sheet(sheet.name, sheet.id)
         row_number = used.first.row
         rows = self._open_rows(sheet, used, row_number, taken)
         while True:
@@ -1420,7 +1421,9 @@ s for s in self.workbook._every_sheet if s.name == part.sheet)
                         column = value.column   # a lone number or date: no region either
                         continue
                     assert error.reason is not None   # header_unclear always gives one
-                    out.append(UnclearRegion(f"t:{written}!{_ref(value)}", error.reason))
+                    out.append(UnclearRegion(TABLE_PREFIX + format_cell(written, value.row,
+                                                                        value.column),
+                                             error.reason))
 
                     column = _block_end(row, value.column)
                     bottom = max(bottom, self._blank_after(sheet, used, row_number))
@@ -1801,7 +1804,7 @@ def _header_names(row: Sequence[Value], first_column: int, flags: list[Problem],
     """A header row's text as column names (see :func:`~.tables.name_columns`); a cell
     that is not text counts as blank."""
     names = [v.v if v.t == "text" and isinstance(v.v, str) else "" for v in row]
-    addresses = [f"{written}!{_ref(v)}" for v in row]
+    addresses = [format_cell(written, v.place[1], v.place[2]) for v in row]
     return name_columns(names, first_column, flags, written, blank="blank_header",
                         duplicate="duplicate_header", addresses=addresses)
 

@@ -5,6 +5,33 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## 0.1.5 (2026-10-27) -- one canonical form for every address returned
+
+- **The canonical form, documented and in one place** (production feedback, round 18, Q3).
+  Excel's own spelling is kept as the canonical one, not always-quoted, so a returned
+  address pastes into a formula unchanged: a sheet name bare when it is ASCII letters,
+  digits, `_` and `.`, starting with a letter or `_`, and not a cell reference, an R1C1
+  reference or a boolean; else quoted, each `'` doubled; column letters upper case, no
+  `$`; a range top left to bottom right, one of one cell the cell. Written out in the
+  module docstring of `xlsx_agent.address` and README.md's new "Addresses". The quoting
+  rule is unchanged, and is still this library's conservative one: which further names
+  Excel writes bare is not measured.
+- **`canonical_address(text, sheets=None)`**: any spelling parsing accepts in that form
+  (`sales!$b$4` is `sales!B4`; `Überblick!a1` is `'Überblick'!A1`); with the workbook's
+  sheet names, a sheet spelled as the workbook spells it (`Sales!B4`), matched case aside.
+  Exported from `xlsx_agent`.
+- **One formatter.** `format_sheet`, `format_cell` and `format_range` in
+  `xlsx_agent.address` write every sheet-qualified address; `SheetRef.text`,
+  `RangeAddress.text` and `Value.a` use them, as do the places that wrote an address by hand
+  (find results, regions, table and header flags, a validation rule's `address`, a
+  cell compare's edits, the edit report's and the structure check's problems, edit
+  refusals, shared formula anchors). Two of them could differ from the form: the structure
+  check's `cell_row` problem gave a cell's `r` as stored (lower-case letters kept), and a
+  validation rule's `address` its `sqref`'s first range as stored; both are now
+  canonical. `Value.array` (an array formula's range, without its sheet) is now written
+  canonically too, as stored only when it does not read as a range. Tool definitions are
+  unchanged.
+
 ## 0.1.4 (2026-10-26) -- error codes with ooxml-edit's typed refusals
 
 - **The codes, tested** (review, S9). ooxml-edit 0.66.0 raises an `ArgumentError` for a

@@ -59,8 +59,8 @@ A ``.xls``, ``.xlsb`` or encrypted file is refused with an :class:`OpenError` wh
 """
 
 from .address import (FORMS, Address, AddressError, DatasetAddress, NameNotFound,
-                      RangeAddress, RefAddress, SheetRef, TableAddress, format_address,
-                      is_name, needs_quotes, parse_address, quote_sheet)
+                      RangeAddress, RefAddress, SheetRef, TableAddress, canonical_address,
+                      format_address, is_name, needs_quotes, parse_address, quote_sheet)
 from .compare import (CellChange, ColumnChange, Diff, DuplicateKey, RowChange,
                       SheetChange, TableDiff)
 from .clean import CleanedWarning
@@ -83,7 +83,7 @@ from .integrity import CellEdit, CellsDiff
 from .validations import ValidationRule
 from .workbook import Sheet, Workbook
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 
 __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellChange",
            "CellEdit", "CellsDiff", "ValidationRule",
@@ -97,5 +97,5 @@ __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellC
            "OpenError", "Problem", "QueryError", "QueryResult", "RangeAddress", "RefAddress",
            "Provenance", "RedactError", "Redaction", "Region", "RegionError", "Selection", "Sheet", "SheetRef", "SheetScan",
            "TableAddress", "Total", "UnclearRegion", "Value", "Workbook", "__version__",
-           "as_dataset", "format_address", "is_name", "merge_sources", "needs_quotes",
+           "as_dataset", "canonical_address", "format_address", "is_name", "merge_sources", "needs_quotes",
            "parse_address", "quote_sheet", "table_dataset"]

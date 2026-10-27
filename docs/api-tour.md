@@ -74,7 +74,9 @@ formula's cached value (none is `blank` with `issue='no_cached_value'`), no disp
 string. Every form of address is in ROADMAP.md, "Addresses": `Sales!A1:E3`, `#1!E2` (by
 sheet id), `t:Sales`, `t:Sales[Revenue]`, `t:Stock/SKU-0002/Price`, `t:Sales/#5`,
 `t:Sales/#9:#16` (rows 9 to 16; `#9:` to the last), `t:Stock/*/Price`,
-`t:Stock/{SKU-0002,SKU-0007}/Price`, `d:by_region`.
+`t:Stock/{SKU-0002,SKU-0007}/Price`, `d:by_region`. Every address returned is in one
+canonical form; `canonical_address("sales!$b$4", sheets=[s.name for s in wb.sheets])`
+gives `'Sales!B4'`, any accepted spelling in that form (README.md, "Addresses").
 
 **Addresses by key** name a row by its key column's value, so they keep naming the same
 cell when a consultant inserts, deletes or sorts rows (a position, `t:Sales/#5`, or a

@@ -83,7 +83,7 @@ from ooxml_edit.tools.limits import Limits
 from ooxml_edit.xml import Element
 
 from .address import (Address, NameNotFound, RangeAddress, SheetRef, TableAddress, nearest,
-                      parse_address, quote_sheet)
+                      format_sheet, parse_address, quote_sheet)
 
 from .catalogue import DEFAULT_TOKENS, catalogue
 from .compare import Diff, compare
@@ -1007,7 +1007,7 @@ class Workbook:
             for sheet in self._every_sheet:     # withheld ones too: a formula may name them
                 if sheet.part is None or sheet.type != "worksheet":
                     continue
-                written = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
+                written = format_sheet(sheet.name, sheet.id)
                 for rel in self.package.relationships(sheet.part).values():
                     if rel.is_external or rel.type.rpartition("/")[2] != "table" \
                             or rel.target_part is None \
@@ -1078,7 +1078,7 @@ class Workbook:
     def _reader(self, sheet: Sheet, *, formats: bool = False,
                 markdown: bool = False) -> SheetReader:
         data = self.package.read(sheet.part) if sheet.part is not None else None
-        name = quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
+        name = format_sheet(sheet.name, sheet.id)
         return SheetReader(data or b"", sheet=name, hidden=not sheet.visible,
                            strings=self.strings, styles=self.styles, date1904=self.date1904,
                            locale=self.locale, formats=formats, grouping=self.grouping,

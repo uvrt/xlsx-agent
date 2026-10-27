@@ -122,6 +122,7 @@ from ..formula import ShiftError, shift, tokens
 from ..markdown import cell_runs
 from ..read.regions import capacity_rows
 from ..read.styles import classify_format
+from ..address import format_cell
 from ..read.types import _letters
 
 #: A whole number beyond this is not held exactly by a double (Excel's numbers).
@@ -456,7 +457,7 @@ class _Check:
         from .structure import _label
 
         refusals, allowed = self.refusals, self.allowed
-        label = f"{_label(sheet)}!{_letters(cell.column)}{cell.row}"
+        label = format_cell(_label(sheet), cell.row, cell.column)
         if sheet.type != "worksheet" or sheet.part is None:
             refusals.add("not_a_worksheet", label)
             return None

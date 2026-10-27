@@ -24,6 +24,27 @@ writes themselves come with E3. Not released to PyPI; installed from source.
   The loaded core counts 4,958 tokens on Claude (the budget is 6,500).
 - What changed: [CHANGELOG.md](CHANGELOG.md).
 
+## Addresses
+
+Every address the library returns (a value's `a`, a problem's or an error's address, a
+find result, a range, a tool's output) is in one canonical form, written by one formatter:
+
+- a sheet name bare when it is ASCII letters, digits, `_` and `.`, starts with a letter or
+  `_`, and cannot be read as a cell reference (`A1`), an R1C1 one (`R1C1`, `R`, `C2`) or a
+  boolean: `Sales!B4`; any other name quoted, each `'` inside doubled: `'Q3 Sales'!B4`,
+  `'Bob''s'!B4`, `'2024'!B4`, `'A1'!B4`, `'Überblick'!B4`; a sheet by id `#3!B4`;
+- column letters upper case, no `$`, rows without leading zeros;
+- a range top left to bottom right (`A1:C9`), one of one cell the cell (`B4`); whole
+  columns `A:C`, rows `2:5`, a whole sheet `Sales!`;
+- `t:`, `d:` and `$` addresses as in [ROADMAP.md](ROADMAP.md), "Addresses".
+
+`canonical_address(text)` turns any spelling an address may be given in (`sales!$b$4`,
+`'Sales'!B4:B4`) into that form; with `sheets=[s.name for s in wb.sheets]` a sheet's
+name is spelled as the workbook spells it, matched case aside. Compare addresses through
+it, never by copying the rules. The quoting is this library's rule (Excel reads a quoted
+name wherever it reads a bare one); which further names Excel itself writes bare is not yet
+measured. The full rules: the docstring of `src/xlsx_agent/address.py`.
+
 ## Install from source
 
 Python 3.11-3.15. ooxml-common and ooxml-edit are not on PyPI either; install them from

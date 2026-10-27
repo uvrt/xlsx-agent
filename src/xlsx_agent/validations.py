@@ -74,7 +74,7 @@ from typing import TYPE_CHECKING, Any, Iterable, cast
 
 from ooxml_edit.sheets import Area, Cell
 
-from .address import RangeAddress, quote_sheet
+from .address import RangeAddress, format_range, format_sheet, quote_sheet
 from .formula import ShiftError, Token, tokens
 from .read.names import range_of, sheet_names
 from .read.stream import Validation
@@ -131,7 +131,10 @@ class ValidationRule:
     def address(self) -> str:
         """The rule's cells with the sheet: ``Stock!C10:C200`` (the first range, and ``…``
         after it when there are more)."""
-        first = f"{self.sheet}!{self.cells[0]}" if self.cells else self.sheet
+        if self.areas:
+            first = format_range(self.sheet, self.areas[0])
+        else:   # no cells, or none that read as a range: as written
+            first = f"{self.sheet}!{self.cells[0]}" if self.cells else self.sheet
         return first + (" …" if len(self.cells) > 1 else "")
 
     def covers(self, cell: Cell) -> bool:
@@ -188,7 +191,7 @@ def _rule(workbook: "Workbook", sheet: "Sheet", index: int,
     cells = tuple(rule.sqref.split()) if rule.sqref else tuple(_ref(a) for a in rule.areas)
     found = _source(workbook, sheet.name, rule.formula1) if kind == "list" else {}
     return ValidationRule(
-        sheet=quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}", index=index,
+        sheet=format_sheet(sheet.name, sheet.id), index=index,
         origin=rule.origin, type=kind, operator=operator, allow_blank=rule.allow_blank,
         cells=cells, areas=rule.areas, formula1=rule.formula1, formula2=rule.formula2,
         **found)

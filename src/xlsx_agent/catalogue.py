@@ -74,7 +74,7 @@ from typing import TYPE_CHECKING, Any
 
 from ooxml_edit.sheets import Area, Cell
 
-from .address import RangeAddress, quote_sheet
+from .address import RangeAddress, format_sheet
 from .profile import ColumnStats, profile
 from .read.regions import Region, RegionError, UnclearRegion, capacity_rows
 from .read.types import Value
@@ -300,7 +300,7 @@ def _sheet(workbook: "Workbook", sheet: "Sheet") -> dict:
 
 
 def _written(sheet: "Sheet") -> str:
-    return quote_sheet(sheet.name) if sheet.name else f"#{sheet.id}"
+    return format_sheet(sheet.name, sheet.id)
 
 
 def _problem(problem: Any) -> dict:

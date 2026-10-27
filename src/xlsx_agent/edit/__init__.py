@@ -69,7 +69,8 @@ from ooxml_edit.history import History
 from ooxml_edit.sheets import Cell, Formula, RichText, date_serial
 from ooxml_edit.sheets import Workbook as CellWriter
 
-from ..read.types import Problem, _letters
+from ..address import format_cell
+from ..read.types import Problem
 from .report import MAX_ISSUES, EditReport, capped, compress
 from .structure import CODES as STRUCTURE_CODES
 from .structure import _label, check_structure
@@ -316,7 +317,7 @@ class Editor:
         :meth:`ooxml_edit.sheets.Worksheet.write` takes it.  The first change invalidates
         every formula's cached value (see the module); the cell is read back at once."""
         label = _label(sheet)
-        address = f"{label}!{_letters(cell.column)}{cell.row}"
+        address = format_cell(label, cell.row, cell.column)
         if sheet.type != "worksheet" or sheet.part is None:
             raise EditError("not_a_worksheet", addresses=[address])
         if self.workbook.strict:
@@ -478,7 +479,7 @@ def verify(workbook: Any, data: bytes, kind: str) -> SaveReport:
         for row, column in sorted(positions):
             verified += 1
             if not _agrees(writer.content(Cell(row, column)), read.get((row, column))):
-                wrong.append(f"{label}!{_letters(column)}{row}")
+                wrong.append(format_cell(label, row, column))
     if wrong:
         log.warning("save refused: %d cell(s) did not read back", len(wrong))
         raise EditError("readback", "the file was not handed over", addresses=wrong)

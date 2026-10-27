@@ -24,6 +24,7 @@ from dataclasses import dataclass
 
 from ooxml_edit.sheets import Area, column_letters
 
+from ..address import format_range
 from .stream import _area
 from .strings import decode_xstring
 from .types import Problem
@@ -73,7 +74,7 @@ def read_table(root, *, sheet: str, written_sheet: str, part: str,
     header_rows = _count(root.get("headerRowCount"), 1)
     totals_rows = _count(root.get("totalsRowCount"), 0)
     flags: list[Problem] = []
-    where = f"{written_sheet}!{area.ref}" if area is not None else written_sheet
+    where = format_range(written_sheet, area) if area is not None else written_sheet
     if area is None:
         flags.append(Problem("bad_ref", written_sheet))
     names: list[str] = []
