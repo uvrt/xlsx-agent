@@ -1156,7 +1156,14 @@ strict set unchanged.
   `excel-oracle.lock` in the Office group container, shared by name with the main
   session's probes; skipped when Excel runs or the lock is held; only an Excel it started
   is quit, and it is watched for a queued AppleEvent starting it again) and
-  `tools/excel_resave.applescript`; `pytest -m oracle`.
+  `tools/excel_resave.applescript`; `pytest -m oracle`. Hardened (2026-10-28): the file
+  saved must be the input (saved by the input's name; the sheet names; else `mismatch`);
+  with the screen locked, where System Events sees no window, the repair prompt is found
+  through the window server (`repair`, unanswered); the measured causes of the repair
+  prompt (sheet names Excel treats as equal, rows or cells out of order) are found before
+  Excel is run (`preflight`); Excel not answering is `hang`; an interrupted run (Ctrl-C,
+  `SIGTERM`, `SIGHUP`, exit; `kill -9` at the next session) still leaves no Excel of the
+  oracle's running.
 
 ---
 

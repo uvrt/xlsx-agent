@@ -5,6 +5,50 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## Unreleased
+
+- **The Excel oracle is harder to fool** (`tests/oracle.py`,
+  `tools/excel_resave.applescript`; tests and tooling only, no package change, so no new
+  version). Found while measuring sheet-name quoting (0.1.6):
+  - *What Excel saved is the input.* Excel can start with a blank workbook ("Map1") that
+    stays active after the input is opened, and the script saved the active workbook: a
+    blank file, reported `ok`. The script now saves the workbook of the input's file name
+    (none open: it prints `wrong workbook:` and saves nothing), and the saved file must
+    have the input's sheet names in order: otherwise `mismatch`.
+  - *The "hangs" were repair prompts nobody could see.* With the screen locked, System
+    Events lists no window of Excel's, so the repair prompt was never found: Excel waited
+    on it until the AppleEvent time-out, which looked like a hang with no dialog. Measured
+    (Excel for Mac 16.106, 2026-10-28, screen locked, made-up workbooks): the window
+    server still lists the prompt (an untitled window, 273 x 274-288 points), and
+    ScreenCaptureKit images of it showed Excel's repair prompt for each case below and the
+    shared-string control. With the screen locked the oracle now finds it there (JavaScript
+    for Automation, `CGWindowListCopyWindowInfo`), stops the call, quits Excel by signal
+    and reports `repair` (it cannot be answered; `detail` says so) -- the oracle suite
+    took 2 min 11 s where the time-outs took over 4 min. Excel not answering with no
+    prompt found is `hang` (the script reports AppleScript's -1712 in any language),
+    naming any known cause and that the screen was locked, never a plain `error`.
+  - *Known causes, before Excel.* `repair_causes` finds what makes Excel ask to repair a
+    workbook, as measured: two sheet names it treats as equal -- case (`R`/`r`), NFKC
+    forms (`a¹b`/`a１b`, a no-break space and a space, halfwidth and fullwidth katakana),
+    soft hyphen, BOM and zero-width space left out (`a<U+200B>b` equals `ab`) -- and rows
+    or cells out of order: `B1` listed before `A1`, row 2 before row 1, a cell or a row
+    listed twice. Such a file is not given to Excel (`preflight`, naming the cause) unless
+    `resave(preflight=False)`.
+  - *Interrupted, Excel is still quit.* The `osascript` runs in its own process group;
+    Ctrl-C, `SIGTERM` or `SIGHUP` mid-run kills it, keeps the Excel it started as the
+    session's and quits it; signals during the quit are held until Excel is gone; an
+    exit hook recovers a session never closed. Against `kill -9`, the session keeps
+    the Excel it started (pid and start time) in `excel-started.json` while it runs, and
+    the next session quits that Excel only when it is still that process, its run is
+    gone and it has no workbook open; any other Excel is "in use", as before. Verified
+    with Excel: each of the four signals sent to a run holding Excel on a prompt left no
+    Excel running (for `kill -9`, after the next session started).
+  - Outcomes are `ok`, `repair`, `mismatch`, `hang`, `preflight` and `error`
+    (`oracle.OUTCOMES`); only `ok` and `repair` are cached. Unit tests for the
+    pre-flight, the outcome mapping, the window-server check and the interruptions run
+    without Excel; one more oracle test gives Excel a known cause and checks the next
+    file is saved as itself.
+
 ## 0.1.6 (2026-10-27) -- sheet-name quoting measured in Excel
 
 - **Quoting follows Excel, measured** (round 18, follow-up C). Excel for Mac 16.106 on
