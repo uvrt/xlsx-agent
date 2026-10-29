@@ -5,21 +5,20 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
-## 0.1.7 (2026-10-29) -- find_text sent with a workbook's parameters only
+## 0.1.7 (2026-10-29) -- the shared tools sent with a workbook's parameters only
 
-- **`find_text` without a deck's or document's parameters** (production round 23, V3;
-  ooxml-edit 0.70.0, `Tool.kind_fields`): a workbook's toolbox is sent the shared
-  `find_text` without `slides` and `stories`, and its `range` described for a workbook
-  alone ("Only within this sheet, range or table."). A call that still passes either is
-  refused as before, by this library's handler. Offline: the core 4,272 -> 4,169
-  (about 6,323 -> 6,171 counted), every definition 5,013 -> 4,909 (guard 4,910); the strict
-  set is unchanged. The ooxml-edit floor rises to 0.70.0.
-
-## Unreleased
-
+- **The shared tools without a deck's or document's parameters** (production round 23, V3;
+  ooxml-edit 0.70.0, `Tool.kind_fields`): a workbook's toolbox is sent `find_text`
+  without `slides` and `stories` (its `range` described for a workbook alone: "Only within
+  this sheet, range or table."), `save_document` without a document's `clean`, and
+  `undo`'s `scope` described for a sheet. A call that still passes one is answered as
+  before: this library's `find_text` refuses `slides` and `stories`, ooxml-edit refuses
+  `clean: true`. Offline: the core 4,272 -> 4,122 (about 6,323 -> 6,101 counted), every
+  definition 5,013 -> 4,862 (guard 4,865); the strict set is unchanged (1 tool, 13
+  optional parameters). The ooxml-edit floor rises to 0.70.0.
 - **The Excel oracle is harder to fool** (`tests/oracle.py`,
-  `tools/excel_resave.applescript`; tests and tooling only, no package change, so no new
-  version). Found while measuring sheet-name quoting (0.1.6):
+  `tools/excel_resave.applescript`; tests and tooling only, no package change; listed
+  under 0.1.7, the first version after it). Found while measuring sheet-name quoting (0.1.6):
   - *What Excel saved is the input.* Excel can start with a blank workbook ("Map1") that
     stays active after the input is opened, and the script saved the active workbook: a
     blank file, reported `ok`. The script now saves the workbook of the input's file name
