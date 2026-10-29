@@ -5,11 +5,20 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
-## Unreleased
+## 0.1.7 (2026-10-29) -- the shared tools sent with a workbook's parameters only
 
+- **The shared tools without a deck's or document's parameters** (production round 23, V3;
+  ooxml-edit 0.70.0, `Tool.kind_fields`): a workbook's toolbox is sent `find_text`
+  without `slides` and `stories` (its `range` described for a workbook alone: "Only within
+  this sheet, range or table."), `save_document` without a document's `clean`, and
+  `undo`'s `scope` described for a sheet. A call that still passes one is answered as
+  before: this library's `find_text` refuses `slides` and `stories`, ooxml-edit refuses
+  `clean: true`. Offline: the core 4,272 -> 4,122 (about 6,323 -> 6,101 counted), every
+  definition 5,013 -> 4,862 (guard 4,865); the strict set is unchanged (1 tool, 13
+  optional parameters). The ooxml-edit floor rises to 0.70.0.
 - **The Excel oracle is harder to fool** (`tests/oracle.py`,
-  `tools/excel_resave.applescript`; tests and tooling only, no package change, so no new
-  version). Found while measuring sheet-name quoting (0.1.6):
+  `tools/excel_resave.applescript`; tests and tooling only, no package change; listed
+  under 0.1.7, the first version after it). Found while measuring sheet-name quoting (0.1.6):
   - *What Excel saved is the input.* Excel can start with a blank workbook ("Map1") that
     stays active after the input is opened, and the script saved the active workbook: a
     blank file, reported `ok`. The script now saves the workbook of the input's file name
@@ -703,7 +712,8 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   sources resolver hook, and `ooxml_edit.sheets`, the lossless cell writer the edits and
   addresses are built on). 0.54.0 carries `ooxml_edit.markdown` and `sheets.RichText`,
   the Markdown cells (X3b); 0.57.0 the format's `touched` hook, by which a result names
-  the sheets a call changed (round 13, R2) -- the floor.
+  the sheets a call changed (round 13, R2); 0.70.0 the shared tools sent with a workbook's
+  parameters only (round 23, V3) -- the floor.
 - `ooxml-common>=0.29.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
   widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, and from
