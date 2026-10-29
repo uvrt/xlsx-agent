@@ -73,6 +73,11 @@ ooxml-edit refuses ``clean: true`` for it), +42: the core 4,230 -> 4,272 estimat
 6,261 -> 6,323 counted by the proxy, under 6,500; every definition 4,971 -> 5,013, the
 guard 4,975 -> 5,015.  The strict set's members are unchanged: save_document is strict on
 OpenAI only, where ``clean`` is one more nullable boolean.
+Round 23, V3 (ooxml-edit 0.70.0, Tool.kind_fields): the shared ``find_text`` is sent
+without a deck's ``slides`` and the ``stories`` of decks and documents, which a workbook's
+handler refuses, and its ``range`` described for a workbook alone: the core 4,272 -> 4,169
+estimated, about 6,323 -> 6,171 counted by the proxy; every definition 5,013 -> 4,909, the
+guard 5,015 -> 4,910.  find_text is not strict: the strict set is unchanged.
 """
 
 from __future__ import annotations
@@ -91,7 +96,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
-ALL_GUARD = 5015
+ALL_GUARD = 4910
 
 
 @pytest.fixture(scope="module")
@@ -149,6 +154,14 @@ def test_the_groups_are_the_roadmaps():
                                "xlsx_validate_data", "save_document", "undo", "batch"},
                       "shared_misc": {"close_document", "read_blob"},
                       "xlsx_edit": {"xlsx_set_cells"}}
+
+
+def test_find_text_is_sent_without_a_decks_or_documents_parameters(box):
+    """Round 23, V3: no slides and no stories, which the handler refuses as before."""
+    sent = next(d for d in box.definitions("anthropic", defer=False) if d["name"] == "find_text")
+    properties = sent["input_schema"]["properties"]
+    assert set(properties) == {"doc", "text", "regex", "range", "cursor"}
+    assert properties["range"]["description"] == "Only within this sheet, range or table."
 
 
 def test_the_loaded_core_is_within_budget_and_every_definition_within_its_guard(box):

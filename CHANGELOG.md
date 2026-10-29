@@ -5,6 +5,16 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## 0.1.7 (2026-10-29) -- find_text sent with a workbook's parameters only
+
+- **`find_text` without a deck's or document's parameters** (production round 23, V3;
+  ooxml-edit 0.70.0, `Tool.kind_fields`): a workbook's toolbox is sent the shared
+  `find_text` without `slides` and `stories`, and its `range` described for a workbook
+  alone ("Only within this sheet, range or table."). A call that still passes either is
+  refused as before, by this library's handler. Offline: the core 4,272 -> 4,169
+  (about 6,323 -> 6,171 counted), every definition 5,013 -> 4,909 (guard 4,910); the strict
+  set is unchanged. The ooxml-edit floor rises to 0.70.0.
+
 ## Unreleased
 
 - **The Excel oracle is harder to fool** (`tests/oracle.py`,
@@ -703,7 +713,8 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   sources resolver hook, and `ooxml_edit.sheets`, the lossless cell writer the edits and
   addresses are built on). 0.54.0 carries `ooxml_edit.markdown` and `sheets.RichText`,
   the Markdown cells (X3b); 0.57.0 the format's `touched` hook, by which a result names
-  the sheets a call changed (round 13, R2) -- the floor.
+  the sheets a call changed (round 13, R2); 0.70.0 the shared tools sent with a workbook's
+  parameters only (round 23, V3) -- the floor.
 - `ooxml-common>=0.29.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
   widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, and from
