@@ -41,7 +41,7 @@ Production round 25, X0-X3.  0.1.8, not 0.2.0: the public API grows (a derive's 
   refused: they are cells as stored); `joined` says what was matched. At most 1,000,000
   values held (`too_many_cells`), and the result's rows as any derive's. A joined dataset
   goes stale when either side changes -- `from`'s source, the joined dataset's source or
-  the joined table's workbook (ooxml-edit 0.73.0, `define_dataset(also=...)`; the floor
+  the joined table's workbook (ooxml-edit 0.72.0, `define_dataset(also=...)`; the floor
   rises to it) -- and undoing the change makes it current again.
 - **`extract`, a declared clean rule** (X2). A pattern with exactly one capture group,
   searched for (anchored only as written) in a declared column's text, its match starting
@@ -776,7 +776,7 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   addresses are built on). 0.54.0 carries `ooxml_edit.markdown` and `sheets.RichText`,
   the Markdown cells (X3b); 0.57.0 the format's `touched` hook, by which a result names
   the sheets a call changed (round 13, R2); 0.70.0 the shared tools sent with a workbook's
-  parameters only (round 23, V3); 0.73.0 `define_dataset(also=...)`, by which a joined
+  parameters only (round 23, V3); 0.72.0 `define_dataset(also=...)`, by which a joined
   dataset goes stale when the joined side changes (round 25, X1) -- the floor.
 - `ooxml-common>=0.29.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text

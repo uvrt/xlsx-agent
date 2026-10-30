@@ -26,7 +26,7 @@ classifiers = [
 ]
 # lxml, ooxml-edit and ooxml-common, and nothing else at runtime; why each, and why at its
 # version: CHANGELOG.md, "Dependencies".
-dependencies = ["lxml>=4.9", "ooxml-edit>=0.73.0", "ooxml-common>=0.29.0"]
+dependencies = ["lxml>=4.9", "ooxml-edit>=0.72.0", "ooxml-common>=0.29.0"]
 
 [project.optional-dependencies]
 # pptx-agent (and pptx2svg, which its layout checks measure text with) for the tests only:
