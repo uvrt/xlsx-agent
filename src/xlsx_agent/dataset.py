@@ -62,7 +62,7 @@ import warnings
 from dataclasses import dataclass, replace
 from typing import Any, Iterable, Iterator, Sequence
 
-from ooxml_edit.sheets import Area, Cell
+from ooxml_edit.sheets import Area, Cell, number_text
 from ooxml_edit.tools import DATASET_PREFIX, Dataset
 
 from .address import (Address, AddressError, DatasetAddress, NameNotFound, RangeAddress,
@@ -133,12 +133,24 @@ def as_dataset(derived: Any) -> Dataset:
     module's notes): rows rounded, sources as range text, the :class:`Derived` as
     ``detail``."""
     columns = tuple(derived.columns)
-    rows = tuple(tuple(row[c] for c in columns) for row in derived.rows)
+    rows = tuple(tuple(_placed(row[c]) for c in columns) for row in derived.rows)
     sources = tuple(tuple(tuple(str(s) for s in where[c].sources) for c in columns)
                     for where in derived.provenance)
+    types = tuple("text" if derived.types.get(c) == "list" else derived.types.get(c)
+                  for c in columns)
     return Dataset(columns, rows, sources=sources, keys=derived.key_columns,
-                   types=tuple(derived.types.get(c) for c in columns), detail=derived,
+                   types=types, detail=derived,
                    cache=getattr(derived, "cache", None) or None)
+
+
+def _placed(value: Any) -> Any:
+    """A value as a dataset holds it for a deck or document: a list (a join's) as its
+    items, one per line (:data:`LIST_JOIN`), as a table's list is placed."""
+    if isinstance(value, (tuple, list)):
+        return LIST_JOIN.join(v if isinstance(v, str) else number_text(v)
+                              if isinstance(v, (int, float)) and not isinstance(v, bool)
+                              else str(v) for v in value)
+    return value
 
 
 class DatasetTable:
@@ -209,7 +221,10 @@ class DatasetTable:
         reported, or ``measured`` (unrounded); with its first ``sources`` cells when
         given."""
         rows = self.measured if measured else self.dataset.rows
-        v, t, issue = _typed(rows[position - 1][offset], self.labels[offset], self.derived)
+        held = rows[position - 1][offset]
+        if not measured and isinstance(self.measured[position - 1][offset], tuple):
+            held = self.measured[position - 1][offset]   # a list, read as one (placed as lines)
+        v, t, issue = _typed(held, self.labels[offset], self.derived)
         out = DatasetValue(sheet="", row=position, column=offset + 1, v=v, t=t,
                            issue=issue, dataset=self.id, name=self.columns[offset])
         if sources is not None:
@@ -584,6 +599,8 @@ def _type(v: Any, label: str | None) -> str:
     own (a bool, a number, text, nothing)."""
     if v is None:
         return "blank"
+    if isinstance(v, (tuple, list)):
+        return "list"
     if isinstance(v, bool):
         return "bool"
     if isinstance(v, (int, float)):

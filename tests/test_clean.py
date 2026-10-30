@@ -16,8 +16,8 @@ from ooxml_edit.tools import Toolbox
 
 from xlsx_agent import (CleanedWarning, DeclarationError, DeriveError, QueryError, Workbook,
                         table_dataset)
-from xlsx_agent.clean import (LABEL_WINDOW, MAX_PATTERN, Clean, RuleError, compile_pattern,
-                              parse_clean)
+from xlsx_agent.clean import (EXTRACT_WINDOW, LABEL_WINDOW, MAX_PATTERN, Clean, RuleError,
+                              compile_pattern, parse_clean)
 from xlsx_agent.tools import GROUPS, TOOLS, format as xlsx_format
 
 HEADER = ["Ref", "Task", "Owners", "Note", "Score"]
@@ -156,6 +156,11 @@ def test_a_formulas_cached_text_is_cleaned_too():
     ({"trim": True}, "bad_declaration", "trim"),
     ({}, "bad_declaration", None),
     ({"collapse_space": False}, "bad_declaration", None),
+    ({"extract": r"Status:\s*.+$"}, "bad_pattern", "extract"),         # no capture group
+    ({"extract": r"(\w+): (\w+)"}, "bad_pattern", "extract"),          # two
+    ({"extract": r"Status:\s*(.+)$"}, "bad_pattern", "extract"),        # \s* gives back
+    ({"extract": r"(.*);"}, "bad_pattern", "extract"),
+    ({"extract": ""}, "bad_pattern", "extract"),
 ])
 def test_a_rule_that_is_not_one_is_refused_where_it_is(clean, code, path):
     declared = {**TASKS, "fields": [{"header": "Note", "clean": clean}]}
@@ -317,8 +322,11 @@ def test_the_read_tools_mark_and_count_cleaned_values(tools):
     assert read["cleaned"] == {"count": 2, "first": ["'Team East'!C2", "'Team West'!C2"]}
     assert read["rows"][0][0] == {"a": "'Team East'!C2", "v": ["Kim", "Ash"], "t": "list",
                                   "cleaned": True}
-    raw = dispatch(tools, "xlsx_read", doc="d1", target="'Team East'!C2")
+    raw = dispatch(tools, "xlsx_read", doc="d1", target="'Team East'!C2", cells_only=True)
     assert raw["rows"][0][0]["v"] == "Lead: Robin;  Kim ;Ash" and "cleaned" not in raw
+    assert raw["held_by"] == {"table": "t:tasks", "rows": "t:tasks/E-1"}
+    row = dispatch(tools, "xlsx_read", doc="d1", target="'Team East'!C2")   # its table row
+    assert row["target"] == "t:tasks/E-1" and row["rows"][0][2]["v"] == ["Kim", "Ash"]
     query = dispatch(tools, "xlsx_query", doc="d1", table="t:tasks", columns=["Ref", "Note"],
                      where=[{"column": "owners", "op": "contains", "value": "lee"}])
     assert query["rows"] == [[{"a": "'Team West'!A2", "v": "W-1", "t": "text"},
@@ -350,8 +358,10 @@ def test_cleaning_changes_no_tool_definition():
 #: key and added its columns (+97), and since X3b added xlsx_read's markdown (+97), and
 #: since X5 added xlsx_compare's cells and formula_text and xlsx_read's validations (+356),
 #: and since lane X's X6 named the structure xlsx_compare's cells compares (+49), and
-#: since round 10's O5 let xlsx_query take a dataset (+59: ``doc`` optional).
-XLSX_CHARS = 10_909
+#: since round 10's O5 let xlsx_query take a dataset (+59: ``doc`` optional), and since
+#: round 25 gave xlsx_read a cited cell's table row (X0) and xlsx_derive its join (X1)
+#: (+1,184; X2's extract is a declared rule, and changes no definition).
+XLSX_CHARS = 12_093
 
 
 def test_a_deck_table_from_a_cleaned_table_warns_in_the_tools_result():
@@ -371,3 +381,80 @@ def test_a_deck_table_from_a_cleaned_table_warns_in_the_tools_result():
         assert result.ok, result.error
         assert result.data["cells"][1] == ["E-1", "Kim\nAsh"]
         assert any("t:tasks: 6 values were cleaned" in w for w in result.warnings), result.warnings
+
+
+# -- round 25, X2: extract, a value captured from a text cell ---------------------------------
+
+STATUS = r"Status:\s*(\S.*)$"
+
+
+def test_extract_searches_and_gives_the_captured_text_or_blank():
+    rule = parse_clean({"extract": STATUS})
+    assert rule.apply("Long notes.\nStatus: Partly done") == ("Partly done", True)
+    assert rule.apply("Status:Done") == ("Done", True)
+    assert rule.apply("No status line") == (None, True)         # not found: blank
+    assert rule.apply("Status: done\nmore") == (None, True)     # $ is the text's end
+    assert parse_clean({"extract": r"(?m)^Status: (.*)$"}).apply(
+        "a\nStatus: open\nb") == ("open", True)                 # (?m): a line's end
+    assert parse_clean({"extract": r"^(\w+)"}).apply("word rest") == ("word", True)
+    assert parse_clean({"extract": r"x(y)?"}).apply("x") == (None, True)  # the group took no part
+    assert parse_clean({"extract": r"(\d+)"}).apply("12") == ("12", False)
+    assert rule.spec == {"extract": STATUS}
+
+
+def test_extract_comes_after_strip_and_before_split_and_collapse():
+    rule = parse_clean({"strip": r"^Lead:[^;]*;\s*", "extract": r"Owners:\s*(\S.*)$",
+                        "split": ",", "collapse_space": True})
+    assert rule.spec == {"strip": r"^Lead:[^;]*;\s*", "extract": r"Owners:\s*(\S.*)$",
+                         "split": ",", "collapse_space": True}
+    assert rule.apply("Lead: Robin; notes Owners: Kim  Lee, Ash") == (("Kim Lee", "Ash"), True)
+
+
+def test_an_extract_match_starts_in_the_last_characters_only():
+    rule = parse_clean({"extract": STATUS})
+    tail = "Status: open"
+    assert rule.apply("x" * 40000 + "\n" + tail) == ("open", True)
+    far = tail + "\n" + "x" * EXTRACT_WINDOW
+    assert rule.apply(far) == (None, True)
+    anchored = parse_clean({"extract": r"^(\w+)"})
+    assert anchored.apply("word " + " " * EXTRACT_WINDOW) == (None, True)
+
+
+@pytest.mark.parametrize("pattern", [STATUS, r"([^;]*);", r"(\S+)$", r"(?m)^Status: (.*)$",
+                                     r"\[(\w+)\]", r"( *)\S"])
+def test_extract_patterns_that_give_nothing_back_are_taken(pattern):
+    assert parse_clean({"extract": pattern}).extract.pattern == pattern
+
+
+def test_the_worst_extract_taken_stays_cheap():
+    """The bound clean.py reports: the worst forms allowed, tried at every place of the
+    window, on cells as long as Excel holds."""
+    for pattern in (r"([^;]*);", r"( *)\S", r"(\s*)$"):
+        rule = parse_clean({"extract": pattern})
+        for text in (" " * 32767, "a" * 32767, "x:" * 16383):
+            start = time.perf_counter()
+            for _ in range(10):
+                rule.apply(text)
+            assert (time.perf_counter() - start) / 10 < 0.02, pattern
+
+
+def test_a_declared_extract_reads_through_the_table_with_its_cells():
+    book = WorkbookBuilder()
+    book.sheet("Items").rows("A1", [["Ref", "Review"],
+                                    ["I-1", "Checked twice.\nStatus: Partly done"],
+                                    ["I-2", "Not looked at"], ["I-3", "Status:  2026-03-01"]])
+    wb = Workbook.open(book.to_bytes())
+    wb.declare_tables([{"name": "items", "sheets": "Items", "key": "Ref",
+                        "fields": [{"header": "Review", "id": "status",
+                                    "clean": {"extract": STATUS}}]}])
+    assert cells(wb, "t:items[status]") == [
+        [{"a": "Items!B2", "v": "Partly done", "t": "text", "cleaned": True}],
+        [{"a": "Items!B3", "v": None, "t": "blank", "cleaned": True}],
+        [{"a": "Items!B4", "v": "2026-03-01", "t": "text", "issue": "date_as_text",
+          "cleaned": True}]]
+    assert cells(wb, "Items!B2") == [[{"a": "Items!B2", "v": "Checked twice.\nStatus: Partly done",
+                                       "t": "text"}]]                       # as stored
+    grouped = wb.derive("t:items", group_by=["status"])
+    assert [r["status"] for r in grouped.rows] == ["Partly done", None, "2026-03-01"]
+    assert [str(s) for s in grouped.provenance[0]["status"].sources] == ["t:items/I-1/status"]
+    assert grouped.cleaned["status"].count == 3

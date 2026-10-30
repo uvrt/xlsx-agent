@@ -29,6 +29,13 @@ all its data rows); a cell of another type than its column's never passes a test
 compares values, and is counted in :attr:`Derived.not_compared`.  Rows from hidden rows,
 columns and sheets are used like any other and counted in :attr:`Derived.hidden`.
 
+**Joins** (:mod:`xlsx_agent.join`).  ``join={"from": ..., "on": [left, right], "columns":
+[...]}`` adds another table's or dataset's columns to each row first, by key; the rest of
+the pipeline then reads the joined rows, in this order: ``where``, ``group_by`` (with
+``bins`` and ``pivot``), the measures, ``sort``, ``top``, ``round``.  Without
+``group_by``, ``measures``, ``bins`` or ``pivot`` the result is the joined rows
+themselves.
+
 **Groups.**  ``group_by`` names columns; a row's group is its cells in them, by type and
 value (``1`` and ``"1"`` are two groups; ``3`` and ``3.0`` one; text exactly, case
 counting, as ``eq`` matches; a date by its day, a datetime by its millisecond; a blank
@@ -217,6 +224,7 @@ from ooxml_edit.tools.schema import close_match
 
 from .address import DatasetAddress, RangeAddress, SheetRef, TableAddress, parse_address
 from .dataset import DatasetTable, as_dataset
+from .join import JOIN_KEYS, Joined, JoinedTable, joined_table
 from .profile import FIRST_ADDRESSES, Count, _add_partial, majority_type
 from .query import QueryError, _Bad, _iso_key, _key, _operand, _tests
 from .read.regions import Region, RegionError, Span
@@ -283,7 +291,7 @@ _KEY_TEXT = 64
 class DeriveError(QueryError):
     """A derive the library refuses: ``code`` says why (``wrong_type``, ``bad_source``,
     ``bad_measure``, ``bad_group``, ``bad_bins``, ``bad_pivot``, ``bad_sort``, ``bad_top``,
-    ``bad_round``, ``bad_coerce``, ``duplicate_name``, and the limits: ``too_many_groups``,
+    ``bad_round``, ``bad_coerce``, ``bad_join``, ``duplicate_name``, and the limits: ``too_many_groups``,
     ``too_many_columns``, ``too_many_rows``, ``too_many_cells``, ``too_many_sources``,
     ``too_many_values``); ``field`` the argument at fault.  A :class:`QueryError`, as a
     ``where`` refusal is: the message names columns, functions and types, never a value.
@@ -461,7 +469,8 @@ class Derived:
     cache status (``cached_unverified``, ``invalidated``, ``absent``) and ``external``
     (those referring to another workbook) -- a dataset's own counts when derived from one
     -- so that a result computed from invalidated caches says so, and its dataset is
-    stale (ooxml-edit's ``Dataset.cache``).
+    stale (ooxml-edit's ``Dataset.cache``); ``joined`` what a ``join`` did
+    (:class:`~xlsx_agent.join.Joined`), ``None`` without one.
 
     :meth:`dataset` gives it as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`, what a
     tool session keeps under ``d:<id>`` (:mod:`xlsx_agent.dataset`); ``wb.derive(ds, ...)``
@@ -490,6 +499,7 @@ class Derived:
     date1904: bool = False
     source_key: str | None = None
     cache: dict[str, int] = field(default_factory=dict)
+    joined: "Joined | None" = None
 
     def dataset(self) -> "Dataset":
         """This result as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`: the rows as
@@ -552,6 +562,8 @@ class Derived:
             out["pivot_columns"] = {k: dict(v) for k, v in self.pivot_columns.items()}
         if self.cache:
             out["cache"] = dict(self.cache)
+        if self.joined is not None:
+            out["joined"] = self.joined.as_dict()
         return out
 
 
@@ -562,15 +574,131 @@ def derive(workbook: "Workbook | None",
            bins: "Mapping[str, Any] | None" = None, pivot: str | None = None,
            sort: Any = None, top: int | None = None,
            round: "int | Mapping[str, int] | None" = None,
-           coerce: "Sequence[str] | None" = None, id: str | None = None) -> Derived:
+           coerce: "Sequence[str] | None" = None, id: str | None = None,
+           join: "Mapping[str, Any] | None" = None) -> Derived:
     """Figures from a table, name or region, or from a dataset (``workbook`` may then be
-    ``None``); see the module's notes."""
+    ``None``); see the module's notes.  ``join`` adds another table's or dataset's columns
+    to each row first (:mod:`xlsx_agent.join`)."""
+    if join is not None:
+        return _join(workbook, from_, join, where=where, group_by=group_by,
+                     measures=measures, bins=bins, pivot=pivot, sort=sort, top=top,
+                     round=round, coerce=coerce, id=id)
     region = _region(workbook, from_)
     plan = _Plan(workbook, region, where=where, group_by=group_by, measures=measures,
                  bins=bins, pivot=pivot, coerce=coerce, id=id)
     plan.check_types(*_type_pass(workbook, region, plan.typed_offsets, plan.coerce))
     state = plan.run()
     return plan.finish(state, sort=sort, top=top, round=round)
+
+
+# ------------------------------------------------------------------------------------------
+# Joins (round 25, X1: xlsx_agent.join)
+# ------------------------------------------------------------------------------------------
+
+
+def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, group_by: Any,
+          measures: Any, bins: Any, pivot: Any, sort: Any, top: Any, round: Any, coerce: Any,
+          id: str | None) -> Derived:
+    """A derive of ``from_``'s rows joined with ``join["from"]``'s (see
+    :mod:`xlsx_agent.join`): the pipeline on the joined rows, or the rows themselves."""
+    if not isinstance(join, Mapping) or set(join) - set(JOIN_KEYS) \
+            or "from" not in join or "on" not in join:
+        raise DeriveError("bad_join", "join is {from: the table or dataset to join, on: "
+                          "[this table's key column, the joined one's], columns: the joined "
+                          "columns to add}", field="join")
+    left = _region(workbook, from_)
+    try:
+        right = _region(workbook, join["from"])
+    except DeriveError as error:
+        raise DeriveError("bad_join", f"join's {error.message}", field="join") from None
+    table = joined_table(workbook, left, right, join)
+    if group_by is not None or measures is not None or bins is not None or pivot is not None:
+        derived = derive(workbook, table, where=where, group_by=group_by, measures=measures,
+                         bins=bins, pivot=pivot, sort=sort, top=top, round=round,
+                         coerce=coerce, id=id)
+        return replace(derived, joined=table.joined)
+    if round is not None:
+        raise DeriveError("bad_round", "round rounds measures; a join without group_by or "
+                          "measures gives its rows' cells as stored", field="round")
+    plan = _Plan(workbook, table, where=where, group_by=None, measures=None, bins=None,
+                 pivot=None, coerce=coerce, id=id)
+    every = list(range(len(table.columns)))
+    plan.check_types(*_type_pass(workbook, table, every, plan.coerce))
+    types = plan.offset_types
+    typed_tests = [(t, types[t.offset]) for t in plan.tests]
+    date1904 = plan.date1904
+    state = _State()
+    built = []
+    for row in table.measured_rows():
+        for value in row:
+            if value.cleaned:
+                state.cleaned.setdefault(value.column - 1, _Counter()).add(value)
+            if value.cache is not None:
+                state.cache[value.cache] = state.cache.get(value.cache, 0) + 1
+                if value.external:
+                    state.cache["external"] = state.cache.get("external", 0) + 1
+        passed = True
+        for test, t in typed_tests:
+            value = row[test.offset]
+            if test.compares and value.t not in ("blank", t):
+                state.not_compared.setdefault(test.column, _Counter()).add(value)
+                passed = False
+            elif passed and not test.passes(value, date1904):
+                passed = False
+        if not passed:
+            continue
+        state.matched += 1
+        if any(value.hidden for value in row):
+            state.hidden.add(row[0])
+        position = row[0].row
+        values: dict[str, Any] = {}
+        keys: dict[str, Any] = {}
+        where_: dict[str, Provenance] = {}
+        for offset, (name, value) in enumerate(zip(table.columns, row)):
+            values[name] = value.v
+            keys[name] = _row_sort_key(value, date1904)
+            where_[name] = Provenance(None, offset, array("l", [position, position]),
+                                      0 if value.t == "blank" else 1, via=table)
+        built.append((values, keys, where_))
+    columns = list(table.columns)
+    groups = len(built)
+    built = _sorted(built, sort, columns, columns)
+    if top is not None:
+        if isinstance(top, bool) or not isinstance(top, int) or top < 1:
+            raise DeriveError("bad_top", "top is a whole number of rows, 1 or more",
+                              field="top")
+        built = built[:top]
+    if len(built) > MAX_ROWS:
+        raise DeriveError("too_many_rows", f"{len(built)} joined rows, more than {MAX_ROWS}; "
+                          "give top or filter the rows (where)", field="top")
+    if len(built) * len(columns) > MAX_CELLS:
+        raise DeriveError("too_many_cells", f"{len(built) * len(columns)} values, more than "
+                          f"{MAX_CELLS}; give top, filter the rows (where) or fewer joined "
+                          "columns", field="top")
+    rows = [values for values, _, _ in built]
+    return Derived(
+        address=table.address.text, id=id, columns=tuple(columns),
+        key_columns=table.left_keys, types={c: types[o] for o, c in enumerate(columns)},
+        rows=rows, unrounded=[dict(r) for r in rows],
+        provenance=[where_ for _, _, where_ in built],
+        rounding={"rule": ROUNDING, "digits": {}}, matched=state.matched,
+        used=state.matched, groups=groups,
+        cleaned={columns[o]: c.done() for o, c in sorted(state.cleaned.items())},
+        not_compared={c: counter.done() for c, counter in state.not_compared.items()},
+        hidden=state.hidden.done(), date1904=date1904,
+        cache=_cache(state.cache, None), joined=table.joined)
+
+
+def _row_sort_key(value: Value, date1904: bool) -> Any:
+    """A joined row's value as ``sort`` orders it: by type first, then as a group's key
+    sorts (a list by its items, as text)."""
+    if value.t == "blank":
+        return None
+    if value.t == "list":
+        return (TYPES.index("list"), tuple((str(i).casefold(), str(i))
+                                           for i in cast(tuple, value.v)))
+    t, key = _group_key(value, date1904)
+    return (TYPES.index(t), _text_key(key, t))
 
 
 # ------------------------------------------------------------------------------------------
@@ -1560,7 +1688,8 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
     left_out = {c: {r: counters[r].done() for r in REASONS if r in counters}
                 for c, counters in state.left_out.items()}
     cleaned = {region.columns[o]: state.cleaned[o].done()
-               for o in sorted(state.cleaned)} if isinstance(region, Region) else {}
+               for o in sorted(state.cleaned)} \
+        if isinstance(region, (Region, JoinedTable)) else {}
     return Derived(
         address=region.address.text, id=plan.id, columns=tuple(columns),
         key_columns=len(keys), types=types, rows=rows, unrounded=unrounded,

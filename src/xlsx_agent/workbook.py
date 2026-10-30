@@ -94,7 +94,7 @@ from .package import OpenError, open_package, read_source, workbook_part
 from .profile import Column, ColumnStats, profile
 from .read.names import DefinedName, read_names
 from .schema import ValidationReport, validate
-from .read.regions import Region, Regions, Selection, UnclearRegion, _overlaps
+from .read.regions import Region, RegionError, Regions, Selection, UnclearRegion, _overlaps
 from .read.comments import Comment, read_comments
 from .read.stream import Hyperlink, SheetReader, SheetScan, _area, read_area, scan
 from .read.strings import SharedStrings
@@ -902,6 +902,32 @@ class Workbook:
         region = address if isinstance(address, Region) else self.regions.region(address)
         return self.regions.key_columns(region)
 
+    def rows_holding(self, address: "str | RangeAddress") -> "TableAddress | None":
+        """The table rows that hold a sheet's cells -- what a citation such as
+        ``'Q3 review'!K83`` (or ``Sheet!$K$83``, ``'It''s'!K80:L90``: any form the address
+        parser reads) points into -- as a ``t:`` address: one row by key when the table has
+        a key column whose keys are unique (``t:Items/I-17``), else by position
+        (``t:Items/#17``); several rows as a row range (``t:Items/#12:#20``).  ``None``
+        when no one table's data rows hold every cell (:meth:`Regions.holding
+        <xlsx_agent.read.regions.Regions.holding>`): the cells are then only cells."""
+        target = parse_address(address) if isinstance(address, str) else address
+        if not isinstance(target, RangeAddress) or target.span != "cells":
+            return None
+        sheet = self.sheet_of(target)
+        found = self.regions.holding(sheet.name, target.area)
+        if found is None:
+            return None
+        region, first, last = found
+        whole = region.address
+        if first != last:
+            return replace(whole, row_range=(first, last))
+        try:
+            index = self.regions.key_index(region)
+        except (RegionError, KeyError):
+            index = None
+        key = index.keys[first - 1] if index is not None and index.unique else None
+        return replace(whole, key=key) if key is not None else replace(whole, position=first)
+
     def dataset(self, address: "str | TableAddress", *, max_cells: int | None = None) -> Dataset:
         """The rows a ``t:`` address names as an ooxml-edit
         :class:`~ooxml_edit.tools.Dataset` -- columns, rows, each value's cell by key (or
@@ -916,7 +942,7 @@ class Workbook:
     def derive(self, from_: "str | TableAddress | Region | Derived | Dataset", *, where=None,
                group_by=None, measures=None, bins=None, pivot=None, sort=None,
                top: int | None = None, round: "int | dict[str, int] | None" = None, coerce=None,
-               id: str | None = None) -> Derived:
+               id: str | None = None, join=None) -> Derived:
         """Figures from a table, name or region (``t:Products``), computed here, each with
         the cells it came from: ``where`` (:mod:`xlsx_agent.query`'s filters), ``group_by``
         (column names), ``measures`` (``[{"fn": "mean", "column": "Price", "as":
@@ -927,10 +953,13 @@ class Workbook:
         does not take is refused before anything is computed; see
         :mod:`xlsx_agent.derive`.  ``from_`` may be a dataset instead -- an earlier
         :class:`Derived`, or an ooxml-edit ``Dataset`` -- whose sources carry through to
-        the original cells (:mod:`xlsx_agent.dataset`)."""
+        the original cells (:mod:`xlsx_agent.dataset`).  ``join`` (``{"from": "t:Issues",
+        "on": ["Ref", "Items"], "columns": ["Issue"]}``) first adds another table's or
+        dataset's columns to each row, by key (:mod:`xlsx_agent.join`); without
+        ``group_by``, ``measures``, ``bins`` or ``pivot`` the joined rows are the result."""
         return derive(self, from_, where=where, group_by=group_by, measures=measures,
                       bins=bins, pivot=pivot, sort=sort, top=top, round=round,
-                      coerce=coerce, id=id)
+                      coerce=coerce, id=id, join=join)
 
     # -- comparing -------------------------------------------------------------------------
 

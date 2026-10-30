@@ -20,7 +20,7 @@ from ooxml_edit.tools import Limits, Toolbox
 from test_catalogue import MARKER, ROWS, WIDE, shop, warehouse
 
 from xlsx_agent import Workbook
-from xlsx_agent.tools import FORMAT, GROUPS, TOOLS
+from xlsx_agent.tools import FORMAT, GROUPS, TOOLS, format as xlsx_format
 from xlsx_agent.tools.read import ALLOWED_SHOWN, PROFILE_TEXT, READ_ROWS, TEXT_SHOWN
 
 CLOCK = lambda: dt.datetime(2026, 10, 13, 12, 0, tzinfo=dt.timezone.utc)  # noqa: E731
@@ -127,7 +127,8 @@ def test_a_table_reads_typed_with_addresses_and_its_columns(box):
     ("t:Products/#2", ["Stock!A3", "Stock!B3", "Stock!C3", "Stock!D3"],
      ["SKU", "Category", "Price", "Added"]),
     ("t:Products/SKU-0003/Price", ["Stock!C4"], ["Price"]),
-    ("Stock!B2", ["Stock!B2"], None),
+    ("Stock!B2", ["Stock!A2", "Stock!B2", "Stock!C2", "Stock!D2"],   # its table's row
+     ["SKU", "Category", "Price", "Added"]),
     ("#1!A1:B2", ["#1!A1", "#1!B1", "#1!A2", "#1!B2"], None),
 ], ids=["column", "row", "value", "cell", "range-by-id"])
 def test_every_address_form_reads(box, target, cells, columns):
@@ -554,10 +555,112 @@ def test_no_cell_content_reaches_a_diagnostic(box, caplog):
     formula = f'C2*2+LEN("{MARKER}")'
     assert MARKER in json.dumps(results[0].data)
     assert formula in [c.get("f") for c in _cells(results[0])]   # asked for: a result
-    assert MARKER not in json.dumps(_read(box, session, target="Stock!D2").data)  # else not
+    assert MARKER not in json.dumps(_read(box, session, target="Stock!D2",       # else not
+                                          cells_only=True).data)
     diagnostics = [r.getMessage() for r in caplog.records]
     diagnostics += [w for r in results for w in r.warnings] + [r.summary for r in results]
     diagnostics += [json.dumps(r.error.to_json()) for r in results if not r.ok]
     diagnostics += [json.dumps(record.__dict__, default=str) for record in session.log]
     assert len([r for r in results if not r.ok]) == 5
     assert diagnostics and not [d for d in diagnostics if MARKER in d]
+
+
+# -- round 25, X0: a sheet's cell inside a table reads the table's row ------------------------
+
+
+def cited() -> WorkbookBuilder:
+    """A sheet whose name is quoted (a space), a title above an Excel table with a unique
+    key column, and a sheet whose name holds a quote, with a table without one."""
+    book = WorkbookBuilder()
+    sheet = book.sheet("Q3 review")
+    sheet.rows("A1", [["Items under review"]])
+    sheet.rows("A3", [["Ref", "Status", "Owner"], ["I-1", "open", "Kim"],
+                      ["I-2", "done", "Ash"], ["I-3", "open", "Kim"]])
+    sheet.table("Items", "A3:C6", ["Ref", "Status", "Owner"])
+    sheet.cell("E4", "beside the table")
+    other = book.sheet("Ann's list")
+    other.rows("B2", [["Day", "Hours"], [1, 2], [1, 2]])
+    other.table("Hours", "B2:C4", ["Day", "Hours"])
+    return book
+
+
+@pytest.mark.parametrize("target", ["'Q3 review'!B5", "'Q3 review'!$B$5", "'Q3 review'!B$5",
+                                    "'q3 REVIEW'!b5"])
+def test_a_cited_cell_reads_its_table_row(box, target):
+    session = _session(box, cited())
+    result = _read(box, session, target=target)
+    assert result.ok, result.error
+    assert result.data["target"] == "t:Items/I-2"
+    assert result.data["cells"] == target
+    assert result.data["held_by"] == {"table": "t:Items", "rows": "t:Items/I-2"}
+    assert result.data["columns"] == ["Ref", "Status", "Owner"]
+    assert [[c["a"], c["v"]] for c in _cells(result)] == [
+        ["'Q3 review'!A5", "I-2"], ["'Q3 review'!B5", "done"], ["'Q3 review'!C5", "Ash"]]
+
+
+def test_a_cited_range_reads_the_rows_it_covers_paged(box):
+    session = _session(box, cited())
+    result = _read(box, session, target="'Q3 review'!$B$4:$C$6", limit=2)
+    assert result.ok, result.error
+    assert result.data["held_by"] == {"table": "t:Items", "rows": "t:Items/#1:#3"}
+    assert len(result.data["rows"]) == 2 and result.next_cursor and result.total == 3
+    more = _read(box, session, target="'Q3 review'!$B$4:$C$6", limit=2,
+                 cursor=result.next_cursor)
+    assert more.ok and [r[0]["v"] for r in more.data["rows"]] == ["I-3"]
+    picked = _read(box, session, target="'Q3 review'!B4:B6", columns=["Owner"])
+    assert [[c["a"] for c in row] for row in picked.data["rows"]] == [
+        ["'Q3 review'!C4"], ["'Q3 review'!C5"], ["'Q3 review'!C6"]]
+
+
+def test_a_table_without_one_key_column_names_its_row_by_position(box):
+    session = _session(box, cited())
+    result = _read(box, session, target="'Ann''s list'!C4")
+    assert result.ok, result.error
+    assert result.data["held_by"] == {"table": "t:Hours", "rows": "t:Hours/#2"}
+    assert [c["v"] for c in _cells(result)] == [1, 2]
+
+
+@pytest.mark.parametrize("target", ["'Q3 review'!A1", "'Q3 review'!B3", "'Q3 review'!E4",
+                                    "'Q3 review'!C6:D6", "'Q3 review'!A2:C4",
+                                    "'Q3 review'!A:A"])
+def test_cells_outside_one_tables_data_rows_are_read_as_cells(box, target):
+    session = _session(box, cited())
+    result = _read(box, session, target=target)
+    assert result.ok, result.error
+    assert result.data["held_by"] is None and "cells" not in result.data
+    assert result.data["target"] == target.replace("q3", "Q3")
+
+
+def test_cells_only_reads_the_cell_and_still_names_its_row(box):
+    session = _session(box, cited())
+    result = _read(box, session, target="'Q3 review'!B5", cells_only=True)
+    assert result.ok, result.error
+    assert result.data["target"] == "'Q3 review'!B5" and "cells" not in result.data
+    assert result.data["held_by"] == {"table": "t:Items", "rows": "t:Items/I-2"}
+    assert [c["v"] for c in _cells(result)] == ["done"]
+    # a t: target says nothing of held_by
+    assert "held_by" not in _read(box, session, target="t:Items/I-2").data
+
+
+def test_a_declared_table_over_two_sheets_holds_its_rows_sheet_by_sheet(box):
+    book = WorkbookBuilder()
+    for name, rows in (("Part 1", [["P-1", 4], ["P-2", 5]]), ("Part 2", [["P-3", 6]])):
+        book.sheet(name).rows("A1", [["Ref", "Qty"], *rows])
+    with Toolbox(TOOLS, formats=[xlsx_format(tables=[{"name": "parts", "sheets": "Part *",
+                                                      "key": "Ref"}])],
+                 groups=GROUPS, workers=0) as toolbox:
+        session = _session(toolbox, book)
+        result = _read(toolbox, session, target="'Part 2'!B2")
+        assert result.ok, result.error
+        assert result.data["held_by"] == {"table": "t:parts", "rows": "t:parts/P-3"}
+        assert [c["a"] for c in _cells(result)] == ["'Part 2'!A2", "'Part 2'!B2"]
+        across = _read(toolbox, session, target="'Part 1'!A2:B3")
+        assert across.data["held_by"] == {"table": "t:parts", "rows": "t:parts/#1:#2"}
+
+
+def test_rows_holding_in_python():
+    wb = Workbook.open(cited().to_bytes())
+    assert wb.rows_holding("'Q3 review'!$C$4").text == "t:Items/I-1"
+    assert wb.rows_holding("'Q3 review'!A4:C6").text == "t:Items/#1:#3"
+    assert wb.rows_holding("'Q3 review'!A3") is None
+    assert wb.rows_holding("t:Items") is None

@@ -193,7 +193,10 @@ marked `optional` is skipped where its sheets are not there. Every rule is in
 A field may also clean its column's text -- `"clean": {"strip": "^Lead:[^;]*;\\s*",
 "collapse_space": true, "split": ";"}`: a leading label stripped, white space collapsed, a
 cell split into a list (`"t": "list"`) -- applied where the table is read, never to the
-key column. A value a rule changed says `"cleaned": true`; `xlsx_read` and `xlsx_query`
+key column. `"extract": "Status:\\s*(\\S.*)$"` gives a column the text one capture group
+finds near the end of each cell (searched for in its last 256 characters; not found:
+blank): a status line at the end of a narrative becomes a column of its own, with its cell
+as its source. Clean rules are the application's, never a model's. A value a rule changed says `"cleaned": true`; `xlsx_read` and `xlsx_query`
 pages count them (`cleaned`: count and first addresses), `xlsx_profile` and `describe`
 flag them, `xlsx_derive` counts them per column, and a slide's or document's table from
 `t:` gets a list as one cell with a line per item and a warning saying how many values
@@ -207,13 +210,34 @@ match replaced, in every tool and in a deck's or document's `from`; a formula ho
 match keeps its value, not its text, and `find_text` never finds a term. The model sees
 the replacement only -- no count, no flag. See `xlsx_agent.redact`.
 
+**A citation's cell** (round 25). `xlsx_read` of a sheet's cell or range inside one
+table's data rows -- `'Q3 review'!$K$83`, as a citation in the workbook's own text writes
+it -- reads the table row(s) holding it: `target` is then the rows' `t:` address
+(`t:Items/I-80` by key, else by position), `cells` the address asked for, and `held_by`
+the table and rows; `columns` picks the row's columns. Any other sheet read says
+`"held_by": null` (cells read as themselves); `cells_only: true` reads the cells as stored
+and still names the rows in `held_by`. A sheet row is never a data row's position: follow
+`held_by`.
+
 **Dates stored as text.** `xlsx_derive`'s `min` and `max` take dates and give a date. On a
 column whose dates are stored as text they are refused, and the error says so in one step:
 its `details` give the `issue` (`date_as_text`) and its `cells` (the count, the first
 addresses), and the message the `coerce: ["date_as_text"]` that reads them as dates. Text
 in the locale's day order (`3/4/2026`) is `local_date_text` without `local_dates`: no
-coercion reads it then. `first` and `last` take any column as it is. `xlsx_profile` gives
+coercion reads it then. `first` and `last` take any column as it is; their dates stored as
+text stay that in the dataset (`date_as_text`), so a derive from it takes `coerce` too. A
+`coerce` that read nothing says it did not apply. `xlsx_profile` gives
 the range of a column's dates stored as text (`date_text`) beside its flag.
+
+**Joins** (round 25). `xlsx_derive`'s `join` --
+`{"from": "t:Issues", "on": ["Ref", "Items"], "columns": ["Issue"]}` -- adds another table's
+or dataset's columns to each row of `from`, by key, before `where`, the groups, the measures,
+`sort` and `top`. Every row is kept (blank when unmatched); a list key (a split column)
+matches by any item; when a row matches several, every joined cell is a list (one row per
+row of `from`, so its counts and keys stay true; placed in a deck or document, one item per
+line). A name clash is renamed `Status (Issues)`; `joined` in the result says what was
+matched. Without `group_by`, `measures`, `bins` or `pivot` the joined rows are the dataset
+-- the table an agent places, each joined value with the joined rows' cells as sources.
 
 **Datasets (`d:`).** `xlsx_derive` keeps its figures in the session as a dataset,
 `d:<id>`: columns, rows, and beside every value the cells it came from. `xlsx_read` reads

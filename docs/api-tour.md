@@ -99,6 +99,17 @@ text `7` and the number 7 are one key); a blank, a fraction, a date and a boolea
 key. A row whose key another row shares is refused (`duplicate_key`), and `expand` refuses
 a row without a key (`no_key`), each with the rows by position: never the first of them.
 
+**A cell a citation names** (`'Q3 review'!K83`, `Review!$K$83`, `'Ann''s list'!B4`: any
+form Excel writes) can be turned into the table row that holds it -- what `xlsx_read` reads
+for such a target (round 25, X0):
+
+```python
+wb.rows_holding("'Q3 review'!$K$83")      # TableAddress t:Items/I-80: by key when the
+                                          # table's keys are unique, else t:Items/#80
+wb.rows_holding("'Q3 review'!K80:L90")    # t:Items/#77:#87, the rows a range covers
+wb.rows_holding("'Q3 review'!A1")         # None: a title, a header, outside every table
+```
+
 Merged or multi-row headers are declared, never guessed:
 
 ```python
@@ -221,7 +232,8 @@ a key two rows share. Nothing is guessed past.
 ## Cleaning text
 
 A declared field may also say how its text is cleaned (`xlsx_agent.clean`): a leading label
-stripped, white space collapsed, a cell split into a list. Like the rest of a declaration,
+stripped, a value captured from the end of the text, white space collapsed, a cell split
+into a list. Like the rest of a declaration,
 the rules are the application's configuration -- no tool takes them, so no definition
 changes -- and they are applied once, where the table is read. This example's workbook
 (made up, as in `tests/test_clean.py`) has a sheet of tasks per team whose "Owners" cell
@@ -244,7 +256,11 @@ wb.column("t:tasks[owners]").stats().flags
 ```
 
 - **The rules**, in this order, on text values only: `strip` (a regular expression matched
-  at the start, within the cell's first 256 characters), `split` (a literal separator; each
+  at the start, within the cell's first 256 characters), `extract` (a regular expression
+  with one capture group, searched for -- anchored only as written -- in the cell's last
+  256 characters; the value is what the group captured, or `blank` when it is not found:
+  `{"extract": r"Status:\s*(\S.*)$"}` reads a narrative ending `Status: Partly done` as
+  `Partly done`), `split` (a literal separator; each
   item trimmed, empty ones dropped; the value a `list` -- a tuple in Python, a list in
   JSON -- even of one item), `collapse_space` (runs of white space become one space, none
   at the ends; on each item of a split). Text cleaned to nothing is `blank`; cleaned text
@@ -258,7 +274,9 @@ wb.column("t:tasks[owners]").stats().flags
 - **Bounded**: a pattern is compiled when declared, and refused (`bad_pattern`) when its
   backtracking could grow past the square of the 256 characters it sees -- a repeat in a
   repeat (`(a+)+`), an alternation in a repeat (`(a|ab)*`), a backreference, or more than
-  one repeat that can give characters back (`.*;` can; `[^;]*;` cannot).
+  one repeat that can give characters back (`.*;` can; `[^;]*;` cannot). An `extract`
+  pattern is tried at every place of its window, so none of its repeats may give
+  characters back: `\s*(.+)$` is refused, `\s*(\S.*)$` taken.
 - **Not the key**: the key column is never cleaned (`clean_key`): an address by key names
   the key as its cell holds it, and two keys cleaned alike would name one row. Nor is a
   hidden column, nor the header.
@@ -396,6 +414,39 @@ label and `coerce=["date_as_text"]`. In a session the application keeps it with
 
 In the tool layer `xlsx_derive` keeps the dataset in the session as `d:by_region`, which
 `xlsx_read` reads (with `sources: true`) after its workbook is closed too.
+
+**Dates stored as text through a dataset** (round 25, X3).  A `first` or `last` of a column
+whose dates are stored as text, grouped without `coerce`, is a `text` column; its ISO dates
+stay `date_as_text` in the dataset, so a derive from it refuses `max` with the way out and
+takes `coerce=["date_as_text"]`.  With `coerce` the derived column is a date column, and a
+`group_by` of such a column groups by the day.  A `coerce` that read none of a refused
+column's values says it did not apply.
+
+**Joins** (round 25, X1; `xlsx_agent.join`).  `join` adds another table's or dataset's
+columns to each row, by key, before anything else; without `group_by`, `measures`, `bins`
+or `pivot` the joined rows are the result:
+
+```python
+wb.declare_tables([{"name": "issues", "sheets": "Issues", "key": "Issue",
+                    "fields": [{"header": "Items", "clean": {"split": ";"}}]}])
+ds = wb.derive("t:Items", join={"from": "t:issues", "on": ["Ref", "Items"],
+                                "columns": ["Issue"]}, id="items_issues")
+ds.rows[0]       # {'Ref': 'I-1', 'Name': 'pump', ..., 'Issue': ('Q-1', 'Q-2')}
+ds.rows[1]       # {'Ref': 'I-2', ..., 'Issue': None}: every row kept, unmatched blank
+[str(s) for s in ds.provenance[0]["Issue"].sources]   # ['t:issues/{Q-1,Q-2}/Issue']
+ds.joined        # Joined(source='t:issues', on=('Ref', 'Items'), matched=2, lists=True, ...)
+wb.derive("t:Items", join={"from": "t:issues", "on": ["Ref", "Items"], "columns": ["Issue"]},
+          group_by=["Status"], measures=[{"fn": "count", "column": "Issue"}])
+```
+
+Keys match by type and value, as `group_by` groups (text exactly); a list key (a declared
+split, or a list in a dataset) matches by any of its items, on either side. When a row
+matches several right rows, every joined column is a list column -- each cell the matched
+rows' values in their order, one row per left row, so the left table's counts and keys stay
+what they were; a deck or document shows such a cell one item per line. A joined name the
+left table has is renamed `Status (issues)`. Each joined value's sources are the joined
+rows' cells. The order: join, `where`, `group_by`/`bins`/`pivot`, measures, `sort`, `top`,
+`round` (refused for the rows themselves: they are cells as stored).
 
 ## Workbook tables into slides and documents
 
