@@ -282,6 +282,34 @@ def test_xlsx_derive_keeps_a_dataset_and_shows_its_rows_with_their_sources(box):
     assert (entry.doc, entry.stale, entry.closed) == ("d1", False, False)
 
 
+def test_xlsx_derive_lists_pivot_values_and_names_the_others(box):
+    """Round 27, X6: the tool's pivot_values, as strings; the values not listed are named
+    with their row counts, and their rows counted as left out."""
+    session = _session(box, sales())
+    result = call(box, session, "xlsx_derive", doc="d1", **{"from": "t:Sales"},
+                  id="by_paid", group_by=["Paid"], pivot="Region",
+                  pivot_values=["West", "Central"], measures=[{"fn": "count", "as": "n"}])
+    assert result.ok, result.error
+    data = result.data
+    assert data["columns"] == ["Paid", "West", "Central"]
+    assert [[v["v"] for v in row] for row in data["rows"]] == [[True, 1, 0], [False, 1, 0]]
+    assert data["pivot_unlisted"] == [{"name": "North", "v": "North", "t": "text", "rows": 4},
+                                      {"name": "South", "v": "South", "t": "text", "rows": 4},
+                                      {"name": "East", "v": "East", "t": "text", "rows": 2}]
+    assert data["left_out"]["Region"]["not_listed"]["count"] == 10
+    refused = call(box, session, "xlsx_derive", doc="d1", **{"from": "t:Sales"}, id="x",
+                   pivot="Amount", pivot_values=["many"])
+    error = err(refused)
+    assert (error["code"], error["field"], error["details"]) == (
+        "refused", "pivot_values", {"code": "wrong_type", "column": "Amount",
+                                    "column_type": "number"})
+    assert "many" not in error["message"]
+    alone = call(box, session, "xlsx_derive", doc="d1", **{"from": "t:Sales"}, id="x",
+                 pivot_values=["West"])
+    assert (err(alone)["code"], err(alone)["details"]["code"]) == ("invalid_arguments",
+                                                                   "bad_pivot")
+
+
 def test_xlsx_query_takes_a_dataset_as_it_takes_a_table(box):
     """Round 10, O5: a dataset's rows filtered and sorted as a table's, each value with its
     d: address; no doc needed; the refusals a table's are."""

@@ -922,6 +922,192 @@ def test_pivot_cells_without_rows_and_clashing_names():
     assert caught.value.code == "duplicate_name"
 
 
+# -- listed pivot values (round 27, X6) ------------------------------------------------------------
+
+
+def test_pivot_values_give_one_column_per_listed_value_in_order(wb):
+    measures = [{"fn": "count", "as": "n"}, {"fn": "sum", "column": "Amount", "as": "total"},
+                {"fn": "distinct", "column": "Rep", "as": "reps"},
+                {"fn": "mean", "column": "Rate", "as": "rate"},
+                {"fn": "max", "column": "Day", "as": "last day"}]
+    ds = wb.derive("t:Sales", group_by=["Paid"], pivot="Region",
+                   pivot_values=["West", "Central", "North"], measures=measures)
+    assert ds.columns[:6] == ("Paid", "West n", "West total", "West reps", "West rate",
+                              "West last day")
+    assert [c.split(" ")[0] for c in ds.columns[1:]] == ["West"] * 5 + ["Central"] * 5 \
+        + ["North"] * 5
+    # a value without rows: count and distinct 0, every other measure blank, never 0
+    for row in ds.rows:
+        assert (row["Central n"], row["Central reps"]) == (0, 0)
+        assert row["Central total"] is row["Central rate"] is row["Central last day"] is None
+        assert ds.provenance[ds.rows.index(row)]["Central total"].count == 0
+    assert ds.pivot_columns["Central n"] == {"measure": "n", "v": "Central", "t": "text"}
+    assert [(r["Paid"], r["West n"], r["North n"]) for r in ds.rows] == [(True, 1, 3),
+                                                                         (False, 1, 1)]
+    # the values not listed: named, their rows counted, left out of every column
+    assert ds.pivot_unlisted == [{"name": "South", "v": "South", "t": "text", "rows": 4},
+                                 {"name": "East", "v": "East", "t": "text", "rows": 2}]
+    assert ds.left_out["Region"]["not_listed"].count == 6
+    assert ds.left_out["Region"]["not_listed"].first[:2] == ("Sales!A4", "Sales!A6")
+    assert (ds.matched, ds.used) == (12, 6)
+    assert ds.as_dict()["pivot_unlisted"][1] == {"name": "East", "v": "East", "t": "text",
+                                                 "rows": 2}
+    # every value listed: nothing left out, and the columns in the order given
+    every = wb.derive("t:Sales", pivot="Region",
+                      pivot_values=["West", "East", "South", "North"])
+    assert every.columns == ("West", "East", "South", "North")
+    assert every.rows == [{"West": 2, "East": 2, "South": 4, "North": 4}]
+    assert every.pivot_unlisted == [] and every.left_out == {} and "pivot_unlisted" not in \
+        every.as_dict()
+
+
+def test_a_group_whose_rows_hold_only_unlisted_values_is_still_a_row(wb):
+    """The columns are the list, the rows the groups: a group of unlisted values only is a
+    row of empty cells, its rows counted as left out."""
+    ds = wb.derive("t:Sales", group_by=["Region"], pivot="Rep", pivot_values=["Ann", "Cy"],
+                   measures=[{"fn": "count", "as": "n"},
+                             {"fn": "distinct", "column": "Day", "as": "days"},
+                             {"fn": "sum", "column": "Rate", "as": "rate"}])
+    assert [(r["Region"], r["Ann n"], r["Cy n"]) for r in ds.rows] == [
+        ("North", 2, 0), ("South", 0, 2), ("East", 0, 0), ("West", 0, 0)]
+    assert ds.rows[2] == {"Region": "East", "Ann n": 0, "Ann days": 0, "Ann rate": None,
+                          "Cy n": 0, "Cy days": 0, "Cy rate": None}
+    assert ds.groups == 4 and (ds.matched, ds.used) == (12, 4)
+    assert ds.provenance[2]["Region"].count == 0          # its key's sources: the rows used
+    assert ds.left_out["Rep"]["not_listed"].count == 8
+    # sorted and cut as any row
+    top = wb.derive("t:Sales", group_by=["Region"], pivot="Rep", pivot_values=["Ann", "Cy"],
+                    sort=[("Cy", "desc"), "Region"], top=3)
+    assert [r["Region"] for r in top.rows] == ["South", "East", "North"]
+    # bins keep theirs: a row outside every bin has no bin, and its group no row
+    binned = wb.derive("t:Sales", bins={"column": "Rate", "edges": [0, 0.2]}, group_by=["Region"],
+                       pivot="Paid", pivot_values=["true"])
+    assert [r["Region"] for r in binned.rows] == ["North", "South"]   # not East, West
+    assert {u["name"]: u["rows"] for u in ds.pivot_unlisted} == {"Bob": 2, "Dee": 2,
+                                                                  "Eve": 2, "Fay": 2}
+    # without a group, one row, even when no row holds a listed value
+    none = wb.derive("t:Sales", pivot="Rep", pivot_values=["Gus"],
+                     measures=[{"fn": "count", "as": "n"},
+                               {"fn": "sum", "column": "Amount", "as": "total"}])
+    assert none.rows == [{"Gus n": 0, "Gus total": None}] and none.used == 0
+
+
+def test_pivot_values_match_by_type_and_value_as_groups_do():
+    book = WorkbookBuilder()
+    sheet = book.sheet("S")
+    sheet.rows("A1", [["Size", "Code", "Qty"], [5, "5", 1], [5.0, "05", 2], ["5", "5", 4],
+                      [7, "x", 8], [None, "5", 16], [True, "x", 32]])
+    sheet.table("P", "A1:C7", ["Size", "Code", "Qty"], write_header=False)
+    workbook = _open(book)
+    measures = [{"fn": "sum", "column": "Qty", "as": "q"}]
+    # a number column: "5", 5 and 5.0 are the number 5; the text "5" is another value
+    for listed in (["5", "6"], [5, "6"], [5.0, 6]):
+        ds = workbook.derive("t:P", pivot="Size", pivot_values=listed, measures=measures)
+        assert ds.columns == ("5", "6") and ds.rows == [{"5": 3.0, "6": None}], listed
+        assert ds.pivot_columns["5"] == {"measure": "q", "v": 5, "t": "number"}
+    assert ds.pivot_unlisted == [{"name": "5", "v": "5", "t": "text", "rows": 1},
+                                 {"name": "7", "v": 7, "t": "number", "rows": 1},
+                                 {"name": "(blank)", "v": None, "t": "blank", "rows": 1},
+                                 {"name": "true", "v": True, "t": "bool", "rows": 1}]
+    # a text column: "5" is that text, exactly ("05" is another)
+    ds = workbook.derive("t:P", pivot="Code", pivot_values=["5", "05"], measures=measures)
+    assert ds.rows == [{"5": 21.0, "05": 2.0}]
+    for listed, code in ((["5", "x"], "wrong_type"), (["5", "5.0"], "bad_pivot"),
+                         ([True], "wrong_type")):
+        with pytest.raises(DeriveError) as caught:
+            workbook.derive("t:P", pivot="Size", pivot_values=listed)
+        assert (caught.value.code, caught.value.field) == (code, "pivot_values"), listed
+    with pytest.raises(DeriveError) as caught:
+        workbook.derive("t:P", pivot="Code", pivot_values=[5])
+    assert (caught.value.code, caught.value.column_type) == ("wrong_type", "text")
+    assert str(caught.value) == ("Code is a text column: each of pivot_values is a value of "
+                                 "its type, as filters are written")
+
+
+def test_pivot_values_of_dates_and_bools(wb):
+    ds = wb.derive("t:Sales", pivot="Day", pivot_values=["2026-01-05", "2026-12-25"])
+    assert ds.rows == [{"2026-01-05": 2, "2026-12-25": 0}]
+    assert ds.pivot_columns["2026-12-25"] == {"measure": "count", "v": "2026-12-25",
+                                              "t": "date"}
+    paid = wb.derive("t:Sales", group_by=["Region"], pivot="Paid",
+                     pivot_values=["false", "true"])
+    assert paid.columns == ("Region", "false", "true")
+    assert paid.rows[0] == {"Region": "North", "false": 1, "true": 3}
+
+
+@pytest.mark.parametrize("options", [
+    {"pivot_values": ["North"]},
+    {"pivot": "Region", "pivot_values": "North"},
+    {"pivot": "Region", "pivot_values": []},
+    {"pivot": "Region", "pivot_values": [{"v": "North"}]},
+    {"pivot": "Region", "pivot_values": [None]},
+])
+def test_bad_pivot_values_are_refused(wb, options):
+    with pytest.raises(DeriveError) as caught:
+        wb.derive("t:Sales", **options)
+    assert (caught.value.code, caught.value.field) == ("bad_pivot", "pivot_values")
+
+
+def test_pivot_values_are_bounded_and_never_quoted(wb, monkeypatch):
+    monkeypatch.setattr(derive_module, "MAX_PIVOT_VALUES", 2)
+    with pytest.raises(DeriveError) as caught:
+        wb.derive("t:Sales", pivot="Region", pivot_values=["North", "South", "East"])
+    assert caught.value.code == "bad_pivot" and "1 to 2 values" in str(caught.value)
+    # listed, the column's other values are not limited; the names given are, at most 2
+    ds = wb.derive("t:Sales", pivot="Rep", pivot_values=["Ann"])
+    assert len(ds.pivot_unlisted) == 2 and ds.left_out["Rep"]["not_listed"].count == 10
+    for listed in ([MARKER, MARKER], [MARKER, 1.5]):
+        with pytest.raises(QueryError) as caught:
+            wb.derive("t:Sales", pivot="Amount" if listed[1] == 1.5 else "Note",
+                      pivot_values=listed)
+        assert MARKER not in str(caught.value)
+
+
+def test_pivot_values_compose_with_sort_top_and_round(wb):
+    ds = wb.derive("t:Sales", group_by=["Region"], pivot="Paid", pivot_values=["true", "false"],
+                   measures=[{"fn": "sum", "column": "Rate", "as": "rate"}],
+                   sort=[("true", "desc")], top=2, round={"rate": 1})
+    assert ds.columns == ("Region", "true", "false")
+    assert ds.rows == [{"Region": "East", "true": 1.0, "false": 0.8},
+                       {"Region": "West", "true": 0.6, "false": 0.4}]
+    assert ds.unrounded[0] == {"Region": "East", "true": 1, "false": 0.75}
+    assert ds.groups == 4
+
+
+def test_pivot_values_match_a_coerced_columns_text():
+    """A date column with a date stored as text: listed as a date, it matches with coerce,
+    as group_by would group it; without coerce the text is a value of its own."""
+    workbook = _open(checks())
+    plain = workbook.derive("t:Checks", pivot="Done", pivot_values=["2026-03-01", "2026-03-09"])
+    assert plain.rows == [{"2026-03-01": 0, "2026-03-09": 1}]
+    assert plain.pivot_unlisted == [
+        {"name": "2026-03-01", "v": "2026-03-01", "t": "text", "rows": 1},
+        {"name": "2026-03-12", "v": "2026-03-12", "t": "date", "rows": 1},
+        {"name": "2026-03-10", "v": "2026-03-10", "t": "date", "rows": 1}]
+    read = workbook.derive("t:Checks", pivot="Done", pivot_values=["2026-03-01", "2026-03-09"],
+                           coerce=["date_as_text"])
+    assert read.rows == [{"2026-03-01": 1, "2026-03-09": 1}]
+    assert read.coerced["Done"].as_dict() == {"count": 1, "first": ["Log!E3"]}
+    assert [u["name"] for u in read.pivot_unlisted] == ["2026-03-12", "2026-03-10"]
+    # a column of dates all stored as text pivots as dates when coerced
+    seen = workbook.derive("t:Checks", pivot="Seen", coerce=["date_as_text"],
+                           pivot_values=["2026-03-20", "2026-03-04"])
+    assert seen.rows == [{"2026-03-20": 1, "2026-03-04": 1}]
+    assert seen.pivot_columns["2026-03-20"]["t"] == "date"
+
+
+def test_pivot_values_from_a_dataset(wb):
+    by_rep = wb.derive("t:Sales", group_by=["Region", "Rep"],
+                       measures=[{"fn": "count", "as": "n"}])
+    ds = wb.derive(by_rep, pivot="Region", pivot_values=["South", "North", "Central"],
+                   measures=[{"fn": "sum", "column": "n", "as": "rows"}])
+    assert ds.rows == [{"South": 4.0, "North": 4.0, "Central": None}]
+    # the sources carried through to the original cells (a count's: its rows' first column)
+    assert [str(s) for s in ds.provenance[0]["South"].sources] == [
+        "Sales!A4", "Sales!A6", "Sales!A10", "Sales!A13"]
+    assert [u["name"] for u in ds.pivot_unlisted] == ["East", "West"]
+
+
 # -- sort and top --------------------------------------------------------------------------------
 
 

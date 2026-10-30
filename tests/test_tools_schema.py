@@ -87,6 +87,12 @@ the proxy; counted online, 6,334 (claude-sonnet-5-5, 2026-10-30; 5,894 before). 
 offline check is a regression guard from here (:data:`CORE_GUARD`), and the online count is
 the main session's.  Every definition 4,862 -> 5,201, the guard 4,865 -> 5,205.  Neither tool
 is strict on Claude: the strict set is unchanged (``xlsx_set_cells``, 13 optional).
+Round 27, X6: ``xlsx_derive``'s ``pivot_values`` (the pivot's columns, listed in order; what a
+column without rows holds; the values not listed named in ``pivot_unlisted``), 1,045 ->
+1,110: the core 4,460 -> 4,525 estimated, about 6,601 -> 6,697 counted by the proxy (online,
+about 6,334 -> 6,430 at the same ratio; the main session counts it); every definition
+5,201 -> 5,266; the guards 4,465 -> 4,530 and 5,205 -> 5,270.  ``xlsx_derive`` is not
+strict (12 optional parameters): the strict set is unchanged.
 """
 
 from __future__ import annotations
@@ -106,8 +112,8 @@ CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
 #: The core's estimate, a regression guard (round 25: past the proxy's budget, by choice).
-CORE_GUARD = 4465
-ALL_GUARD = 5205
+CORE_GUARD = 4530
+ALL_GUARD = 5270
 
 
 @pytest.fixture(scope="module")

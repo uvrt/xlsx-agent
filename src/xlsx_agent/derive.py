@@ -86,8 +86,8 @@ that a column of dates all stored as text is a date column (a filter on it compa
 its text cells counted in ``not_compared``), and a ``group_by`` column of that type groups
 such text by what it reads as (a date by its day, shown as ISO 8601; counted in
 ``coerced`` under the column's name), so the derived column is a date column through and
-through.  A percent column's text stays out: its stored values are fractions, and text such
-as ``25`` is not one.
+through; a ``pivot`` column of that type alike (round 27, X6).  A percent column's text
+stays out: its stored values are fractions, and text such as ``25`` is not one.
 
 **Lists and cleaned text** (:mod:`xlsx_agent.clean`).  A declared column whose text is
 split is a ``list`` column: ``count`` counts its cells that hold a list (rows, not items:
@@ -177,6 +177,31 @@ value's name is its text, or a number as written (``number_text``), a date's ISO
 ``true``/``false``, an error's code, ``(blank)``; names that would clash get the type
 (``1 (text)``) or a number.  :attr:`Derived.pivot_columns` maps each column to its value.
 
+**Listed pivot values** (round 27, X6): ``pivot_values=["Open", "Closed", "Held"]`` gives
+one column (per measure) for each listed value, in that order, whether or not any row
+holds it -- a report's fixed columns.  A cell without rows has the value a measure has of
+no values: ``count`` and ``distinct`` 0, every other ``None`` (blank), since a sum or a
+mean of nothing is not 0.  The values are read as a filter's are written
+(:mod:`xlsx_agent.query`), as values of the pivot column's type, and matched as
+``group_by`` groups (by type and value): in a number column ``"5"`` and ``5`` are both the
+number 5, matching the cells holding it (``5`` and ``5.0``) and never the text ``"5"``; in
+a text column ``"5"`` is that text, exactly, case counting; a date is its day
+(``"2026-01-05"``); ``"true"``/``"false"`` a bool.  A value that is not one of the
+column's type is refused (``wrong_type``), a value listed twice (``"5"`` and ``"5.0"`` in a
+number column) ``bad_pivot``.  A row whose value is not listed is in no column: it is left
+out, counted in :attr:`Derived.left_out` under the pivot column (``not_listed``, with its
+first cells), and each such value is named in :attr:`Derived.pivot_unlisted` (``name``, as
+its column would be named, ``v``, ``t`` and its ``rows``, in the order first met; at most
+:data:`MAX_PIVOT_VALUES` of them, ``left_out`` counting every row).  There is no option to
+add them as columns: list them, or pivot without ``pivot_values``.  The columns are fixed by
+the list and the rows by ``group_by``: a group whose rows all hold unlisted values is still
+a row, every cell of it empty (``count`` 0, the others blank), its key's sources none (the
+rows used), its rows counted as above.  (Bins differ: a row outside them has no bin.)  A
+blank cell is not a value that can be listed (it is left out, ``(blank)``), and neither is
+a cell of another type than the column's (the text ``"5"`` in a number column: named with
+its ``t``).  With ``coerce``, the pivot's text is read as ``group_by``'s is, so a
+listed date matches a date stored as text too.
+
 **Sort and top.**  ``sort`` is a list of output columns, each ``"name"`` (ascending) or
 ``("name", "asc" | "desc")``, the first deciding first; values without a value (``None``,
 a blank group) come last either way; a key column of mixed types sorts by type first (in
@@ -195,8 +220,9 @@ numbers), and only for ``median`` its numbers and for ``distinct`` its keys.  So
 memory is bounded by the groups when a group's rows are consecutive; when they
 interleave, the runs grow with the rows (16 bytes a run), up to :data:`MAX_RUNS`.  The
 limits refuse with :class:`DeriveError`: :data:`MAX_GROUPS` groups (``too_many_groups``),
-:data:`MAX_PIVOT_VALUES` pivot values (``too_many_columns``), :data:`MAX_ROWS` rows after
-``top`` (``too_many_rows``) and :data:`MAX_CELLS` values (``too_many_cells``),
+:data:`MAX_PIVOT_VALUES` pivot values (``too_many_columns``; listed, ``bad_pivot``),
+:data:`MAX_ROWS` rows after ``top`` (``too_many_rows``) and :data:`MAX_CELLS` values
+(``too_many_cells``),
 :data:`MAX_RUNS` runs of sources (``too_many_sources``), :data:`MAX_KEPT` numbers kept for
 medians and keys for distinct counts (``too_many_values``).
 
@@ -259,7 +285,7 @@ COERCIONS = ("number_as_text", "date_as_text")
 
 #: Why a cell is left out of a measure, or a row out of the groups.
 REASONS = ("blank", "no_cached_value", "error", "number_as_text", "date_as_text",
-           "wrong_type", "outside_bins")
+           "wrong_type", "outside_bins", "not_listed")
 
 #: The rounding rule (ROADMAP.md, "Design rules", 3).
 ROUNDING = "half_away_from_zero"
@@ -465,8 +491,9 @@ class Derived:
     row's, filtered out or not; ``not_compared`` per filtered column, as
     :class:`~xlsx_agent.query.QueryResult` gives it; ``hidden`` the rows used that hold a
     hidden cell among the columns read; ``totals`` per ``share`` measure, its total;
-    ``pivot_columns`` per pivoted column, its measure and pivot value; ``date1904`` the
-    date system its dates are in (its source's); ``source_key`` the key column its
+    ``pivot_columns`` per pivoted column, its measure and pivot value; ``pivot_unlisted``
+    the values present but not in ``pivot_values``, each ``{name, v, t, rows}``;
+    ``date1904`` the date system its dates are in (its source's); ``source_key`` the key column its
     sources are written by (``None``: as ranges; see the module's notes); ``cache`` the
     formula cells read (every row's, in every column the derive reads), counted by their
     cache status (``cached_unverified``, ``invalidated``, ``absent``) and ``external``
@@ -499,6 +526,7 @@ class Derived:
     hidden: Count = field(default_factory=lambda: Count(0))
     totals: dict[str, Total] = field(default_factory=dict)
     pivot_columns: dict[str, dict[str, Any]] = field(default_factory=dict)
+    pivot_unlisted: list[dict[str, Any]] = field(default_factory=list)
     date1904: bool = False
     source_key: str | None = None
     cache: dict[str, int] = field(default_factory=dict)
@@ -563,6 +591,8 @@ class Derived:
             out["totals"] = {k: t.as_dict() for k, t in self.totals.items()}
         if self.pivot_columns:
             out["pivot_columns"] = {k: dict(v) for k, v in self.pivot_columns.items()}
+        if self.pivot_unlisted:
+            out["pivot_unlisted"] = [dict(u) for u in self.pivot_unlisted]
         if self.cache:
             out["cache"] = dict(self.cache)
         if self.joined is not None:
@@ -578,17 +608,19 @@ def derive(workbook: "Workbook | None",
            sort: Any = None, top: int | None = None,
            round: "int | Mapping[str, int] | None" = None,
            coerce: "Sequence[str] | None" = None, id: str | None = None,
-           join: "Mapping[str, Any] | None" = None) -> Derived:
+           join: "Mapping[str, Any] | None" = None,
+           pivot_values: "Sequence[Any] | None" = None) -> Derived:
     """Figures from a table, name or region, or from a dataset (``workbook`` may then be
     ``None``); see the module's notes.  ``join`` adds another table's or dataset's columns
-    to each row first (:mod:`xlsx_agent.join`)."""
+    to each row first (:mod:`xlsx_agent.join`); ``pivot_values`` lists the pivot's columns,
+    in order."""
     if join is not None:
         return _join(workbook, from_, join, where=where, group_by=group_by,
                      measures=measures, bins=bins, pivot=pivot, sort=sort, top=top,
-                     round=round, coerce=coerce, id=id)
+                     round=round, coerce=coerce, id=id, pivot_values=pivot_values)
     region = _region(workbook, from_)
     plan = _Plan(workbook, region, where=where, group_by=group_by, measures=measures,
-                 bins=bins, pivot=pivot, coerce=coerce, id=id)
+                 bins=bins, pivot=pivot, coerce=coerce, id=id, pivot_values=pivot_values)
     plan.check_types(*_type_pass(workbook, region, plan.typed_offsets, plan.coerce))
     state = plan.run()
     return plan.finish(state, sort=sort, top=top, round=round)
@@ -601,7 +633,7 @@ def derive(workbook: "Workbook | None",
 
 def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, group_by: Any,
           measures: Any, bins: Any, pivot: Any, sort: Any, top: Any, round: Any, coerce: Any,
-          id: str | None) -> Derived:
+          id: str | None, pivot_values: Any = None) -> Derived:
     """A derive of ``from_``'s rows joined with ``join["from"]``'s (see
     :mod:`xlsx_agent.join`): the pipeline on the joined rows, or the rows themselves."""
     if not isinstance(join, Mapping) or set(join) - set(JOIN_KEYS) \
@@ -615,10 +647,11 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
     except DeriveError as error:
         raise DeriveError("bad_join", f"join's {error.message}", field="join") from None
     table = joined_table(workbook, left, right, join)
-    if group_by is not None or measures is not None or bins is not None or pivot is not None:
+    if group_by is not None or measures is not None or bins is not None or pivot is not None \
+            or pivot_values is not None:
         derived = derive(workbook, table, where=where, group_by=group_by, measures=measures,
                          bins=bins, pivot=pivot, sort=sort, top=top, round=round,
-                         coerce=coerce, id=id)
+                         coerce=coerce, id=id, pivot_values=pivot_values)
         return replace(derived, joined=table.joined)
     if round is not None:
         raise DeriveError("bad_round", "round rounds measures; a join without group_by or "
@@ -774,7 +807,8 @@ class _Plan:
     """The arguments checked, and what the passes need."""
 
     def __init__(self, workbook: "Workbook | None", region: "Region | DatasetTable", *,
-                 where, group_by, measures, bins, pivot, coerce, id) -> None:
+                 where, group_by, measures, bins, pivot, coerce, id,
+                 pivot_values: Any = None) -> None:
         self.workbook = workbook
         self.region = region
         self.via = region if isinstance(region, DatasetTable) else None
@@ -817,6 +851,9 @@ class _Plan:
             if not self.measures:
                 raise DeriveError("bad_pivot", "a pivot spreads measures over columns: give "
                                   "at least one measure", field="pivot")
+        self.listed_raw = self._pivot_values(pivot_values)
+        #: pivot_values read as keys of the pivot column's type, in order: key -> (v, t)
+        self.listed: dict[tuple, tuple[Any, str]] | None = None
         names = list(self.group) + ([self.bins.name] if self.bins else []) \
             + ([] if self.pivot else [m.name for m in self.measures])
         folded = [n.casefold() for n in names]
@@ -887,6 +924,24 @@ class _Plan:
             out.append(_Measure(fn, column, offset, name))
         return out
 
+    def _pivot_values(self, values: Any) -> list | None:
+        if values is None:
+            return None
+        if self.pivot is None:
+            raise DeriveError("bad_pivot", "pivot_values lists the values of pivot's column: "
+                              "give pivot too", field="pivot_values")
+        if isinstance(values, (str, bytes, Mapping)) or not isinstance(values, Iterable):
+            raise DeriveError("bad_pivot", "pivot_values is a list of values, as filters are "
+                              "written", field="pivot_values")
+        values = list(values)
+        if not 1 <= len(values) <= MAX_PIVOT_VALUES:
+            raise DeriveError("bad_pivot", f"pivot_values lists 1 to {MAX_PIVOT_VALUES} values",
+                              field="pivot_values")
+        if not all(isinstance(v, (str, int, float)) for v in values):
+            raise DeriveError("bad_pivot", "each of pivot_values is a value as filters are "
+                              "written: text, a number or true/false", field="pivot_values")
+        return values
+
     def _bins(self, bins: Any) -> _Bins | None:
         if bins is None:
             return None
@@ -933,6 +988,9 @@ class _Plan:
                                   column=column, column_type="list",
                                   valid_options=[n for n, t in self.types.items()
                                                  if t not in ("list", "blank")][:50])
+        if self.listed_raw is not None and self.pivot_offset is not None:
+            self.listed = _listed(self.listed_raw, self.pivot or "",
+                                  types[self.pivot_offset], self.date1904)
         for m in self.measures:
             if m.offset is None:
                 continue
@@ -1021,6 +1079,33 @@ class _Plan:
 
     def finish(self, state: "_State", *, sort: Any, top: Any, round: Any) -> Derived:
         return _finish(self, state, sort, top, round)
+
+
+def _listed(raw: list, column: str, t: str, date1904: bool) -> dict[tuple, tuple[Any, str]]:
+    """``pivot_values`` as group keys of a ``t`` column (:func:`_group_key`'s), in order,
+    each with the value a cell of it shows: read as a filter's value is
+    (:func:`xlsx_agent.query._operand`), so ``"5"`` and ``5`` are the number 5 in a number
+    column and the text ``"5"`` in a text column."""
+    out: dict[tuple, tuple[Any, str]] = {}
+    for item in raw:
+        try:
+            key = _operand(item, t, date1904)
+        except _Bad:
+            raise DeriveError("wrong_type", f"{column} is a {t} column: each of pivot_values "
+                              "is a value of its type, as filters are written",
+                              field="pivot_values", column=column, column_type=t) from None
+        if t in _NUMBERS:
+            key = float(key)
+            shown: Any = int(key) if key.is_integer() and abs(key) < 2 ** 53 else key
+        elif t in _MOMENTS:
+            shown = _edge_text(key, t, date1904)
+        else:
+            shown = key
+        if (t, key) in out:
+            raise DeriveError("bad_pivot", "pivot_values lists each value once (as its "
+                              f"{t} column reads it)", field="pivot_values", column=column)
+        out[(t, key)] = (shown, t)
+    return out
 
 
 def _edge_text(key: Any, t: str, date1904: bool) -> str:
@@ -1200,6 +1285,7 @@ class _State:
     order: list = field(default_factory=list)            # group_by keys, first met
     met: set = field(default_factory=set)                # the same, as a set
     pivots: dict = field(default_factory=dict)           # pivot key -> (v, t)
+    unlisted: dict = field(default_factory=dict)         # pivot key -> [v, t, rows]
     matched: int = 0
     used: int = 0
     runs: int = 0
@@ -1330,26 +1416,47 @@ def _second_pass(plan: _Plan) -> _State:
                 continue
             index = min(bisect.bisect_right(edges, key) - 1, len(edges) - 2)
         pivot_key = None
+        unlisted = False        # a row of a value not in pivot_values: its group, no cell
         if plan.pivot is not None and plan.pivot_offset is not None:
             value = row[plan.pivot_offset - left]
             if value.issue == "no_cached_value" or value.t == "list":
                 leave(plan.pivot, "no_cached_value" if value.t != "list" else "wrong_type",
                       value)
                 continue
-            pivot_key = _group_key(value, date1904)
-            if pivot_key not in state.pivots:
+            t = types[plan.pivot_offset]
+            pivot_key = None
+            shown = value.v
+            if value.t != t and value.issue in plan.coerce:
+                # as a group_by column's: a coerced column's text is what it reads as
+                used = _use(value, t, plan.coerce, locale, grouping, date1904)
+                if used is not None:
+                    state.coerced_groups.setdefault(plan.pivot_offset, _Counter()).add(value)
+                    pivot_key, shown = (t, used), _shown(value, used, t, date1904)
+            if pivot_key is None:
+                pivot_key = _group_key(value, date1904)
+            if plan.listed is not None:
+                if pivot_key not in plan.listed:
+                    leave(plan.pivot, "not_listed", value)
+                    found = state.unlisted.get(pivot_key)
+                    if found is not None:
+                        found[2] += 1
+                    elif len(state.unlisted) < MAX_PIVOT_VALUES:
+                        state.unlisted[pivot_key] = [shown, pivot_key[0], 1]
+                    unlisted = True
+            elif pivot_key not in state.pivots:
                 if len(state.pivots) >= MAX_PIVOT_VALUES:
                     raise DeriveError("too_many_columns", f"{plan.pivot} holds more than "
                                       f"{MAX_PIVOT_VALUES} values to pivot; filter the rows "
                                       "(where) or group by it instead", field="pivot",
                                       column=plan.pivot)
-                state.pivots[pivot_key] = (value.v, value.t)
-        state.used += 1
-        for o in read:
-            value = row[o - left]
-            if value.hidden:
-                state.hidden.add(value)
-                break
+                state.pivots[pivot_key] = (shown, pivot_key[0])
+        if not unlisted:
+            state.used += 1
+            for o in read:
+                value = row[o - left]
+                if value.hidden:
+                    state.hidden.add(value)
+                    break
         group_key = tuple(k for k, _ in parts)
         key = (group_key, index)
         group = state.groups.get(key)
@@ -1362,6 +1469,10 @@ def _second_pass(plan: _Plan) -> _State:
             if group_key not in state.met:
                 state.met.add(group_key)
                 state.order.append(group_key)
+        if unlisted:
+            # the listed columns are fixed, and so are the groups: a group of unlisted
+            # values only is a row of empty cells (its rows left out, counted)
+            continue
         runs(group.runs.add(number))
         group.count += 1
         cell = group.cells.get(pivot_key)
@@ -1559,7 +1670,8 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
     if plan.pivot is None:
         measure_columns = [(m.name, m, None) for m in plan.measures]
     else:
-        for pkey, (v, t) in state.pivots.items():
+        pivots = plan.listed if plan.listed is not None else state.pivots
+        for pkey, (v, t) in pivots.items():
             for m in plan.measures:
                 base = _label(v, t)
                 if len(plan.measures) > 1:
@@ -1672,6 +1784,8 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
     for column, o in zip(plan.group, plan.group_offsets):
         if o in state.coerced_groups:
             coerced[column] = state.coerced_groups[o].done()
+    if plan.pivot is not None and plan.pivot_offset in state.coerced_groups:
+        coerced[plan.pivot] = state.coerced_groups[plan.pivot_offset].done()
 
     totals = {}
     for m in plan.measures:
@@ -1702,6 +1816,8 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
         excluded=excluded, coerced=coerced, cleaned=cleaned,
         not_compared={c: counter.done() for c, counter in state.not_compared.items()},
         hidden=state.hidden.done(), totals=totals, pivot_columns=pivot_columns,
+        pivot_unlisted=[{"name": _label(v, t), "v": v, "t": t, "rows": n}
+                        for v, t, n in state.unlisted.values()],
         date1904=plan.date1904, source_key=keyed.column if keyed is not None else None,
         cache=_cache(state.cache, region))
 

@@ -135,6 +135,16 @@ def test_a_join_on_the_derived_field(wb):
     assert [str(s) for s in joined.provenance[1]["Name"].sources] == ["t:parts/P-1/Name"]
 
 
+def test_a_pivot_on_the_derived_field_with_listed_values(wb):
+    """Round 27, X6: listed pivot values on a derived field, its sources the cells read."""
+    ds = wb.derive("t:jobs", pivot="part", pivot_values=["P-1", "P-2", "P-3"],
+                   measures=[{"fn": "sum", "column": "Hours", "as": "hours"}])
+    assert ds.rows == [{"P-1": 1, "P-2": 5, "P-3": None}]
+    assert ds.pivot_unlisted == [{"name": "(blank)", "v": None, "t": "blank", "rows": 1}]
+    assert ds.left_out["part"]["not_listed"].first == ("Log!B4",)     # the cell read
+    assert [str(s) for s in ds.provenance[0]["P-2"].sources] == ["t:jobs/{J-1,J-4}/Hours"]
+
+
 def test_a_value_by_key_in_a_derived_column_is_refused_naming_the_source():
     wb = opened()
     with pytest.raises(EditError) as refused:
