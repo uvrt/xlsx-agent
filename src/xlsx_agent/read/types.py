@@ -154,7 +154,9 @@ class Value:
     ``formula``: the cell holds a formula and ``v`` is its cached value.  ``issue``: one
     code for what is odd about the value (``no_cached_value``, ``number_as_text``,
     ``date_as_text``, ``date_out_of_range``, ``ambiguous_format``, ``unknown_format``,
-    ``bad_value``, ``missing_string``), ``None`` when nothing is.  ``hidden``: on a hidden
+    ``bad_value``, ``missing_string``; ``unmeasured_format``: a number a declared column
+    reads as shown, whose shown text is not measured, :mod:`xlsx_agent.clean`), ``None``
+    when nothing is.  ``hidden``: on a hidden
     sheet, row or column.  ``at_limit``: text of :data:`TEXT_LIMIT` characters or more.
     ``serial``: the stored number of a date or time.  ``format``: the number format's code,
     when asked for.  ``formula_text`` (a normal or array formula, or a shared group's

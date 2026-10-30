@@ -189,7 +189,9 @@ class ColumnStats:
     ``date_text_min``, ``date_text_max`` and ``date_text_measured`` (the dates stored as
     text, as ISO 8601); ``validation``; ``flags`` by code.  For a column of a declared
     table (:mod:`xlsx_agent.declare`), ``header`` its header's text when it is addressed
-    by an id, and ``description`` the caller's; ``range`` each sheet's, joined by ``,``,
+    by an id, ``description`` the caller's, and ``derived_from`` the column a field derived
+    from another reads (``from_field``: its ``range`` is that column's cells); ``range``
+    each sheet's, joined by ``,``,
     for a table over several sheets.  ``cache``: the column's formula cells by cache
     status (``cached_unverified``, ``invalidated``, ``absent``; empty without formulas);
     a formula referring to another workbook is flagged ``external_formula``."""
@@ -224,6 +226,7 @@ class ColumnStats:
     header: str | None = None
     description: str | None = None
     cache: dict[str, int] = field(default_factory=dict)
+    derived_from: str | None = None
 
     def as_dict(self) -> dict:
         """The profile as plain data; what is unset (no measures, no values, no lengths, no
@@ -238,6 +241,8 @@ class ColumnStats:
             out["header"] = self.header
         if self.description is not None:
             out["description"] = self.description
+        if self.derived_from is not None:
+            out["derived_from"] = self.derived_from
         if self.measured:
             out.update(min=self.min, max=self.max, mean=self.mean, measured=self.measured)
         if self.values is not None:
@@ -325,6 +330,8 @@ def profile(workbook: "Workbook", region: Region, columns: Sequence[str] | None 
         if (header is not None and header != name) or note is not None:
             stats = replace(stats, header=header if header != name else None,
                             description=note)
+        if region.derived and region.derived[index] is not None:
+            stats = replace(stats, derived_from=region.derived[index])
         out.append(stats)
     return out
 

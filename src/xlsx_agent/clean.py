@@ -16,7 +16,8 @@ application declares; a pattern written by a model at call time would be one mor
 get wrong in every call, and its cost bound refused mid-task.)
 
 **The rules**, applied in this order, to text values only (a number, a date, a bool, an
-error or a blank is never changed; a formula's cached text is text):
+error or a blank is never changed; a formula's cached text is text) -- unless ``on`` says
+otherwise:
 
 * ``strip``: a regular expression (Python's :mod:`re`) matched at the start of the text
   (:meth:`re.Pattern.match`: a leading ``^`` changes nothing); what it matches is removed.
@@ -37,6 +38,21 @@ error or a blank is never changed; a formula's cached text is text):
 * ``collapse_space``: every run of white space (as :meth:`str.split` finds it: spaces, tabs,
   line breaks, no-break spaces...) becomes one space, and none is left at either end; on
   each item of a split.
+
+* ``on``: which cells the rules read.  ``"text"`` (the default): text cells, as above.
+  ``"shown"``: number and percent cells too, each as the text Excel shows it with its
+  number format, in the workbook's locale (:mod:`xlsx_agent.shown`: ``5.2`` in ``General``
+  is ``5.2``, ``5,2`` with a decimal comma; ``0.25`` in ``0%`` is ``25%``), so that
+  ``{"extract": "^(\\d+)", "on": "shown"}`` reads the text ``"5.1"`` and the number 5.2
+  alike, as ``"5"``.  A number read so is always text (or a list, or blank) and always
+  ``cleaned``, its shown text the ``original``.  Where what Excel shows is not measured --
+  a format code the measurements do not cover (a fraction, a fill, a condition, a numeral
+  system, engineering notation: seven of the measured codes, and any other form), a
+  negative number, a half at the last digit shown where roundings differ, a long number in
+  ``General`` (:mod:`xlsx_agent.shown` has the list) -- the cell is refused: ``blank``,
+  with ``issue="unmeasured_format"``, never a guess.  A date, time, bool or error cell is
+  never changed: its value is not a number shown.  A value with ``"on": "shown"`` and no
+  other rule is the shown text itself.
 
 A text cleaned to nothing (a cell that held only a label) is ``blank``.  A cleaned text
 that reads as a number or a date in the workbook's locale is flagged as the reader flags
@@ -111,7 +127,11 @@ if TYPE_CHECKING:  # pragma: no cover
     from .read.types import Value
 
 #: The keys a field's ``clean`` takes.
-CLEAN_KEYS = ("strip", "extract", "split", "collapse_space")
+CLEAN_KEYS = ("strip", "extract", "split", "collapse_space", "on")
+
+#: Which cells the rules read (``on``): ``"text"`` (the default) text cells only;
+#: ``"shown"`` number cells too, as the text Excel shows them (:mod:`xlsx_agent.shown`).
+ON = ("text", "shown")
 
 #: The longest ``strip`` pattern (characters).
 MAX_PATTERN = 200
@@ -160,6 +180,7 @@ class Clean:
     split: str | None = None
     collapse_space: bool = False
     extract: "re.Pattern[str] | None" = None
+    on: str = "text"
 
     @property
     def spec(self) -> dict:
@@ -172,6 +193,8 @@ class Clean:
             out["split"] = self.split
         if self.collapse_space:
             out["collapse_space"] = True
+        if self.on != "text":
+            out["on"] = self.on
         return out
 
     def apply(self, text: str) -> "tuple[str | tuple[str, ...] | None, bool]":
@@ -203,8 +226,8 @@ def parse_clean(item: Any) -> Clean:
     """A field's ``clean`` (a mapping of :data:`CLEAN_KEYS`) checked and compiled;
     :class:`RuleError` otherwise."""
     if not isinstance(item, Mapping) or not item:
-        raise RuleError("bad_declaration", "", "clean is a mapping of strip, extract, split "
-                        "and collapse_space")
+        raise RuleError("bad_declaration", "", "clean is a mapping of strip, extract, split, "
+                        "collapse_space and on")
     for key in item:
         if key not in CLEAN_KEYS:
             raise RuleError("bad_declaration", str(key), "unknown rule")
@@ -227,10 +250,15 @@ def parse_clean(item: Any) -> Clean:
     collapse = item.get("collapse_space", False)
     if not isinstance(collapse, bool):
         raise RuleError("bad_declaration", "collapse_space", "true or false")
-    if strip is None and extract is None and split is None and not collapse:
-        raise RuleError("bad_declaration", "", "clean names no rule: strip, extract, split "
-                        "or collapse_space")
-    return Clean(strip=strip, split=split, collapse_space=collapse, extract=extract)
+    on = item.get("on", "text")
+    if on not in ON:
+        raise RuleError("bad_declaration", "on", "the cells the rules read: \"text\" (text "
+                        "cells, the default) or \"shown\" (number cells too, as the text "
+                        "Excel shows them)")
+    if strip is None and extract is None and split is None and not collapse and on == "text":
+        raise RuleError("bad_declaration", "", "clean names no rule: strip, extract, split, "
+                        "collapse_space or on")
+    return Clean(strip=strip, split=split, collapse_space=collapse, extract=extract, on=on)
 
 
 def compile_pattern(text: Any, *, key: str = "strip",
@@ -251,9 +279,13 @@ def compile_pattern(text: Any, *, key: str = "strip",
 
 
 def clean_value(value: "Value", rule: Clean, workbook: Any) -> None:
-    """Apply ``rule`` to ``value`` in place, when it is text: its cleaned text (flagged
-    again as the reader flags text, in ``workbook``'s locale), its items (``list``), or
-    ``blank``; ``cleaned`` and ``original`` set when a rule changed it."""
+    """Apply ``rule`` to ``value`` in place, when it is text (or, ``on`` ``"shown"``, a
+    number or percent, as the text Excel shows it: :func:`shown`): its cleaned text
+    (flagged again as the reader flags text, in ``workbook``'s locale), its items
+    (``list``), or ``blank``; ``cleaned`` and ``original`` set when a rule changed it."""
+    if rule.on == "shown" and value.t in SHOWN_TYPES:
+        shown(value, rule, workbook)
+        return
     if value.t != "text" or not isinstance(value.v, str):
         return
     text = value.v
@@ -268,6 +300,36 @@ def clean_value(value: "Value", rule: Clean, workbook: Any) -> None:
             value.issue = looks(out, workbook)
     if changed:
         value.cleaned, value.original = True, text
+
+
+#: The value types ``on: "shown"`` reads as their shown text.
+SHOWN_TYPES = ("number", "percent")
+
+
+def shown(value: "Value", rule: Clean, workbook: Any) -> None:
+    """A number or percent ``value`` read as the text Excel shows it with its format
+    (``value.format``, :func:`xlsx_agent.shown.shown_text`, in ``workbook``'s locale) and
+    then cleaned by ``rule``: text, a list or ``blank``, always ``cleaned`` (its type is no
+    longer the cell's), ``original`` the text shown.  Where what Excel shows is not
+    measured, the value is refused: ``blank``, ``issue="unmeasured_format"``."""
+    from .shown import shown_text
+
+    assert isinstance(value.v, (int, float))   # a number or percent cell's value
+    text = shown_text(value.v, value.format, workbook.locale)
+    value.cleaned = True
+    if text is None:
+        value.v, value.t, value.issue, value.original = None, "blank", "unmeasured_format", None
+        return
+    text = workbook._redacted(text)
+    out, _ = rule.apply(text)
+    value.original = text
+    if out is None:
+        value.v, value.t, value.issue = None, "blank", None
+    elif isinstance(out, tuple):
+        value.v, value.t, value.issue = out, "list", None
+    else:
+        value.v, value.t = out, "text"
+        value.issue = None if value.formula else looks(out, workbook)
 
 
 def looks(text: str, workbook: Any) -> str | None:
@@ -463,6 +525,6 @@ def _category(av: Any):
     return lambda ch: found.match(ch) is not None
 
 
-__all__ = ["CLEAN_KEYS", "Clean", "CleanedWarning", "EXTRACT_WINDOW", "LABEL_WINDOW", "MAX_CHOICES",
+__all__ = ["CLEAN_KEYS", "Clean", "ON", "SHOWN_TYPES", "CleanedWarning", "EXTRACT_WINDOW", "LABEL_WINDOW", "MAX_CHOICES",
            "MAX_LOOSE_REPEATS", "MAX_PATTERN", "MAX_SEPARATOR", "RuleError", "clean_value",
-           "compile_pattern", "looks", "parse_clean"]
+           "compile_pattern", "looks", "parse_clean", "shown"]

@@ -129,6 +129,9 @@ EDIT_CODES = {
     "existing_key": "a row already has the key allocated a new row",
     "capacity_gap": "the rows allocated leave a blank row below the table's data rows",
     "not_allocated": "the write policy takes new rows only where allocate names them",
+    # a declared field derived from another (round 26, xlsx_agent.declare's from_field)
+    "derived_column": "the column is read from another column's cells by the table's own "
+                      "rules: write that column",
 }
 
 #: The content type of a VBA project part ([MS-OFFMACRO2]; what Excel writes).

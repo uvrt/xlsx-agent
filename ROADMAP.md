@@ -1132,6 +1132,18 @@ day; a `coerce` that read nothing says so. Budget: `xlsx_read` 593 -> 688, `xlsx
 the core pass 6,500 for a good tool); every definition 4,862 ->
 5,201, the guard 4,865 -> 5,205; the strict set unchanged.
 
+*A value read out of a column, beside it* (production feedback, round 26, X4-X5,
+2026-10-30; 0.1.9).  **X4**: a declared field with `from_field` reads another column's
+cells by rules of its own, right after it in the same table (a part number extracted from
+a narrative, beside the narrative); sources name the cells read (by key, the column read);
+writes through it refused (`derived_column`), naming the column to write; no chains, none
+from a hidden column; one column for hiding, so no second table that hides the same
+columns. **X5**: `clean.on: "shown"` applies the rules to numbers as the text Excel shows
+them (`xlsx_agent.shown`), only where measured (`ooxml_common.numfmt.MEASURED`), a cell
+refused (`unmeasured_format`) otherwise. Measurements that would widen it: negative
+numbers and second sections, zero sections, which way a half rounds, `General`'s width,
+and the seven open codes. No tool definition changes.
+
 ### 0.2 — edit
 
 | # | Item | Effort | Done when |

@@ -204,6 +204,12 @@ flag them, `xlsx_derive` counts them per column, and a slide's or document's tab
 were cleaned. A pattern that could backtrack without bound is refused when declared.
 See `xlsx_agent.clean` and docs/api-tour.md, "Cleaning text".
 
+A field can also read another column's cells by rules of its own, beside it: `{"id":
+"part", "from_field": "notes", "clean": {"extract": "Part:\\s*(\\S+)$"}}` (sources: the
+cells read; never written through, `derived_column`; `describe` shows `derived_from`).
+`"on": "shown"` in a `clean` applies its rules to number cells too, as the text Excel
+shows them (where that is measured; else the cell reads blank, `unmeasured_format`).
+
 Terms can be redacted from everything a workbook shows -- `{"redact": ["Acme Corp",
 "re:Project\\s+\\w+"], "with": "[redacted]"}` among the declarations: every cell, header,
 comment, link, drop-down list, sheet name and an Excel table's column names reads with the

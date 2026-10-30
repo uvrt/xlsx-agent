@@ -32,7 +32,8 @@ defined names that are not ranges (with the reason, never evaluated), and the pr
 workbook has (by code, address and count).
 
 **Declared tables** (:mod:`xlsx_agent.declare`) are listed as regions too, with the
-caller's description (``about``) and each column's id and description (``about``), and
+caller's description (``about``) and each column's id and description (``about``), a
+field derived from another column the column it reads (``derived_from``), and
 one with a capacity its ``capacity`` and the rows still ``free`` for new rows by key; a
 table over several sheets gives each sheet's range, joined by ``,``; a column hidden from
 the model is not there.  The blocks they cover are not detected again; an Excel table one
@@ -490,6 +491,8 @@ def _column(stats: ColumnStats) -> dict:
     out: dict = {"name": stats.column}
     if stats.description is not None:
         out["about"] = stats.description
+    if stats.derived_from is not None:
+        out["derived_from"] = stats.derived_from
     out.update(type=stats.type, fill=round(stats.fill, 2))
     if stats.measured:
         out["min"], out["max"] = _shown(stats.min), _shown(stats.max)
