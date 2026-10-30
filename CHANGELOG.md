@@ -23,7 +23,9 @@ Production round 25, X0-X3.  0.1.8, not 0.2.0: the public API grows (a derive's 
   with `"held_by": null`. `cells_only: true` reads the cells as stored (as before) and still
   names the rows. In Python: `Workbook.rows_holding(address)`, `Regions.holding`.
   *Changed*: a read of a single cell inside a table, which gave the cell, now gives its row
-  (the cell among it, with its address); `cells_only` gives the cell alone.
+  (the cell among it, with its address); `cells_only` gives the cell alone. `held_by.read`
+  says which was read (`rows` or `cells`), and the first such row read on a workbook warns
+  once that the row was read instead of the cell and that `cells_only: true` reads the cell.
 - **Joins** (X1, `xlsx_agent.join`). `xlsx_derive`'s (and `Workbook.derive`'s) `join`,
   `{from, on: [left key, right key], columns}`, adds another table's or dataset's columns to
   each row of `from`, by key, before `where`, the groups, the measures, `sort`, `top` and
@@ -37,7 +39,10 @@ Production round 25, X0-X3.  0.1.8, not 0.2.0: the public API grows (a derive's 
   `Status (Issues)`. Each joined value's sources are the joined rows' cells. Without
   `group_by`, `measures`, `bins` or `pivot` the joined rows are the result (`round`
   refused: they are cells as stored); `joined` says what was matched. At most 1,000,000
-  values held (`too_many_cells`), and the result's rows as any derive's.
+  values held (`too_many_cells`), and the result's rows as any derive's. A joined dataset
+  goes stale when either side changes -- `from`'s source, the joined dataset's source or
+  the joined table's workbook (ooxml-edit 0.73.0, `define_dataset(also=...)`; the floor
+  rises to it) -- and undoing the change makes it current again.
 - **`extract`, a declared clean rule** (X2). A pattern with exactly one capture group,
   searched for (anchored only as written) in a declared column's text, its match starting
   in the last 256 characters: the value is the captured text, or blank when not found --
@@ -58,8 +63,8 @@ Production round 25, X0-X3.  0.1.8, not 0.2.0: the public API grows (a derive's 
   values says so: `coerce ["date_as_text"] did not apply: none of its values reads as a
   date`.
 - **Definitions**: `xlsx_read` 593 -> 688, `xlsx_derive` 801 -> 1,045 estimated; the core
-  4,122 -> 4,460 estimated (about 6,601 by the offline proxy; about 6,377 online at the
-  ratio last counted, 5,894 for 4,122), which the user allows past 6,500 for a good tool:
+  4,122 -> 4,460 estimated (about 6,601 by the offline proxy; counted online 5,894 ->
+  6,334, claude-sonnet-5-5), which the user allows past 6,500 for a good tool:
   the offline core check is now a regression guard (4,465). Every definition 4,862 ->
   5,201, the guard 4,865 -> 5,205. The strict set is unchanged (1 tool, 13 optional).
 
@@ -771,7 +776,8 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   addresses are built on). 0.54.0 carries `ooxml_edit.markdown` and `sheets.RichText`,
   the Markdown cells (X3b); 0.57.0 the format's `touched` hook, by which a result names
   the sheets a call changed (round 13, R2); 0.70.0 the shared tools sent with a workbook's
-  parameters only (round 23, V3) -- the floor.
+  parameters only (round 23, V3); 0.73.0 `define_dataset(also=...)`, by which a joined
+  dataset goes stale when the joined side changes (round 25, X1) -- the floor.
 - `ooxml-common>=0.29.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
   widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, and from

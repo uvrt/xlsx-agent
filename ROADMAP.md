@@ -1128,8 +1128,8 @@ measured); declared, never a model's, as the other rules. **X3**: a derive's `te
 column of ISO dates (a `first`/`last` grouped without `coerce`) stays `date_as_text` in its
 dataset, so `coerce` applies to a derive from it; a coerced `group_by` column groups by the
 day; a `coerce` that read nothing says so. Budget: `xlsx_read` 593 -> 688, `xlsx_derive`
-801 -> 1,045 estimated; the core 4,122 -> 4,460 (about 6,377 online at the ratio last
-counted; the user lets the core pass 6,500 for a good tool); every definition 4,862 ->
+801 -> 1,045 estimated; the core 4,122 -> 4,460 (online 5,894 -> 6,334; the user lets
+the core pass 6,500 for a good tool); every definition 4,862 ->
 5,201, the guard 4,865 -> 5,205; the strict set unchanged.
 
 ### 0.2 — edit

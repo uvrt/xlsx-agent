@@ -259,3 +259,51 @@ def test_xlsx_derive_joins_datasets(box):
         "join": {"from": "t:Items", "on": ["Item", "Ref"], "columns": ["Name"]}})
     assert taken.ok, taken.error
     assert [row[-1]["v"] for row in taken.data["rows"]] == ["hose", "pump", "valve"]
+
+
+def two_books(box):
+    """``d1`` the items, ``d2`` a second copy whose issues and owners are the joined side."""
+    session = box.session()
+    for name in ("items.xlsx", "issues.xlsx"):
+        blob = session.add_blob(book().to_bytes(), name=name)
+        assert box.dispatch(session, "open_document", {"blob": blob}).ok
+    return session
+
+
+def _set(box, session, doc, address, text):
+    written = box.dispatch(session, "xlsx_set_cells", {"doc": doc, "cells": [
+        {"address": address, "text": text}]})
+    assert written.ok, written.error
+
+
+def test_a_joined_dataset_goes_stale_when_the_joined_side_changes(box):
+    session = two_books(box)
+    assert box.dispatch(session, "xlsx_derive", {
+        "doc": "d2", "from": "t:Owners", "id": "owners", "group_by": ["Item", "Owner"]}).ok
+    joined = box.dispatch(session, "xlsx_derive", {
+        "doc": "d1", "from": "t:Items", "id": "with_owner",
+        "join": {"from": "d:owners", "on": ["Ref", "Item"], "columns": ["Owner"]}})
+    assert joined.ok, joined.error
+    entry = session.dataset("d:with_owner")
+    assert not entry.stale and entry.doc == "d1"
+    _set(box, session, "d2", "Owners!B2", "Lee")               # the joined side only
+    assert entry.stale
+    read = box.dispatch(session, "xlsx_read", {"target": "d:with_owner"})
+    assert read.data["dataset"]["stale"] is True
+    assert any("a source it also read" in w for w in read.warnings)
+    assert box.dispatch(session, "undo", {"doc": "d2"}).ok
+    assert not entry.stale
+
+
+def test_a_dataset_joined_with_a_table_goes_stale_when_that_workbook_changes(box):
+    session = two_books(box)
+    assert box.dispatch(session, "xlsx_derive", {
+        "doc": "d2", "from": "t:Owners", "id": "owners", "group_by": ["Item"]}).ok
+    joined = box.dispatch(session, "xlsx_derive", {
+        "doc": "d1", "from": "d:owners", "id": "named",
+        "join": {"from": "t:Items", "on": ["Item", "Ref"], "columns": ["Name"]}})
+    assert joined.ok, joined.error
+    entry = session.dataset("d:named")
+    assert not entry.stale and entry.doc == "d2"               # from's source
+    _set(box, session, "d1", "Items!B2", "pumps")              # the joined table's workbook
+    assert entry.stale

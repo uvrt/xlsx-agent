@@ -23,12 +23,14 @@ data rows (a declared table or region first, then an Excel table:
 rows holding it, every column (or those ``columns`` names), cleaned as a read through the
 table is, paged as any read: ``target`` is then their ``t:`` address (a row by key when
 the table's keys are unique, else by position; a range's rows as a row range), ``cells``
-the address asked for, and ``held_by`` the table and rows.  So a model following a
+the address asked for, and ``held_by`` the table, the rows and ``"read": "rows"`` (the
+first such read on a workbook also warns, once, that the row was read instead of the cell
+and that ``cells_only`` reads the cell).  So a model following a
 citation gets the record in one call, never mistaking the sheet row for a data row's
 position.  A cell of a header or totals row, outside every table, or a range across a
 table's edge or two tables is read as cells, with ``"held_by": null``: the result always
 says which.  ``cells_only`` reads the cells themselves, as stored, and still names the
-rows holding them in ``held_by``.
+rows holding them in ``held_by`` (``"read": "cells"``).
 
 **A row by key** is a target, ``t:Parts/BX-17`` (the one way every tool names it);
 its key column is the region's own (declared, or the only column that can be one), else
@@ -210,10 +212,17 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
 
     data: dict[str, Any] = {"target": found.text}
     if held is not None:
+        table = replace(held, key=None, position=None, row_range=None).text
         if not cells_only:
             data["cells"] = asked
-        data["held_by"] = {"table": replace(held, key=None, position=None,
-                                            row_range=None).text, "rows": held.text}
+            if not getattr(workbook, "_rows_for_cells_noted", False):
+                # the first such read in the workbook's session says so, once
+                workbook._rows_for_cells_noted = True
+                notes.append(f"the cell lies in a data row of {table}: its whole table "
+                             "row was read instead of the cell (target, held_by); "
+                             "cells_only: true reads the cell alone")
+        data["held_by"] = {"table": table, "rows": held.text,
+                           "read": "cells" if cells_only else "rows"}
     elif _on_a_sheet(target):
         data["held_by"] = None
     if found.sheet is not None:

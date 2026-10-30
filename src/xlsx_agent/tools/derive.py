@@ -16,7 +16,9 @@ with it), and its values' sources are the original cells (:mod:`xlsx_agent.datas
 table's (``t:``, read in ``doc``) or dataset's (``d:``) columns to each row of ``from``, by
 key, before everything else; without ``group_by``, ``measures``, ``bins`` or ``pivot`` the
 joined rows are the dataset.  The result's ``joined`` says what was matched.  A dataset
-joined with a table needs ``doc``; the dataset goes stale with ``from``'s source.
+joined with a table needs ``doc``.  The dataset goes stale when either side's source
+changes: ``from``'s, and the joined table's workbook or the joined dataset's source
+(ooxml-edit's ``define_dataset(also=...)``).
 
 What the result gives: the dataset's id and source, its columns, types and key columns,
 the rounding, the counts (``matched``, ``used``, ``groups``), what was left out and why
@@ -152,8 +154,11 @@ def xlsx_derive(call: Any, id: str, doc: str | None = None, **arguments: Any) ->
     source = arguments.pop("from")
     options = _options(arguments)
     join = options.get("join")
+    also: list[Any] = []            # the joined side's source, when not from's own
     if join is not None:
-        options["join"] = _join_side(call, join, doc)
+        options["join"], joined_entry = _join_side(call, join, doc)
+        if joined_entry is not None:
+            also.append(joined_entry)
     if isinstance(source, str) and source.startswith(DATASET_PREFIX):
         entry, address, table = _entry(call, source, "from")
         if address.kind != "dataset":
@@ -165,13 +170,15 @@ def xlsx_derive(call: Any, id: str, doc: str | None = None, **arguments: Any) ->
                 raise ToolError("invalid_arguments", "join's from is a table (t:): give doc, "
                                 "the workbook it is in", field="doc")
             workbook = workbook_of(call, doc)
+        if workbook is not None:
+            also.append(doc)        # the joined table's workbook
         derived = derive(workbook, table, id=id, **options)
         dataset = derived.dataset()
-        name = call.define_dataset(id, dataset, source=entry)
+        name = call.define_dataset(id, dataset, source=entry, also=also)
     else:
         derived = workbook_of(call, doc).derive(source, id=id, **options)
         dataset = derived.dataset()
-        name = call.define_dataset(id, dataset, origin=derived.address)
+        name = call.define_dataset(id, dataset, origin=derived.address, also=also)
     return _derived_result(call, name, derived, DatasetTable(dataset, id))
 
 
@@ -197,17 +204,18 @@ def _options(arguments: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _join_side(call: Any, join: Any, doc: str | None) -> Any:
-    """``join`` with its ``from`` a dataset's table when it names one (``d:``); a table
-    (``t:``) is left for the workbook ``doc`` to read."""
+def _join_side(call: Any, join: Any, doc: str | None) -> tuple[Any, Any]:
+    """``join`` with its ``from`` a dataset's table when it names one (``d:``), and that
+    dataset's entry, a source the result also read (it goes stale with it); a table
+    (``t:``) is left for the workbook ``doc`` to read (no entry)."""
     if not isinstance(join, dict) or not isinstance(join.get("from"), str) \
             or not join["from"].startswith(DATASET_PREFIX):
-        return join
-    _, address, table = _entry(call, join["from"], "join")
+        return join, None
+    entry, address, table = _entry(call, join["from"], "join")
     if address.kind != "dataset":
         raise ToolError("invalid_arguments", "join's from names a whole dataset "
                         "(d:by_region), not a column or row of one", field="join")
-    return {**join, "from": table}
+    return {**join, "from": table}, entry
 
 
 def _derived_result(call: Any, name: str, derived: Any, table: DatasetTable) -> Result:

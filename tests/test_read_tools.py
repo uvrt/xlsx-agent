@@ -592,7 +592,7 @@ def test_a_cited_cell_reads_its_table_row(box, target):
     assert result.ok, result.error
     assert result.data["target"] == "t:Items/I-2"
     assert result.data["cells"] == target
-    assert result.data["held_by"] == {"table": "t:Items", "rows": "t:Items/I-2"}
+    assert result.data["held_by"] == {"table": "t:Items", "rows": "t:Items/I-2", "read": "rows"}
     assert result.data["columns"] == ["Ref", "Status", "Owner"]
     assert [[c["a"], c["v"]] for c in _cells(result)] == [
         ["'Q3 review'!A5", "I-2"], ["'Q3 review'!B5", "done"], ["'Q3 review'!C5", "Ash"]]
@@ -602,7 +602,7 @@ def test_a_cited_range_reads_the_rows_it_covers_paged(box):
     session = _session(box, cited())
     result = _read(box, session, target="'Q3 review'!$B$4:$C$6", limit=2)
     assert result.ok, result.error
-    assert result.data["held_by"] == {"table": "t:Items", "rows": "t:Items/#1:#3"}
+    assert result.data["held_by"] == {"table": "t:Items", "rows": "t:Items/#1:#3", "read": "rows"}
     assert len(result.data["rows"]) == 2 and result.next_cursor and result.total == 3
     more = _read(box, session, target="'Q3 review'!$B$4:$C$6", limit=2,
                  cursor=result.next_cursor)
@@ -616,7 +616,7 @@ def test_a_table_without_one_key_column_names_its_row_by_position(box):
     session = _session(box, cited())
     result = _read(box, session, target="'Ann''s list'!C4")
     assert result.ok, result.error
-    assert result.data["held_by"] == {"table": "t:Hours", "rows": "t:Hours/#2"}
+    assert result.data["held_by"] == {"table": "t:Hours", "rows": "t:Hours/#2", "read": "rows"}
     assert [c["v"] for c in _cells(result)] == [1, 2]
 
 
@@ -636,7 +636,7 @@ def test_cells_only_reads_the_cell_and_still_names_its_row(box):
     result = _read(box, session, target="'Q3 review'!B5", cells_only=True)
     assert result.ok, result.error
     assert result.data["target"] == "'Q3 review'!B5" and "cells" not in result.data
-    assert result.data["held_by"] == {"table": "t:Items", "rows": "t:Items/I-2"}
+    assert result.data["held_by"] == {"table": "t:Items", "rows": "t:Items/I-2", "read": "cells"}
     assert [c["v"] for c in _cells(result)] == ["done"]
     # a t: target says nothing of held_by
     assert "held_by" not in _read(box, session, target="t:Items/I-2").data
@@ -652,10 +652,12 @@ def test_a_declared_table_over_two_sheets_holds_its_rows_sheet_by_sheet(box):
         session = _session(toolbox, book)
         result = _read(toolbox, session, target="'Part 2'!B2")
         assert result.ok, result.error
-        assert result.data["held_by"] == {"table": "t:parts", "rows": "t:parts/P-3"}
+        assert result.data["held_by"] == \
+            {"table": "t:parts", "rows": "t:parts/P-3", "read": "rows"}
         assert [c["a"] for c in _cells(result)] == ["'Part 2'!A2", "'Part 2'!B2"]
         across = _read(toolbox, session, target="'Part 1'!A2:B3")
-        assert across.data["held_by"] == {"table": "t:parts", "rows": "t:parts/#1:#2"}
+        assert across.data["held_by"] == \
+            {"table": "t:parts", "rows": "t:parts/#1:#2", "read": "rows"}
 
 
 def test_rows_holding_in_python():
@@ -664,3 +666,13 @@ def test_rows_holding_in_python():
     assert wb.rows_holding("'Q3 review'!A4:C6").text == "t:Items/#1:#3"
     assert wb.rows_holding("'Q3 review'!A3") is None
     assert wb.rows_holding("t:Items") is None
+
+
+def test_the_first_row_read_for_a_cell_says_so_once(box):
+    session = _session(box, cited())
+    first = _read(box, session, target="'Q3 review'!B5")
+    assert first.warnings == ["the cell lies in a data row of t:Items: its whole table row "
+                              "was read instead of the cell (target, held_by); cells_only: "
+                              "true reads the cell alone"]
+    assert _read(box, session, target="'Q3 review'!C6").warnings == []
+    assert _read(box, session, target="'Q3 review'!A1").warnings == []

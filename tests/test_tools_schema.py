@@ -83,8 +83,7 @@ Round 25, X0 and X1: ``xlsx_read`` reads the table rows a sheet's cell or range 
 (``target`` says so, with an example of a cited cell; ``columns`` picks their columns;
 ``cells_only``), 593 -> 688; ``xlsx_derive``'s ``join`` (``from``, ``on``, ``columns``, with
 an example), 801 -> 1,045: the core 4,122 -> 4,460 estimated, about 6,101 -> 6,601 counted by
-the proxy -- online, at the 5,894 the main session counted for 4,122 (1.43 a token), about
-6,377.  The user lets the core grow past 6,500 for a good tool (2026-10-30), so the core's
+the proxy; counted online, 6,334 (claude-sonnet-5-5, 2026-10-30; 5,894 before).  The user lets the core grow past 6,500 for a good tool (2026-10-30), so the core's
 offline check is a regression guard from here (:data:`CORE_GUARD`), and the online count is
 the main session's.  Every definition 4,862 -> 5,201, the guard 4,865 -> 5,205.  Neither tool
 is strict on Claude: the strict set is unchanged (``xlsx_set_cells``, 13 optional).

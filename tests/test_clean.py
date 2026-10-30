@@ -324,7 +324,7 @@ def test_the_read_tools_mark_and_count_cleaned_values(tools):
                                   "cleaned": True}
     raw = dispatch(tools, "xlsx_read", doc="d1", target="'Team East'!C2", cells_only=True)
     assert raw["rows"][0][0]["v"] == "Lead: Robin;  Kim ;Ash" and "cleaned" not in raw
-    assert raw["held_by"] == {"table": "t:tasks", "rows": "t:tasks/E-1"}
+    assert raw["held_by"] == {"table": "t:tasks", "rows": "t:tasks/E-1", "read": "cells"}
     row = dispatch(tools, "xlsx_read", doc="d1", target="'Team East'!C2")   # its table row
     assert row["target"] == "t:tasks/E-1" and row["rows"][0][2]["v"] == ["Kim", "Ash"]
     query = dispatch(tools, "xlsx_query", doc="d1", table="t:tasks", columns=["Ref", "Note"],

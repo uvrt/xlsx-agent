@@ -21,7 +21,7 @@ writes themselves come with E3. Not released to PyPI; installed from source.
 
 - The Python API: [docs/api-tour.md](docs/api-tour.md).
 - The tools, for Claude and OpenAI: [src/xlsx_agent/tools/README.md](src/xlsx_agent/tools/README.md).
-  The loaded core counts 4,958 tokens on Claude (the budget is 6,500).
+  The loaded core counts 6,334 tokens on Claude (claude-sonnet-5-5, 2026-10-30, round 25).
 - What changed: [CHANGELOG.md](CHANGELOG.md).
 
 ## Addresses

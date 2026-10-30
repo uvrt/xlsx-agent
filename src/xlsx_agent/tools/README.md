@@ -21,8 +21,9 @@ back first. The
 definitions pass Claude's and OpenAI's documented rules offline
 (`ooxml_edit.tools.adapters.anthropic_problems`, `openai_problems`), and on Claude online
 (`tests/test_tools_online.py`, marked `provider`): Claude accepts them as sent, and the
-loaded core counts **4,958 tokens** (claude-sonnet-5-5's count-tokens, 2026-10-13, 9
-definitions with the tool-use prompt; the budget is 6,500). Three tasks were run on Claude
+loaded core counts **6,334 tokens** (claude-sonnet-5-5's count-tokens, 2026-10-30, round
+25, 12 definitions; 4,958 at R14). The budget was 6,500; the user lets the core grow past
+it for a good tool. Three tasks were run on Claude
 (claude-haiku-5-5) and are kept as golden transcripts (`tests/golden/`). The tools have not
 been run live on OpenAI yet; the loop below is the siblings', which a production user ran
 on Azure OpenAI's Responses API.
@@ -214,7 +215,8 @@ the replacement only -- no count, no flag. See `xlsx_agent.redact`.
 table's data rows -- `'Q3 review'!$K$83`, as a citation in the workbook's own text writes
 it -- reads the table row(s) holding it: `target` is then the rows' `t:` address
 (`t:Items/I-80` by key, else by position), `cells` the address asked for, and `held_by`
-the table and rows; `columns` picks the row's columns. Any other sheet read says
+the table, the rows and `"read": "rows"` (the first such read also warns that the row was
+read instead of the cell); `columns` picks the row's columns. Any other sheet read says
 `"held_by": null` (cells read as themselves); `cells_only: true` reads the cells as stored
 and still names the rows in `held_by`. A sheet row is never a data row's position: follow
 `held_by`.
@@ -237,7 +239,8 @@ matches by any item; when a row matches several, every joined cell is a list (on
 row of `from`, so its counts and keys stay true; placed in a deck or document, one item per
 line). A name clash is renamed `Status (Issues)`; `joined` in the result says what was
 matched. Without `group_by`, `measures`, `bins` or `pivot` the joined rows are the dataset
--- the table an agent places, each joined value with the joined rows' cells as sources.
+-- the table an agent places, each joined value with the joined rows' cells as sources. It
+goes stale when either side's source changes, the joined one's too.
 
 **Datasets (`d:`).** `xlsx_derive` keeps its figures in the session as a dataset,
 `d:<id>`: columns, rows, and beside every value the cells it came from. `xlsx_read` reads
