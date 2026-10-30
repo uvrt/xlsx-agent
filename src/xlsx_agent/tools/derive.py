@@ -12,6 +12,14 @@ the :class:`~ooxml_edit.tools.Dataset` of :func:`xlsx_agent.dataset.as_dataset`,
 dataset derived from a dataset inherits its source document and version (it goes stale
 with it), and its values' sources are the original cells (:mod:`xlsx_agent.dataset`).
 
+**join** (round 25, X1; :mod:`xlsx_agent.join`): ``{from, on, columns}`` adds another
+table's (``t:``, read in ``doc``) or dataset's (``d:``) columns to each row of ``from``, by
+key, before everything else; without ``group_by``, ``measures``, ``bins`` or ``pivot`` the
+joined rows are the dataset.  The result's ``joined`` says what was matched.  A dataset
+joined with a table needs ``doc``.  The dataset goes stale when either side's source
+changes: ``from``'s, and the joined table's workbook or the joined dataset's source
+(ooxml-edit's ``define_dataset(also=...)``).
+
 What the result gives: the dataset's id and source, its columns, types and key columns,
 the rounding, the counts (``matched``, ``used``, ``groups``), what was left out and why
 (``excluded`` per measure, ``left_out`` per column, by reason, with first addresses),
@@ -101,8 +109,8 @@ def _about(entry: Any) -> dict[str, Any]:
 
 
 @tool("xlsx_derive",
-      "Figures computed here, never by you, from a table's or dataset's rows, filtered, "
-      "grouped, binned or pivoted. min/max of dates are dates; first/last by row order. Kept "
+      "Figures computed here, never by you, from a table's or dataset's rows, joined, "
+      "filtered, grouped, binned or pivoted. min/max of dates are dates; first/last by row order. Kept "
       "as dataset d:<id> (xlsx_read reads it, xlsx_derive derives from it); every value "
       "lists its source cells; cells left out are counted by reason.",
       {"doc": string("Document id; not needed when from is a dataset.", optional=True),
@@ -126,25 +134,51 @@ def _about(entry: Any) -> dict[str, Any]:
        "round": integer("Decimals, half away from zero; reported values only.",
                         minimum=-MAX_DIGITS, maximum=MAX_DIGITS, optional=True),
        "coerce": array(string(enum=COERCIONS), "Opt in: read numbers or dates stored as text.",
-                       optional=True)},
+                       optional=True),
+       "join": obj({"from": string("The table (t:Issues) or dataset (d:) to join."),
+                    "on": array(string(), "Two names: [key column of the outer from, key "
+                                "column of this table]. A list cell (a split column) "
+                                "matches by any of its items."),
+                    "columns": array(string(), "This table's columns to add. Default: all "
+                                     "but its key.", optional=True)},
+                   "Before all else, add another table's columns to each row of from, by "
+                   "key, e.g. {from: \"t:Issues\", on: [\"Ref\", \"Items\"], columns: "
+                   "[\"Issue\"]}. Every row kept, blank when unmatched; if a row matches "
+                   "several, each added cell is a list. Without group_by, measures, bins or "
+                   "pivot the result is these rows (where, sort, top apply).",
+                   optional=True)},
       group=CORE, datasets=("from",))
 @handler
 def xlsx_derive(call: Any, id: str, doc: str | None = None, **arguments: Any) -> Result:
     """``xlsx_derive``'s handler, for a workbook or a dataset (see the module's notes)."""
     source = arguments.pop("from")
     options = _options(arguments)
+    join = options.get("join")
+    also: list[Any] = []            # the joined side's source, when not from's own
+    if join is not None:
+        options["join"], joined_entry = _join_side(call, join, doc)
+        if joined_entry is not None:
+            also.append(joined_entry)
     if isinstance(source, str) and source.startswith(DATASET_PREFIX):
         entry, address, table = _entry(call, source, "from")
         if address.kind != "dataset":
             raise ToolError("invalid_arguments", "from names a whole dataset (d:by_region), "
                             "not a column or row of one", field="from")
-        derived = derive(None, table, id=id, **options)
+        workbook = None
+        if isinstance(options.get("join", {}).get("from"), str):    # a table: its workbook
+            if doc is None:
+                raise ToolError("invalid_arguments", "join's from is a table (t:): give doc, "
+                                "the workbook it is in", field="doc")
+            workbook = workbook_of(call, doc)
+        if workbook is not None:
+            also.append(doc)        # the joined table's workbook
+        derived = derive(workbook, table, id=id, **options)
         dataset = derived.dataset()
-        name = call.define_dataset(id, dataset, source=entry)
+        name = call.define_dataset(id, dataset, source=entry, also=also)
     else:
         derived = workbook_of(call, doc).derive(source, id=id, **options)
         dataset = derived.dataset()
-        name = call.define_dataset(id, dataset, origin=derived.address)
+        name = call.define_dataset(id, dataset, origin=derived.address, also=also)
     return _derived_result(call, name, derived, DatasetTable(dataset, id))
 
 
@@ -165,7 +199,23 @@ def _options(arguments: dict[str, Any]) -> dict[str, Any]:
     for name in ("group_by", "pivot", "top", "round", "coerce"):
         if arguments.get(name) is not None:
             out[name] = arguments[name]
+    if arguments.get("join") is not None:
+        out["join"] = clean(arguments["join"])
     return out
+
+
+def _join_side(call: Any, join: Any, doc: str | None) -> tuple[Any, Any]:
+    """``join`` with its ``from`` a dataset's table when it names one (``d:``), and that
+    dataset's entry, a source the result also read (it goes stale with it); a table
+    (``t:``) is left for the workbook ``doc`` to read (no entry)."""
+    if not isinstance(join, dict) or not isinstance(join.get("from"), str) \
+            or not join["from"].startswith(DATASET_PREFIX):
+        return join, None
+    entry, address, table = _entry(call, join["from"], "join")
+    if address.kind != "dataset":
+        raise ToolError("invalid_arguments", "join's from names a whole dataset "
+                        "(d:by_region), not a column or row of one", field="join")
+    return {**join, "from": table}, entry
 
 
 def _derived_result(call: Any, name: str, derived: Any, table: DatasetTable) -> Result:
@@ -190,6 +240,8 @@ def _derived_result(call: Any, name: str, derived: Any, table: DatasetTable) -> 
         data["totals"] = {k: _shown(t.as_dict()) for k, t in derived.totals.items()}
     if derived.cache:
         data["cache"] = dict(derived.cache)
+    if derived.joined is not None:
+        data["joined"] = derived.joined.as_dict()
     total = len(derived.rows)
     cut: dict[str, Any] = {}
     chars = call.limits.max_result_chars

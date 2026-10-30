@@ -5,6 +5,69 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## 0.1.8 (2026-10-30) -- datasets that match the table an agent shows
+
+Production round 25, X0-X3.  0.1.8, not 0.2.0: the public API grows (a derive's `join`,
+`Workbook.rows_holding`, `Joined`, `xlsx_read`'s `cells_only`, the `extract` rule), but
+0.2 is the roadmap's edit milestone, and nothing is removed or renamed.
+
+- **A cited cell reads its table row** (X0). `xlsx_read` of a sheet's cell or range that
+  lies inside one table's data rows -- in any form a citation writes it: `'Q3 review'!K83`,
+  `Review!$K$83`, `'Ann''s list'!B4`, `'Q3 review'!K80:L90` (the address parser's forms,
+  its quoting measured in 0.1.6) -- reads the table rows holding it, every column or those
+  `columns` names, paged as any read: `target` is their `t:` address (one row by key when
+  the table's keys are unique, else by position; a range's rows a row range), `cells` the
+  address asked for, `held_by` the table and rows. Declared tables and regions come first
+  (one over several sheets counts its rows sheet by sheet), then Excel tables. A header or
+  totals cell, one outside every table and a range across a table's edge are read as cells,
+  with `"held_by": null`. `cells_only: true` reads the cells as stored (as before) and still
+  names the rows. In Python: `Workbook.rows_holding(address)`, `Regions.holding`.
+  *Changed*: a read of a single cell inside a table, which gave the cell, now gives its row
+  (the cell among it, with its address); `cells_only` gives the cell alone. `held_by.read`
+  says which was read (`rows` or `cells`), and the first such row read on a workbook warns
+  once that the row was read instead of the cell and that `cells_only: true` reads the cell.
+- **Joins** (X1, `xlsx_agent.join`). `xlsx_derive`'s (and `Workbook.derive`'s) `join`,
+  `{from, on: [left key, right key], columns}`, adds another table's or dataset's columns to
+  each row of `from`, by key, before `where`, the groups, the measures, `sort`, `top` and
+  `round`. Keys match by type and value as `group_by` groups; a list key (a declared split,
+  or a list in a dataset) matches by any of its items, on either side. Every row is kept,
+  unmatched ones blank. When any row matches several right rows, every joined column is a
+  list column (each cell the matched rows' values in order): rows are never repeated, so the
+  left table's counts, sums and keys stay true and "the issues of each item" is one cell;
+  a deck or document shows it one item per line (the dataset holds the lines; reading or
+  deriving from it gives the list). A joined name the left side has is renamed
+  `Status (Issues)`. Each joined value's sources are the joined rows' cells. Without
+  `group_by`, `measures`, `bins` or `pivot` the joined rows are the result (`round`
+  refused: they are cells as stored); `joined` says what was matched. At most 1,000,000
+  values held (`too_many_cells`), and the result's rows as any derive's. A joined dataset
+  goes stale when either side changes -- `from`'s source, the joined dataset's source or
+  the joined table's workbook (ooxml-edit 0.72.0, `define_dataset(also=...)`; the floor
+  rises to it) -- and undoing the change makes it current again.
+- **`extract`, a declared clean rule** (X2). A pattern with exactly one capture group,
+  searched for (anchored only as written) in a declared column's text, its match starting
+  in the last 256 characters: the value is the captured text, or blank when not found --
+  a status line ending a narrative becomes a column, each value's source its cell. Applied
+  after `strip`, before `split` and `collapse_space`. Like the other rules it is the
+  application's configuration, never a model's: no tool definition changes. Its cost is
+  bounded: it is tried at every place of its window, so no repeat may give characters back
+  (`\s*(.+)$` refused, `\s*(\S.*)$` taken); the worst forms allowed took about 1 ms a
+  cell of 32,767 characters (Python 3.12, an Intel Core i7-6567U, 2026-10-30). The pattern
+  check now judges a repeat before only the end of the text (`$`, `\Z`) as one at the end,
+  and a repeat at the end of a group by what follows the group (so `([^;]*);` is taken).
+- **Dates stored as text through a derived dataset** (X3). A derive's `text` column of ISO
+  dates -- a `first` or `last` of dates stored as text, grouped without `coerce` -- keeps
+  them `date_as_text` in its dataset, so a derive from it refuses `max` naming the `coerce`
+  and takes `coerce: ["date_as_text"]` (a caller's own `text` label is still taken at its
+  word). A `group_by` column made a date by `coerce` groups its text by the day, shown ISO
+  (counted in `coerced` under its name). A `coerce` that read none of a refused column's
+  values says so: `coerce ["date_as_text"] did not apply: none of its values reads as a
+  date`.
+- **Definitions**: `xlsx_read` 593 -> 688, `xlsx_derive` 801 -> 1,045 estimated; the core
+  4,122 -> 4,460 estimated (about 6,601 by the offline proxy; counted online 5,894 ->
+  6,334, claude-sonnet-5-5), which the user allows past 6,500 for a good tool:
+  the offline core check is now a regression guard (4,465). Every definition 4,862 ->
+  5,201, the guard 4,865 -> 5,205. The strict set is unchanged (1 tool, 13 optional).
+
 ## 0.1.7 (2026-10-29) -- the shared tools sent with a workbook's parameters only
 
 - **The shared tools without a deck's or document's parameters** (production round 23, V3;
@@ -713,7 +776,8 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   addresses are built on). 0.54.0 carries `ooxml_edit.markdown` and `sheets.RichText`,
   the Markdown cells (X3b); 0.57.0 the format's `touched` hook, by which a result names
   the sheets a call changed (round 13, R2); 0.70.0 the shared tools sent with a workbook's
-  parameters only (round 23, V3) -- the floor.
+  parameters only (round 23, V3); 0.72.0 `define_dataset(also=...)`, by which a joined
+  dataset goes stale when the joined side changes (round 25, X1) -- the floor.
 - `ooxml-common>=0.29.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
   widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, and from

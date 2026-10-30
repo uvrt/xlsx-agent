@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xlsx-agent"
-version = "0.1.7"
+version = "0.1.8"
 description = "Workbooks as a source an agent can describe, query and derive from, every figure traceable to its cells"
 readme = "README.md"
 license = { text = "MIT" }
@@ -26,7 +26,7 @@ classifiers = [
 ]
 # lxml, ooxml-edit and ooxml-common, and nothing else at runtime; why each, and why at its
 # version: CHANGELOG.md, "Dependencies".
-dependencies = ["lxml>=4.9", "ooxml-edit>=0.70.0", "ooxml-common>=0.29.0"]
+dependencies = ["lxml>=4.9", "ooxml-edit>=0.72.0", "ooxml-common>=0.29.0"]
 
 [project.optional-dependencies]
 # pptx-agent (and pptx2svg, which its layout checks measure text with) for the tests only:

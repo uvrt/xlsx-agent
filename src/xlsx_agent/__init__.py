@@ -13,7 +13,8 @@ parse and format (:mod:`xlsx_agent.address`), cells are read, typed and streamed
 are queried (:mod:`xlsx_agent.query`); text is found (:mod:`xlsx_agent.find`); figures
 are derived, each with its cells (:mod:`xlsx_agent.derive`), and kept as datasets that
 are read by address and derived from again (:mod:`xlsx_agent.dataset`); two workbooks
-are compared by key (:mod:`xlsx_agent.compare`); a workbook is checked against a declared
+are compared by key (:mod:`xlsx_agent.compare`); a table's rows are joined with
+another's by key (:mod:`xlsx_agent.join`); a workbook is checked against a declared
 schema (:mod:`xlsx_agent.schema`); the caller's own tables are declared from its
 configuration (:mod:`xlsx_agent.declare`), their text cleaned by its rules on request
 (:mod:`xlsx_agent.clean`); ``xlsx_read``, ``xlsx_profile``, ``xlsx_query``,
@@ -68,6 +69,7 @@ from .declare import DeclarationError
 from .dataset import (DatasetSelection, DatasetTable, DatasetValue, as_dataset,
                       merge_sources, table_dataset)
 from .derive import Derived, DeriveError, Provenance, Total
+from .join import Joined
 from .edit import EditError, EditReport, SaveReport
 from .edit.policy import PolicyError, WritePolicy
 from .edit.cells import Written
@@ -83,7 +85,7 @@ from .integrity import CellEdit, CellsDiff
 from .validations import ValidationRule
 from .workbook import Sheet, Workbook
 
-__version__ = "0.1.7"
+__version__ = "0.1.8"
 
 __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellChange",
            "CellEdit", "CellsDiff", "ValidationRule",
@@ -93,7 +95,7 @@ __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellC
            "DatasetTable", "DatasetValue", "DeclarationError", "DefinedName", "DeriveError",
            "Derived", "Distinct", "EditError", "EditReport", "PolicyError", "SaveReport",
            "WritePolicy", "Written",
-           "Found", "Hyperlink", "KindMismatchWarning", "Locale", "NameNotFound", "NumberFormat",
+           "Found", "Hyperlink", "Joined", "KindMismatchWarning", "Locale", "NameNotFound", "NumberFormat",
            "OpenError", "Problem", "QueryError", "QueryResult", "RangeAddress", "RefAddress",
            "Provenance", "RedactError", "Redaction", "Region", "RegionError", "Selection", "Sheet", "SheetRef", "SheetScan",
            "TableAddress", "Total", "UnclearRegion", "Value", "Workbook", "__version__",

@@ -15,6 +15,23 @@ list lines, the rest escaped -- what ``xlsx_set_cells``' ``markdown`` writes bac
 same cell; :meth:`Workbook.read <xlsx_agent.Workbook.read>`).  The blocks array formulas and dynamic arrays fill that cross the rows are
 always listed (``arrays``): a cell inside one says nothing of it by itself.
 
+**A cell in a table** (round 25, X0).  A sheet's cell or range -- in any form the address
+parser reads, as Excel writes a citation: ``'Q3 review'!K83``, ``Review!$K$83``, a name
+quoted with ``''`` for a quote, ``'Q3 review'!K80:L90`` -- that lies inside one table's
+data rows (a declared table or region first, then an Excel table:
+:meth:`Workbook.rows_holding <xlsx_agent.workbook.Workbook.rows_holding>`) reads the table
+rows holding it, every column (or those ``columns`` names), cleaned as a read through the
+table is, paged as any read: ``target`` is then their ``t:`` address (a row by key when
+the table's keys are unique, else by position; a range's rows as a row range), ``cells``
+the address asked for, and ``held_by`` the table, the rows and ``"read": "rows"`` (the
+first such read on a workbook also warns, once, that the row was read instead of the cell
+and that ``cells_only`` reads the cell).  So a model following a
+citation gets the record in one call, never mistaking the sheet row for a data row's
+position.  A cell of a header or totals row, outside every table, or a range across a
+table's edge or two tables is read as cells, with ``"held_by": null``: the result always
+says which.  ``cells_only`` reads the cells themselves, as stored, and still names the
+rows holding them in ``held_by`` (``"read": "cells"``).
+
 **A row by key** is a target, ``t:Parts/BX-17`` (the one way every tool names it);
 its key column is the region's own (declared, or the only column that can be one), else
 ``key``.  ``columns`` picks a ``t:`` target's columns, in the order given (an address's own
@@ -39,7 +56,7 @@ instead (:meth:`Regions.formula_withheld
 column's cleaning rules (:mod:`xlsx_agent.clean`) apply to a read through its table: a
 value a rule changed says ``"cleaned": true``, a split one is a ``list``, and the page
 counts them (``cleaned``: how many, the first addresses); a read of the sheet's cells
-gives them as stored.
+with ``cells_only`` gives them as stored.
 
 **Bounded.**  A page holds at most ``limit`` rows (by default ``Limits.max_list_items``, at
 most :data:`READ_ROWS`) and its whole result at most ``max_chars`` characters (by default,
@@ -120,10 +137,13 @@ CURSOR = string("next_cursor of the previous page, with the same target.", optio
       "number formats, formula text (f), comments, hyperlinks, merged areas. cut says what a "
       "page left out; pass next_cursor back for more.",
       {"doc": string("Document id; not needed for a dataset (d:).", optional=True),
-       "target": string("A cell or range (Stock!A1:H40, Stock!A:C), table or region "
-                        "(t:Products: its data rows), column (t:Products[Price]), row "
-                        "(t:Products/#5, t:Products/SKU-0042) or value; * is every row "
-                        "(t:Products/*/Price); or a dataset (d:by_region), as tables."),
+       "target": string("A cell or range (Stock!A1:H40, Stock!A:C, 'Q3 sales'!$K$83), "
+                        "table or region (t:Products: its data rows), column "
+                        "(t:Products[Price]), row (t:Products/#5, t:Products/SKU-0042) or "
+                        "value; * is every row (t:Products/*/Price); or a dataset "
+                        "(d:by_region), as tables. A cell or range inside one table's data "
+                        "rows reads those whole table rows; held_by names them (null: "
+                        "cells read as themselves)."),
        "formats": boolean("Add format, the number format code. Default false.", optional=True),
        "formulas": boolean("Add f, the formula text. Default false.", optional=True),
        "comments": boolean("Add comment (author, text). Default false.", optional=True),
@@ -137,8 +157,10 @@ CURSOR = string("next_cursor of the previous page, with the same target.", optio
                           "for one value, all, paged.", optional=True),
        "key": string("Column holding target's key (Code for t:Parts/BX-17) if "
                      "several key_candidates; not one to read.", optional=True),
-       "columns": array(string(), "Only these columns of a t: target, in order.",
-                        optional=True),
+       "columns": array(string(), "Only these columns of a t: target (or of the table "
+                        "rows a cell is in), in order.", optional=True),
+       "cells_only": boolean("A cell or range inside a table: read just those cells, as "
+                             "stored, not its table rows. Default false.", optional=True),
        "limit": integer(f"Rows per page. Default 50, at most {READ_ROWS}.", minimum=1,
                         maximum=READ_ROWS, optional=True),
        "max_chars": integer("Characters per page. Default and at most 24000.",
@@ -151,7 +173,8 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
               merges: bool = False, markdown: bool = False, sources: bool = False,
               validations: bool = False, key: str | None = None,
               columns: list[str] | None = None, limit: int | None = None,
-              max_chars: int | None = None, cursor: str | None = None) -> Result:
+              max_chars: int | None = None, cursor: str | None = None,
+              cells_only: bool = False) -> Result:
     """``xlsx_read``'s handler: a workbook's cells, or a dataset's values (see the
     module's notes)."""
     from .derive import read_dataset, workbook_of
@@ -170,6 +193,9 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
                         field="sources")
     workbook = workbook_of(call, doc)
     notes: list[str] = []
+    asked, held = target, _held(workbook, target)
+    if held is not None and not cells_only:
+        target = held.text
     found = _cells(workbook, target, key, columns or None, notes)
     rows_limit = min(limit or call.limits.max_list_items, READ_ROWS)
     chars = min(max_chars or call.limits.max_result_chars, call.limits.max_result_chars)
@@ -185,6 +211,20 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     start_row, start_column = _read_cursor(cursor, found.token, total, width)
 
     data: dict[str, Any] = {"target": found.text}
+    if held is not None:
+        table = replace(held, key=None, position=None, row_range=None).text
+        if not cells_only:
+            data["cells"] = asked
+            if not getattr(workbook, "_rows_for_cells_noted", False):
+                # the first such read in the workbook's session says so, once
+                workbook._rows_for_cells_noted = True
+                notes.append(f"the cell lies in a data row of {table}: its whole table "
+                             "row was read instead of the cell (target, held_by); "
+                             "cells_only: true reads the cell alone")
+        data["held_by"] = {"table": table, "rows": held.text,
+                           "read": "cells" if cells_only else "rows"}
+    elif _on_a_sheet(target):
+        data["held_by"] = None
     if found.sheet is not None:
         data["sheet"] = found.sheet
     data["range"] = found.located(area)
@@ -270,6 +310,26 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
                        next_cursor is not None)
     return Result(summary=summary, data=data, total=total, next_cursor=next_cursor,
                   warnings=notes)
+
+
+def _on_a_sheet(target: str) -> bool:
+    """Whether ``target`` is a sheet's cell or range (what :func:`_held` looks up)."""
+    try:
+        return isinstance(parse_address(target), RangeAddress)
+    except ValueError:
+        return False
+
+
+def _held(workbook: Any, target: str) -> "TableAddress | None":
+    """The table rows a sheet's cell or range lies in (:meth:`Workbook.rows_holding
+    <xlsx_agent.workbook.Workbook.rows_holding>`); ``None`` for any other target, or one
+    the read refuses (it says why)."""
+    if not _on_a_sheet(target):
+        return None
+    try:
+        return workbook.rows_holding(target)
+    except (ValueError, KeyError):
+        return None
 
 
 def cleaned_count(addresses: list[str]) -> dict:

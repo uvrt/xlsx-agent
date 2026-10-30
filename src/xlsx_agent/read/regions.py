@@ -848,6 +848,38 @@ class Regions:
                 out.append((region, region.area))
         return out
 
+    def holding(self, sheet: str, area: Area) -> "tuple[Region, int, int] | None":
+        """The table whose data rows hold every cell of ``area`` on ``sheet``, and the
+        first and last of those rows by position (from 1): a declared table or region
+        first (one over several sheets counts its rows sheet by sheet), then an Excel table
+        (one a declared table replaces is not one).  ``None`` when no one table's data rows
+        hold them all: a cell of a header or totals row, between tables, or a range across
+        a table's edge."""
+        folded = sheet.casefold()
+        for region in [*self._declared.values(), *self.tables]:
+            if region.shape != "rows":
+                continue
+            if region.span is not None:
+                span, before = region.span, 0
+                if area.first.column < span.left or area.last.column > span.right:
+                    continue
+                for part in span.parts:
+                    if part.sheet.casefold() == folded and part.rows \
+                            and part.first <= area.first.row and area.last.row <= part.last:
+                        return (region, before + area.first.row - part.first + 1,
+                                before + area.last.row - part.first + 1)
+                    before += part.rows
+                continue
+            data = region.data
+            if region.sheet.casefold() != folded or data is None:
+                continue
+            if data.first.row <= area.first.row and area.last.row <= data.last.row \
+                    and data.first.column <= area.first.column \
+                    and area.last.column <= data.last.column:
+                return (region, area.first.row - data.first.row + 1,
+                        area.last.row - data.first.row + 1)
+        return None
+
     def withheld(self, sheet: str) -> list[Area]:
         """The cells of ``sheet`` in columns hidden from the model: never shown, never
         searched, read blank (:meth:`Workbook.read <xlsx_agent.workbook.Workbook.read>`).

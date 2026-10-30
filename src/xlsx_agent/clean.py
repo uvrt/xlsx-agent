@@ -1,14 +1,19 @@
-"""Cleaning a declared column's text: a leading label stripped, white space collapsed, a
-cell split into a list -- the caller's rules, applied once, where the table is read.
+"""Cleaning a declared column's text: a leading label stripped, a value captured from the
+text, white space collapsed, a cell split into a list -- the caller's rules, applied once,
+where the table is read.
 
 A declared field (:mod:`xlsx_agent.declare`) takes ``clean``::
 
     {"header": "Owners", "id": "owners",
      "clean": {"strip": r"^Lead:[^;]*;\\s*", "collapse_space": True, "split": ";"}}
 
-so that a cell holding ``"Lead: Robin;  Kim ;Ash"`` reads as ``("Kim", "Ash")``.  The rules
-are the application's configuration, never a model's: no tool takes them, and they cost
-no definition tokens.
+so that a cell holding ``"Lead: Robin;  Kim ;Ash"`` reads as ``("Kim", "Ash")``; and
+``{"header": "Review", "id": "status", "clean": {"extract": r"Status:\\s*(\\S.*)$"}}`` reads
+a narrative ending ``"... Status: Partly done"`` as ``"Partly done"``.  The rules are the
+application's configuration, never a model's: no tool takes them, and they cost no
+definition tokens.  (A model that wants a value out of a text cell asks for the column the
+application declares; a pattern written by a model at call time would be one more thing to
+get wrong in every call, and its cost bound refused mid-task.)
 
 **The rules**, applied in this order, to text values only (a number, a date, a bool, an
 error or a blank is never changed; a formula's cached text is text):
@@ -17,6 +22,14 @@ error or a blank is never changed; a formula's cached text is text):
   (:meth:`re.Pattern.match`: a leading ``^`` changes nothing); what it matches is removed.
   It sees the first :data:`LABEL_WINDOW` characters of a cell, so a label is found within
   them.  A pattern that matches nothing changes nothing.
+* ``extract``: a regular expression with exactly one capture group, **searched** for
+  (:meth:`re.Pattern.search`: anywhere, anchored only as written -- ``$`` is the end of the
+  text, ``^`` its start, ``(?m)`` makes them a line's); the value is the text the group
+  captured, or ``blank`` when the pattern is not found (or the group took no part).  A
+  match starts within the last :data:`EXTRACT_WINDOW` characters of the text (after
+  ``strip``): a status line at the end of a long narrative is found, a value in its middle
+  is not (a pattern anchored with ``^`` finds nothing in a text longer than the window).
+  It is for a value at the end of a cell; ``strip`` is for a label at its start.
 * ``split``: a separator, literal text (``";"``, ``"\\n"``, ``" / "``), not a pattern:
   the text is cut at each, every piece trimmed of white space at its ends, and the empty
   pieces dropped.  The value is then a **list** (type ``list``, a tuple in Python, a list
@@ -39,8 +52,9 @@ counted, with their first addresses, as ``coerced`` cells are: ``cleaned`` in an
 ``describe`` (per column), ``cleaned`` per column in ``xlsx_derive``'s result
 (:attr:`Derived.cleaned <xlsx_agent.derive.Derived.cleaned>`), and a
 :class:`CleanedWarning` in the result of a deck's or document's tool that took the table
-as its ``from``.  A cell read by its address on the sheet (``'Team 1'!C2``) is the cell
-as stored.
+as its ``from``.  A cell read by its address on the sheet with ``xlsx_read``'s
+``cells_only`` (``'Team 1'!C2``; without it, the table's row holding the cell is read) and
+through :meth:`Workbook.read <xlsx_agent.workbook.Workbook.read>` is the cell as stored.
 
 **Lists downstream.**  ``xlsx_query`` and a derive's ``where`` test a list with ``eq``,
 ``in`` and ``contains``, a row passing when any item does, and sort it item by item.
@@ -56,7 +70,9 @@ change in any item is a change of the cell).  ``xlsx_validate_data`` checks a li
 **Bounded** (the patterns are the caller's, and a pattern can backtrack for ever).  A
 pattern is compiled when declared (:func:`parse_clean`), at most :data:`MAX_PATTERN`
 characters, and refused (``bad_pattern``) when its backtracking could grow faster than the
-square of the text it sees: a repeat inside a repeat (``(a+)+``, ``(a?b)*``), an
+square of the text it sees (for ``extract``, which is tried at every place in its window,
+faster than that window's length at each place: no repeat may give characters back, so
+``\\s*(.+)$`` is refused and ``\\s*(\\S.*)$`` taken): a repeat inside a repeat (``(a+)+``, ``(a?b)*``), an
 alternation inside a repeat (``(a|ab)*``), a backreference or a conditional group, more
 than :data:`MAX_LOOSE_REPEATS` repeat that can give characters back to what follows it, or
 alternations whose choices multiply past :data:`MAX_CHOICES`.  A repeat of one character
@@ -66,6 +82,12 @@ back, nor can a repeat that ends the pattern; ``.*;`` and ``\\s*[^;]*`` can.  Wi
 steps, however long its text: the worst form allowed (``^\\s*\\s*x``, on a cell of 32,767
 spaces) took 0.2 ms a cell on Python 3.12 and 0.1 ms on 3.15 (measured 2026-10-13, an
 Intel Core i7-6567U); a declared label (``^Lead:[^;]*;\\s*``) takes about a microsecond.
+An ``extract`` costs at most about the square of its 256-character window: the worst forms
+allowed (``([^;]*);``, ``( *)\\S``, ``(\\s*)$`` on a cell of 32,767 characters) took about
+1 ms a cell on Python 3.12, a label's (``Status:\\s*(\\S.*)$``) about 10 microseconds
+(measured 2026-10-30, the same machine).  A repeat followed only by the end of the text
+(``$``, ``\\Z``) gives back to nothing but that one test, and counts as one at the end; a
+repeat at the end of a group is followed by what follows the group.
 The checks read the pattern as Python's own parser does (:mod:`re._parser`, Python 3.11
 on); a pattern is refused, not guessed at, where that parser is missing.
 
@@ -89,7 +111,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from .read.types import Value
 
 #: The keys a field's ``clean`` takes.
-CLEAN_KEYS = ("strip", "split", "collapse_space")
+CLEAN_KEYS = ("strip", "extract", "split", "collapse_space")
 
 #: The longest ``strip`` pattern (characters).
 MAX_PATTERN = 200
@@ -99,6 +121,9 @@ MAX_SEPARATOR = 10
 
 #: How many characters at the start of a cell a ``strip`` pattern sees.
 LABEL_WINDOW = 256
+
+#: How many characters at the end of a cell an ``extract`` match may start in.
+EXTRACT_WINDOW = 256
 
 #: How many repeats in a pattern may give characters back to what follows them.
 MAX_LOOSE_REPEATS = 1
@@ -128,17 +153,21 @@ class RuleError(ValueError):
 @dataclass(frozen=True)
 class Clean:
     """A column's rules: ``strip`` (a compiled pattern, or ``None``), ``split`` (the
-    separator, or ``None``) and ``collapse_space``.  ``spec`` is the rules as declared."""
+    separator, or ``None``), ``collapse_space`` and ``extract`` (a compiled pattern with
+    one capture group, or ``None``).  ``spec`` is the rules as declared."""
 
     strip: "re.Pattern[str] | None" = None
     split: str | None = None
     collapse_space: bool = False
+    extract: "re.Pattern[str] | None" = None
 
     @property
     def spec(self) -> dict:
         out: dict[str, Any] = {}
         if self.strip is not None:
             out["strip"] = self.strip.pattern
+        if self.extract is not None:
+            out["extract"] = self.extract.pattern
         if self.split is not None:
             out["split"] = self.split
         if self.collapse_space:
@@ -154,6 +183,9 @@ class Clean:
             found = self.strip.match(out, 0, LABEL_WINDOW)
             if found is not None and found.end():
                 out = out[found.end():]
+        if self.extract is not None:
+            found = self.extract.search(out, max(len(out) - EXTRACT_WINDOW, 0))
+            out = (found.group(1) or "") if found is not None else ""
         if self.split is not None:
             items = []
             for piece in out.split(self.split):
@@ -171,14 +203,22 @@ def parse_clean(item: Any) -> Clean:
     """A field's ``clean`` (a mapping of :data:`CLEAN_KEYS`) checked and compiled;
     :class:`RuleError` otherwise."""
     if not isinstance(item, Mapping) or not item:
-        raise RuleError("bad_declaration", "", "clean is a mapping of strip, split and "
-                        "collapse_space")
+        raise RuleError("bad_declaration", "", "clean is a mapping of strip, extract, split "
+                        "and collapse_space")
     for key in item:
         if key not in CLEAN_KEYS:
             raise RuleError("bad_declaration", str(key), "unknown rule")
     strip = None
     if "strip" in item:
         strip = compile_pattern(item["strip"])
+    extract = None
+    if "extract" in item:
+        extract = compile_pattern(item["extract"], key="extract", loose=0)
+        if extract.groups != 1:
+            raise RuleError("bad_pattern", "extract", f"an extract pattern has one capture "
+                            f"group, the text it gives (this one has {extract.groups}): "
+                            r"Status:\s*(\S.*)$; write (?:...) for a group that only "
+                            "groups")
     split = item.get("split")
     if split is not None and not (isinstance(split, str) and split
                                   and len(split) <= MAX_SEPARATOR):
@@ -187,10 +227,10 @@ def parse_clean(item: Any) -> Clean:
     collapse = item.get("collapse_space", False)
     if not isinstance(collapse, bool):
         raise RuleError("bad_declaration", "collapse_space", "true or false")
-    if strip is None and split is None and not collapse:
-        raise RuleError("bad_declaration", "", "clean names no rule: strip, split or "
-                        "collapse_space")
-    return Clean(strip=strip, split=split, collapse_space=collapse)
+    if strip is None and extract is None and split is None and not collapse:
+        raise RuleError("bad_declaration", "", "clean names no rule: strip, extract, split "
+                        "or collapse_space")
+    return Clean(strip=strip, split=split, collapse_space=collapse, extract=extract)
 
 
 def compile_pattern(text: Any, *, key: str = "strip",
@@ -270,19 +310,28 @@ def _check(text: str, pattern: "re.Pattern[str]", key: str = "strip",
 
     _walk(list(parsed), state, folds, inside=False, last=True)
     if state["loose"] > loose:
-        raise RuleError("bad_pattern", key, f"{state['loose']} repeats can give "
-                        "characters back to what follows them (as .* before ; can), and "
-                        f"at most {loose} may: write [^;]*; for .*;")
+        if loose:
+            raise RuleError("bad_pattern", key, f"{state['loose']} repeats can give "
+                            "characters back to what follows them (as .* before ; can), and "
+                            f"at most {loose} may: write [^;]*; for .*;")
+        raise RuleError("bad_pattern", key, "a repeat can give characters back to what "
+                        "follows it (as \\s* before (.+) can), and none may: an extract "
+                        "pattern is tried at every place, so write \\s*(\\S.*)$ for "
+                        "\\s*(.+)$, [^;]*; for .*;")
     if state["choices"] > MAX_CHOICES:
         raise RuleError("bad_pattern", key, f"its alternations combine in more than "
                         f"{MAX_CHOICES} ways")
 
 
-def _walk(items: list, state: dict, folds: bool, *, inside: bool, last: bool) -> None:
+def _walk(items: list, state: dict, folds: bool, *, inside: bool, last: bool,
+          after: "tuple | list" = ()) -> None:
     """Check a sequence of parsed items: ``inside`` a repeat, ``last`` when nothing of the
-    pattern follows the sequence."""
+    pattern follows the sequence (but the end of the text), ``after`` what follows it (a
+    group's sequence is followed by what follows the group)."""
     for n, (op, av) in enumerate(items):
         name = str(op)
+        # nothing but the end of the text (``$``, ``\Z``) follows this item
+        final = last and all(_ends(item) for item in items[n + 1:])
         if name in _REFUSED:
             raise RuleError("bad_pattern", state["key"], "a backreference or conditional group "
                             "makes a pattern's cost unbounded")
@@ -294,7 +343,7 @@ def _walk(items: list, state: dict, folds: bool, *, inside: bool, last: bool) ->
                                 "(a+)+) can take for ever")
             _walk(body, state, folds, inside=high > 1, last=False)
             if high >= 1 and name != "POSSESSIVE_REPEAT" \
-                    and not _tight(body, items[n + 1:], last and n == len(items) - 1, folds):
+                    and not _tight(body, [*items[n + 1:], *after], final, folds):
                 state["loose"] += 1
         elif name == "BRANCH":
             if inside:
@@ -308,12 +357,19 @@ def _walk(items: list, state: dict, folds: bool, *, inside: bool, last: bool) ->
             for choice in choices:
                 _walk(list(choice), state, folds, inside=inside, last=False)
         elif name == "SUBPATTERN":
-            _walk(list(av[3]), state, folds, inside=inside,
-                  last=last and n == len(items) - 1)
+            _walk(list(av[3]), state, folds, inside=inside, last=final,
+                  after=[*items[n + 1:], *after])
         elif name == "ATOMIC_GROUP":
             _walk(list(av), state, folds, inside=inside, last=False)
         elif name in ("ASSERT", "ASSERT_NOT"):
             _walk(list(av[1]), state, folds, inside=inside, last=False)
+
+
+def _ends(item: tuple) -> bool:
+    """Whether a parsed item is an anchor at the end of the text: a repeat before it gives
+    back only to it, a test of one place, so it costs what a repeat at the end does."""
+    op, av = item
+    return str(op) == "AT" and str(av) in ("AT_END", "AT_END_STRING")
 
 
 def _single(body: list) -> bool:
@@ -407,6 +463,6 @@ def _category(av: Any):
     return lambda ch: found.match(ch) is not None
 
 
-__all__ = ["CLEAN_KEYS", "Clean", "CleanedWarning", "LABEL_WINDOW", "MAX_CHOICES",
+__all__ = ["CLEAN_KEYS", "Clean", "CleanedWarning", "EXTRACT_WINDOW", "LABEL_WINDOW", "MAX_CHOICES",
            "MAX_LOOSE_REPEATS", "MAX_PATTERN", "MAX_SEPARATOR", "RuleError", "clean_value",
            "compile_pattern", "looks", "parse_clean"]

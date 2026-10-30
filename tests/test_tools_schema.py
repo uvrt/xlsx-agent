@@ -79,6 +79,14 @@ handler refuses, and its ``range`` described for a workbook alone; ``save_docume
 a document's ``clean`` and ``undo``'s ``scope`` described for a sheet: the core 4,272 ->
 4,122 estimated, about 6,323 -> 6,101 counted by the proxy; every definition 5,013 -> 4,862,
 the guard 5,015 -> 4,865.  None of them is strict on Claude: the strict set is unchanged.
+Round 25, X0 and X1: ``xlsx_read`` reads the table rows a sheet's cell or range lies in
+(``target`` says so, with an example of a cited cell; ``columns`` picks their columns;
+``cells_only``), 593 -> 688; ``xlsx_derive``'s ``join`` (``from``, ``on``, ``columns``, with
+an example), 801 -> 1,045: the core 4,122 -> 4,460 estimated, about 6,101 -> 6,601 counted by
+the proxy; counted online, 6,334 (claude-sonnet-5-5, 2026-10-30; 5,894 before).  The user lets the core grow past 6,500 for a good tool (2026-10-30), so the core's
+offline check is a regression guard from here (:data:`CORE_GUARD`), and the online count is
+the main session's.  Every definition 4,862 -> 5,201, the guard 4,865 -> 5,205.  Neither tool
+is strict on Claude: the strict set is unchanged (``xlsx_set_cells``, 13 optional).
 """
 
 from __future__ import annotations
@@ -97,7 +105,9 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
-ALL_GUARD = 4865
+#: The core's estimate, a regression guard (round 25: past the proxy's budget, by choice).
+CORE_GUARD = 4465
+ALL_GUARD = 5205
 
 
 @pytest.fixture(scope="module")
@@ -172,7 +182,7 @@ def test_find_text_is_sent_without_a_decks_or_documents_parameters(box):
 def test_the_loaded_core_is_within_budget_and_every_definition_within_its_guard(box):
     core = estimate(box.definitions("anthropic", groups="core"))
     every = estimate(box.definitions("anthropic", defer=False))
-    assert core * COUNTED_PER_ESTIMATED <= CORE_COUNTED_BUDGET, core
+    assert core <= CORE_GUARD, core
     assert every <= ALL_GUARD, every
 
 

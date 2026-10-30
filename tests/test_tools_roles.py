@@ -21,7 +21,7 @@ from ooxml_edit.tools.adapters import anthropic_problems, openai_problems
 from xlsx_agent.tools import FORMAT, GROUPS, TOOLS
 
 from build import WorkbookBuilder
-from test_tools_schema import ALL_GUARD, COUNTED_PER_ESTIMATED, CORE_COUNTED_BUDGET, estimate
+from test_tools_schema import ALL_GUARD, CORE_GUARD, estimate
 
 
 @pytest.fixture(scope="module")
@@ -68,7 +68,7 @@ def _name(definition: dict) -> str:
 def test_a_reviewer_s_core_is_the_core_and_within_the_budget(box):
     core = estimate(box.definitions("anthropic", groups="core", roles=["review"]))
     everything = estimate(box.definitions("anthropic", defer=False, roles=["review"]))
-    assert core * COUNTED_PER_ESTIMATED <= CORE_COUNTED_BUDGET, core
+    assert core <= CORE_GUARD, core
     assert everything <= ALL_GUARD, everything
 
 
