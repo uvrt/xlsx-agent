@@ -76,8 +76,11 @@ says so, with the cells (:attr:`Derived.coerced`), and a ``min``, ``max``, ``fir
 ``last`` that is such a cell is given as read (a number; a date as ISO 8601).  With a
 coercion, the column's type is decided with those cells counted as what they read as, so
 that a column of dates all stored as text is a date column (a filter on it compares dates,
-its text cells counted in ``not_compared``).  A percent column's text stays out: its
-stored values are fractions, and text such as ``25`` is not one.
+its text cells counted in ``not_compared``), and a ``group_by`` column of that type groups
+such text by what it reads as (a date by its day, shown as ISO 8601; counted in
+``coerced`` under the column's name), so the derived column is a date column through and
+through.  A percent column's text stays out: its stored values are fractions, and text such
+as ``25`` is not one.
 
 **Lists and cleaned text** (:mod:`xlsx_agent.clean`).  A declared column whose text is
 split is a ``list`` column: ``count`` counts its cells that hold a list (rows, not items:
@@ -97,7 +100,11 @@ dates stored as text (``date_as_text``), the first of them, and that
 Text that is a date only in the locale's day order (``05/01/2026``) is read as one only
 when the workbook is opened with ``local_dates``: the refusal names it
 ``local_date_text``, and no coercion reads it.  ``first`` and ``last`` take a text column
-as it is.
+as it is.  A ``coerce`` that read none of the refused column's values says so
+(``coerce ["date_as_text"] did not apply: none of its values reads as a date``).  A
+dataset derived without ``coerce`` keeps the reading: the ``first`` or ``last`` of dates
+stored as text is a ``text`` column whose ISO dates are ``date_as_text``
+(:func:`xlsx_agent.dataset._typed`), so a derive from it can opt in.
 
 Dates, times and datetimes are measured as :mod:`xlsx_agent.query` compares them: a date
 by its day, a time by its millisecond of the day (an elapsed time, ``PT36H0M0S``, by its
@@ -441,7 +448,8 @@ class Derived:
     column, the rows not grouped by reason (a group or pivot cell without a cached value; a
     bin cell outside the bins or of the wrong type); ``excluded`` per measure (by ``as``),
     the cells left out by reason, each with its first addresses; ``coerced`` per measure
-    (and the bins, by their ``as``), the cells read as numbers by ``coerce``; ``cleaned``
+    (and the bins, by their ``as``, and each ``group_by`` column, by its name), the cells
+    read as numbers or dates by ``coerce``; ``cleaned``
     per column read, the cells a declared rule changed (:mod:`xlsx_agent.clean`), every
     row's, filtered out or not; ``not_compared`` per filtered column, as
     :class:`~xlsx_agent.query.QueryResult` gives it; ``hidden`` the rows used that hold a
@@ -845,8 +853,10 @@ class _Plan:
         """What a refusal of ``fn`` on a ``t`` column adds when the column's text holds
         dates or numbers: the words, the issue and its cells; nothing otherwise.  A
         dataset's ISO dates may be labelled instead, and the words say how."""
-        if t != "text" or not found:
+        if t != "text":
             return "", None, None
+        if not found:
+            found = {}
         wants = {"date_as_text": _MOMENTS, "local_date_text": _MOMENTS,
                  "number_as_text": ("number",)}
         for issue in ("date_as_text", "local_date_text", "number_as_text"):
@@ -864,11 +874,15 @@ class _Plan:
                 words += f", too few to make it a {what[:-1]} column"
             else:
                 words += f": coerce [\"{issue}\"] reads them as {what}"
-            if self.via is not None and issue == "date_as_text" and column is not None \
-                    and issue not in self.coerce:
+            if self.via is not None and not self.via.derived and issue == "date_as_text" \
+                    and column is not None and issue not in self.coerce:
                 words += f", as labelling the dataset's column does (Dataset.from_records(" \
                          f"..., types={{{column!r}: \"date\"}}))"
             return words, issue, cells
+        for issue, what in (("date_as_text", "a date"), ("number_as_text", "a number")):
+            if issue in self.coerce and set(TYPES_BY_FUNCTION[fn]) & set(wants[issue]):
+                return (f". coerce [\"{issue}\"] did not apply: none of its values reads as "
+                        f"{what}"), None, None
         return "", None, None
 
     def run(self) -> "_State":
@@ -1062,6 +1076,7 @@ class _State:
     left_out: dict = field(default_factory=dict)         # column -> reason -> _Counter
     excluded: dict = field(default_factory=dict)         # offset -> reason -> _Counter
     coerced: dict = field(default_factory=dict)          # offset -> _Counter
+    coerced_groups: dict = field(default_factory=dict)   # group offset -> _Counter
     cleaned: dict = field(default_factory=dict)          # offset -> _Counter
     not_compared: dict = field(default_factory=dict)     # column -> _Counter
     hidden: _Counter = field(default_factory=_Counter)
@@ -1158,6 +1173,14 @@ def _second_pass(plan: _Plan) -> _State:
                 leave(column, "no_cached_value" if value.t != "list" else "wrong_type", value)
                 skip = True
                 break
+            t = types[o]
+            if value.t != t and value.issue in plan.coerce:
+                # a coerced column's text is grouped as what it reads as: its date's day
+                used = _use(value, t, plan.coerce, locale, grouping, date1904)
+                if used is not None:
+                    state.coerced_groups.setdefault(o, _Counter()).add(value)
+                    parts.append(((t, used), _shown(value, used, t, date1904)))
+                    continue
             parts.append((_group_key(value, date1904), value.v))
         if skip:
             continue
@@ -1515,6 +1538,9 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
             coerced[m.name] = state.coerced[m.offset].done()
     if bins and "bins" in state.coerced:
         coerced[bins.name] = state.coerced["bins"].done()
+    for column, o in zip(plan.group, plan.group_offsets):
+        if o in state.coerced_groups:
+            coerced[column] = state.coerced_groups[o].done()
 
     totals = {}
     for m in plan.measures:

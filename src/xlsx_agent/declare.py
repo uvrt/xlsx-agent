@@ -63,7 +63,8 @@ session's), and :meth:`Workbook.declare_tables
   name the column is addressed and shown by: ``t:checks[rating]``; its header still
   finds it), ``description`` (shown by ``describe`` and ``xlsx_profile``), ``hidden``
   (``true``: the column is hidden from the model) and ``clean`` (rules for its text: a
-  leading label stripped, white space collapsed, a split into a list --
+  leading label stripped, a value captured from its end (``extract``), white space
+  collapsed, a split into a list --
   ``{"strip": "^Lead:[^;]*;\\s*", "collapse_space": true, "split": ";"}``; see
   :mod:`xlsx_agent.clean`; never on the key column, ``clean_key``, nor on a hidden one).
   Columns not listed keep their header's name.

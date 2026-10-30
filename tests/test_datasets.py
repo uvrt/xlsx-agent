@@ -673,3 +673,76 @@ def test_xlsx_derive_takes_a_python_dataset_of_dates(box):
     read = call(box, session, "xlsx_read", target="d:sites/#1/opened")
     assert read.ok and read.data["rows"] == [[{"a": "d:sites/#1/opened", "v": "2026-03-01",
                                                "t": "date"}]]
+
+
+# -- round 25, X3: dates stored as text through a derived dataset ------------------------------
+
+
+def reviews() -> WorkbookBuilder:
+    """A log whose review dates are stored as text (ISO 8601), two rows for one item."""
+    book = WorkbookBuilder()
+    sheet = book.sheet("Log")
+    sheet.rows("A1", [["Item", "Reviewed"], ["A", "2025-01-03"], ["A", "2025-02-10"],
+                      ["B", "2024-12-01"]])
+    sheet.table("Log", "A1:B4", ["Item", "Reviewed"])
+    return book
+
+
+LAST = {"group_by": ["Item"], "measures": [{"fn": "last", "column": "Reviewed", "as": "latest"},
+                                           {"fn": "count", "as": "n"}]}
+MAX_LATEST = [{"fn": "max", "column": "latest"}]
+
+
+def test_a_derived_text_column_of_iso_dates_keeps_its_date_reading():
+    wb = Workbook.open(reviews().to_bytes())
+    grouped = wb.derive("t:Log", id="g", **LAST)
+    assert grouped.types == {"Item": "text", "latest": "text", "n": "number"}
+    # the dataset's text column still holds dates stored as text: the refusal says so...
+    with pytest.raises(DeriveError) as caught:
+        wb.derive(grouped, measures=MAX_LATEST)
+    error = caught.value
+    assert error.code == "wrong_type" and error.issue == "date_as_text"
+    assert error.cells.count == 2 and error.cells.first[0] == "d:g/#1/latest"
+    assert 'coerce ["date_as_text"] reads them as dates' in str(error)
+    assert "types=" not in str(error)            # a derive's labels are not the caller's
+    # ... and the coerce applies, with the original cells as sources
+    latest = wb.derive(grouped, measures=MAX_LATEST, coerce=["date_as_text"])
+    assert latest.rows == [{"max latest": "2025-02-10"}]
+    assert latest.coerced["max latest"].count == 2
+    assert [str(s) for s in latest.provenance[0]["max latest"].sources] == [
+        "t:Log/{2025-01-03,2025-02-10,2024-12-01}/Reviewed"]     # every cell compared
+
+
+def test_coerced_first_and_group_by_keep_the_date_type():
+    wb = Workbook.open(reviews().to_bytes())
+    grouped = wb.derive("t:Log", id="g", coerce=["date_as_text"], **LAST)
+    assert grouped.types["latest"] == "date"
+    assert wb.derive(grouped, measures=MAX_LATEST).rows == [{"max latest": "2025-02-10"}]
+    by_day = wb.derive("t:Log", group_by=["Reviewed"], coerce=["date_as_text"])
+    assert by_day.types["Reviewed"] == "date"
+    assert [r["Reviewed"] for r in by_day.rows] == ["2025-01-03", "2025-02-10", "2024-12-01"]
+    assert by_day.coerced["Reviewed"].count == 3
+    data = by_day.dataset()
+    assert DatasetTable(data).value(1, 0).t == "date"
+
+
+def test_a_coerce_that_reads_nothing_says_it_did_not_apply():
+    wb = Workbook.open(reviews().to_bytes())
+    with pytest.raises(DeriveError) as caught:
+        wb.derive("t:Log", measures=[{"fn": "max", "column": "Item"}], coerce=["date_as_text"])
+    assert 'coerce ["date_as_text"] did not apply: none of its values reads as a date' \
+        in str(caught.value)
+    assert caught.value.issue is None
+
+
+def test_xlsx_derive_from_a_derived_dataset_takes_date_as_text(box):
+    session = _session(box, reviews())
+    first = call(box, session, "xlsx_derive", doc="d1", **{"from": "t:Log"}, id="g", **LAST)
+    assert first.ok and first.data["types"]["latest"] == "text"
+    refused = call(box, session, "xlsx_derive", **{"from": "d:g"}, id="m", measures=MAX_LATEST)
+    assert not refused.ok and 'coerce ["date_as_text"]' in err(refused)["message"]
+    taken = call(box, session, "xlsx_derive", **{"from": "d:g"}, id="m", measures=MAX_LATEST,
+                 coerce=["date_as_text"])
+    assert taken.ok, taken.error
+    assert taken.data["rows"][0][0]["v"] == "2025-02-10"
+    assert taken.data["types"] == {"max latest": "date"}

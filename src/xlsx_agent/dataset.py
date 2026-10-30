@@ -36,8 +36,9 @@ dataset never does.
 other: its columns are typed by their values (a column's label first, so a date column's
 ISO text is a date), and filters, groups, measures, bins, pivots and sorts work as on a
 sheet.  A Python ``date``, ``datetime`` or ``time`` is that type with no label, read as
-ISO 8601 text as a cell's date is; ISO text in an unlabelled column is text, flagged
-``date_as_text`` as a cell's would be, so a ``min`` on it is refused with the way out --
+ISO 8601 text as a cell's date is; ISO text in an unlabelled column (or a derive's ``text``
+column: a ``first`` or ``last`` of dates stored as text keeps that reading) is text,
+flagged ``date_as_text`` as a cell's would be, so a ``min`` on it is refused with the way out --
 the ``date`` label (:meth:`Dataset.from_records <ooxml_edit.tools.Dataset.from_records>`
 ``types=``) or ``coerce=["date_as_text"]``.  The labels a dataset's columns take are
 ooxml-edit's ``TYPE_LABELS``: ``number``, ``percent``, ``date``, ``time``, ``datetime``,
@@ -169,6 +170,8 @@ class DatasetTable:
         self.columns = dataset.columns
         self.keys = dataset.keys
         self.date1904 = bool(getattr(derived, "date1904", False))
+        #: Whether its labels are a derive's (the types most values had), not a caller's.
+        self.derived = derived is not None
         labels = dataset.types or (None,) * len(self.columns)
         self.labels = tuple(label if label in TYPES else None for label in labels)
         measured = dataset.rows
@@ -206,7 +209,7 @@ class DatasetTable:
         reported, or ``measured`` (unrounded); with its first ``sources`` cells when
         given."""
         rows = self.measured if measured else self.dataset.rows
-        v, t, issue = _typed(rows[position - 1][offset], self.labels[offset])
+        v, t, issue = _typed(rows[position - 1][offset], self.labels[offset], self.derived)
         out = DatasetValue(sheet="", row=position, column=offset + 1, v=v, t=t,
                            issue=issue, dataset=self.id, name=self.columns[offset])
         if sources is not None:
@@ -545,13 +548,18 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
                    types=types, detail=detail, cache=cache or None)
 
 
-def _typed(v: Any, label: str | None) -> tuple[Any, str, str | None]:
+def _typed(v: Any, label: str | None, derived: bool = False
+           ) -> tuple[Any, str, str | None]:
     """A dataset value as a cell's would be read: its value, its type and its issue
     (:func:`_type`).  A Python ``datetime``, ``date`` or ``time`` is that type without a
     label, its value ISO 8601 text as a cell's (``2026-03-01``, ``14:05:00``,
     ``2026-03-01T14:05:00``; to the millisecond, the wall-clock time of an aware one).
     ISO 8601 text in an unlabelled column stays text, flagged ``date_as_text`` as a cell's
-    would be: ``coerce=["date_as_text"]`` reads it as a date, as a ``date`` label does."""
+    would be: ``coerce=["date_as_text"]`` reads it as a date, as a ``date`` label does.  So
+    does such text in a ``text`` column of a ``derived`` dataset (a :class:`Derived`'s:
+    there the label is only the type most of the column's cells had, so the ``first`` or
+    ``last`` of dates stored as text keeps that reading); a caller's own ``text`` label is
+    taken at its word."""
     if isinstance(v, _dt.datetime):
         ms = round(v.microsecond / 1000)
         day = v.replace(tzinfo=None, microsecond=0) + _dt.timedelta(milliseconds=ms)
@@ -565,7 +573,8 @@ def _typed(v: Any, label: str | None) -> tuple[Any, str, str | None]:
         return _clock(min(clock, _MS_PER_DAY - 1)), "time", None
     t = _type(v, label)
     issue = None
-    if t == "text" and label is None and isinstance(v, str) and looks_like_date(v):
+    if t == "text" and (label is None or derived and label == "text") \
+            and isinstance(v, str) and looks_like_date(v):
         issue = "date_as_text"
     return v, t, issue
 
