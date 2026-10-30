@@ -942,7 +942,7 @@ class Workbook:
     def derive(self, from_: "str | TableAddress | Region | Derived | Dataset", *, where=None,
                group_by=None, measures=None, bins=None, pivot=None, sort=None,
                top: int | None = None, round: "int | dict[str, int] | None" = None, coerce=None,
-               id: str | None = None, join=None) -> Derived:
+               id: str | None = None, join=None, pivot_values=None) -> Derived:
         """Figures from a table, name or region (``t:Products``), computed here, each with
         the cells it came from: ``where`` (:mod:`xlsx_agent.query`'s filters), ``group_by``
         (column names), ``measures`` (``[{"fn": "mean", "column": "Price", "as":
@@ -956,10 +956,13 @@ class Workbook:
         the original cells (:mod:`xlsx_agent.dataset`).  ``join`` (``{"from": "t:Issues",
         "on": ["Ref", "Items"], "columns": ["Issue"]}``) first adds another table's or
         dataset's columns to each row, by key (:mod:`xlsx_agent.join`); without
-        ``group_by``, ``measures``, ``bins`` or ``pivot`` the joined rows are the result."""
+        ``group_by``, ``measures``, ``bins`` or ``pivot`` the joined rows are the result.
+        ``pivot_values`` (``["Open", "Closed"]``) gives the pivot one column per listed value,
+        in that order, rows or none; rows of other values are left out and named in
+        ``pivot_unlisted``."""
         return derive(self, from_, where=where, group_by=group_by, measures=measures,
                       bins=bins, pivot=pivot, sort=sort, top=top, round=round,
-                      coerce=coerce, id=id, join=join)
+                      coerce=coerce, id=id, join=join, pivot_values=pivot_values)
 
     # -- comparing -------------------------------------------------------------------------
 

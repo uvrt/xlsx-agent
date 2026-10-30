@@ -377,7 +377,7 @@ by_category.source_key                   # 'SKU'
 ```
 
 The measures are `count`, `sum`, `mean`, `median`, `min`, `max`, `first`, `last`, `share`
-and `distinct`, with `where`, `bins`, `pivot`, `sort` and `top`. `min` and `max` take dates
+and `distinct`, with `where`, `bins`, `pivot` (and `pivot_values`, below), `sort` and `top`. `min` and `max` take dates
 and give a date; `first` and `last` take any column and give the value of the first and
 last row used, in the table's order. Sums are `math.fsum`; rounding is half away from zero
 on the reported value only. Blanks, errors, numbers and dates stored as text and formulas
@@ -386,6 +386,20 @@ without a cached value are left out of a measure and counted by reason
 not take it is refused (`DeriveError`) before anything is computed; when the column is text
 holding dates or numbers stored as text, the refusal says how many, names the first cell
 and the `coerce` that reads them (`error.issue`, `error.cells`).
+
+A pivot's columns can be listed (`pivot_values`): one per value, in that order, rows or
+none -- `count` 0 where none occur, every other measure `None` (a sum of nothing is not 0).
+The values are written as filter values are and matched as `group_by` groups, by type and
+value (in a number column `"5"` is the number 5, never the text `"5"`). The values present
+but not listed are no columns: their rows are left out (`left_out`, `not_listed`), and
+each is named with its row count:
+
+```python
+ds = wb.derive("t:Sales", group_by=["Paid"], pivot="Region",
+               pivot_values=["West", "Central"])
+ds.rows             # [{'Paid': False, 'West': 1, 'Central': 0}, {'Paid': True, 'West': 1, 'Central': 0}]
+ds.pivot_unlisted   # [{'name': 'North', 'v': 'North', 't': 'text', 'rows': 4}, ...]
+```
 
 A derived result is a dataset, read back by address and derived from again -- its sources
 stay the original cells:

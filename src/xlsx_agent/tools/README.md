@@ -237,6 +237,14 @@ text stay that in the dataset (`date_as_text`), so a derive from it takes `coerc
 `coerce` that read nothing says it did not apply. `xlsx_profile` gives
 the range of a column's dates stored as text (`date_text`) beside its flag.
 
+**A pivot's columns, listed** (round 27). `xlsx_derive`'s `pivot_values` --
+`{"pivot": "Status", "pivot_values": ["Open", "Held", "Closed"]}` -- gives one column per
+listed value, in that order, rows or none: `count` 0 where none occur, every other measure
+blank (a sum of nothing is not 0). Values are written as filter values are and matched as
+`group_by` groups, by type and value (in a number column `"5"` is the number 5, not the
+text `"5"`). Values present but not listed are no columns: their rows are left out
+(`left_out`, `not_listed`) and each value is named in `pivot_unlisted` with its row count.
+
 **Joins** (round 25). `xlsx_derive`'s `join` --
 `{"from": "t:Issues", "on": ["Ref", "Items"], "columns": ["Issue"]}` -- adds another table's
 or dataset's columns to each row of `from`, by key, before `where`, the groups, the measures,

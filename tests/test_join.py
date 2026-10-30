@@ -150,6 +150,19 @@ def test_the_rows_sort_and_top_and_round_is_refused(wb):
     assert caught.value.code == "bad_round"
 
 
+def test_a_joined_column_pivots_on_listed_values(wb):
+    """Round 27, X6: pivot_values on a joined column; alone, refused as without a join."""
+    owners = {"from": "t:Owners", "on": ["Ref", "Item"]}
+    ds = wb.derive("t:Items", join=owners, pivot="Owner", pivot_values=["Kim", "Lee"],
+                   measures=[{"fn": "sum", "column": "Weight", "as": "w"}])
+    assert ds.rows == [{"Kim": 1, "Lee": None}]
+    assert {u["name"]: u["rows"] for u in ds.pivot_unlisted} == {"Ash": 1, "(blank)": 2}
+    assert ds.joined is not None
+    with pytest.raises(DeriveError) as caught:
+        wb.derive("t:Items", join=owners, pivot_values=["Kim"])
+    assert (caught.value.code, caught.value.field) == ("bad_pivot", "pivot_values")
+
+
 def test_too_many_rows_are_refused_with_the_way_out():
     big = WorkbookBuilder()
     sheet = big.sheet("Log")

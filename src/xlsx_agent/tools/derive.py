@@ -5,7 +5,8 @@ of ``xlsx_read`` (ROADMAP.md, "Tools"; "Design rules", 1 and 2).  Both in the lo
 workbook ``doc``, or on a dataset (``d:``; no ``doc`` needed): ``where`` and ``sort`` as
 ``xlsx_query`` writes them (``sort`` by the result's columns: a ``group_by`` column, a
 bin's or a measure's ``as``; never an input column a measure reads), ``group_by``, ``measures``, ``bins`` (edges as filter values
-are written), ``pivot``, ``top``, ``round`` and ``coerce``.  The result is kept in the
+are written), ``pivot`` (with ``pivot_values``, its columns listed in order: round 27, X6),
+``top``, ``round`` and ``coerce``.  The result is kept in the
 session as ``d:<id>`` (:meth:`Call.define_dataset <ooxml_edit.tools.Call.define_dataset>`:
 the :class:`~ooxml_edit.tools.Dataset` of :func:`xlsx_agent.dataset.as_dataset`, the
 :class:`~xlsx_agent.derive.Derived` as its detail, each value's sources as range text).  A
@@ -24,7 +25,8 @@ What the result gives: the dataset's id and source, its columns, types and key c
 the rounding, the counts (``matched``, ``used``, ``groups``), what was left out and why
 (``excluded`` per measure, ``left_out`` per column, by reason, with first addresses),
 ``coerced``, ``not_compared``, ``hidden``, the ``totals`` shares are fractions of, the
-``pivot_columns``, ``cache`` (the formula cells read, by cache status and ``external``:
+``pivot_columns`` (and ``pivot_unlisted``: the values not in ``pivot_values``, with their
+row counts), ``cache`` (the formula cells read, by cache status and ``external``:
 a result computed from ``invalidated`` caches is a stale dataset from the start, and the
 toolbox warns); and its first rows, each value typed with its address
 (``d:by_region/#2/total``) and its sources -- by key when the table has a key column
@@ -128,6 +130,9 @@ def _about(entry: Any) -> dict[str, Any]:
                    "Group by ranges of a number or date column: [a, b), the last [a, b].",
                    optional=True),
        "pivot": string("A column whose values become columns.", optional=True),
+       "pivot_values": array(string(), "pivot's columns, in this order, rows or none (count "
+                             "0, others blank); as filter values are written. Other values: "
+                             "rows left out, named in pivot_unlisted.", optional=True),
        "sort": SORT,
        "top": integer("Keep the first rows after sorting.", minimum=1, maximum=MAX_ROWS,
                       optional=True),
@@ -196,7 +201,7 @@ def _options(arguments: dict[str, Any]) -> dict[str, Any]:
             out[name] = [clean(item) for item in arguments[name]]
     if arguments.get("bins") is not None:
         out["bins"] = clean(arguments["bins"])
-    for name in ("group_by", "pivot", "top", "round", "coerce"):
+    for name in ("group_by", "pivot", "pivot_values", "top", "round", "coerce"):
         if arguments.get(name) is not None:
             out[name] = arguments[name]
     if arguments.get("join") is not None:
@@ -236,6 +241,8 @@ def _derived_result(call: Any, name: str, derived: Any, table: DatasetTable) -> 
         data["hidden"] = derived.hidden.as_dict()
     if derived.pivot_columns:
         data["pivot_columns"] = {k: dict(v) for k, v in derived.pivot_columns.items()}
+    if derived.pivot_unlisted:
+        data["pivot_unlisted"] = [dict(u) for u in derived.pivot_unlisted]
     if derived.totals:
         data["totals"] = {k: _shown(t.as_dict()) for k, t in derived.totals.items()}
     if derived.cache:
@@ -246,7 +253,7 @@ def _derived_result(call: Any, name: str, derived: Any, table: DatasetTable) -> 
     cut: dict[str, Any] = {}
     chars = call.limits.max_result_chars
     # what is about the dataset, not its rows, may take half the page at most
-    for key in ("pivot_columns", "types", "columns"):
+    for key in ("pivot_unlisted", "pivot_columns", "types", "columns"):
         if _size(data) <= chars // 2 or key not in data:
             continue
         cut[key] = len(data.pop(key))

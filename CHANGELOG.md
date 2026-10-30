@@ -5,6 +5,39 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## 0.1.10 (2026-10-30) -- a pivot's columns, listed
+
+Production round 27, X6. One tool parameter added (`xlsx_derive`'s `pivot_values`).
+
+- **Listed pivot values** (`xlsx_agent.derive`; `Workbook.derive(..., pivot_values=[...])`,
+  `xlsx_derive`'s `pivot_values`). One column (per measure) for each listed value, in the
+  order listed, whether any row holds it or not: a report's fixed columns. A value without
+  rows has what a measure of no values has: `count` and `distinct` 0, every other measure
+  blank (`None`): a sum, mean, min or max of nothing is not 0, so 0 would be a false
+  figure. The values are written as filter values are and read as values of the pivot
+  column's type, then matched as `group_by` groups, by type and value: in a number column
+  `"5"`, `5` and `5.0` are the number 5, matching cells holding 5 and never the text
+  `"5"`; in a text column `"5"` is that text, exactly; a date is its day; `"true"` a bool.
+  A value not of the column's type is refused (`wrong_type`), one listed twice (as the
+  column reads it) `bad_pivot`, as is `pivot_values` without `pivot`, empty, or longer
+  than 100.
+- **Values present but not listed** are not columns (there is no option to append them:
+  list them, or leave `pivot_values` out). Their rows are left out and counted in
+  `left_out` under the pivot column (`not_listed`, a new reason, with the first cells), and
+  each value is named in `pivot_unlisted` (`{name, v, t, rows}`, the name its column would
+  have, in the order first met; at most 100 values, `left_out` counting every row). A
+  blank, and a cell of another type than the column's (the text `"5"` in a number column),
+  is such a value. A group whose rows all hold unlisted values is no result row, as with
+  rows outside the bins.
+- **A coerced pivot column** reads its text as a `group_by` column does: with
+  `coerce: ["date_as_text"]` a date stored as text in a date column is its date, matching a
+  listed date and counted in `coerced` under the pivot column. This applies to `pivot`
+  without `pivot_values` too (before, a pivot read such text as text).
+- Works on derived fields (`from_field`), joined columns and datasets, and composes with
+  `sort` (by a listed value's column), `top` and `round`.
+- Tokens (offline proxy): `xlsx_derive` 1,045 -> 1,110, the core 4,460 -> 4,525, every
+  definition 5,201 -> 5,266. `xlsx_derive` is not strict; the strict set is unchanged.
+
 ## 0.1.9 (2026-10-30) -- a value read out of a column, beside it
 
 Production round 26, X4 and X5. No tool definition changes: both are declarations, the
