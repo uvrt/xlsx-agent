@@ -86,8 +86,8 @@ that a column of dates all stored as text is a date column (a filter on it compa
 its text cells counted in ``not_compared``), and a ``group_by`` column of that type groups
 such text by what it reads as (a date by its day, shown as ISO 8601; counted in
 ``coerced`` under the column's name), so the derived column is a date column through and
-through; a ``pivot`` column of that type alike (round 27, X6).  A percent column's text stays out: its stored values are fractions, and text such
-as ``25`` is not one.
+through; a ``pivot`` column of that type alike (round 27, X6).  A percent column's text
+stays out: its stored values are fractions, and text such as ``25`` is not one.
 
 **Lists and cleaned text** (:mod:`xlsx_agent.clean`).  A declared column whose text is
 split is a ``list`` column: ``count`` counts its cells that hold a list (rows, not items:
@@ -218,8 +218,9 @@ numbers), and only for ``median`` its numbers and for ``distinct`` its keys.  So
 memory is bounded by the groups when a group's rows are consecutive; when they
 interleave, the runs grow with the rows (16 bytes a run), up to :data:`MAX_RUNS`.  The
 limits refuse with :class:`DeriveError`: :data:`MAX_GROUPS` groups (``too_many_groups``),
-:data:`MAX_PIVOT_VALUES` pivot values (``too_many_columns``; listed, ``bad_pivot``), :data:`MAX_ROWS` rows after
-``top`` (``too_many_rows``) and :data:`MAX_CELLS` values (``too_many_cells``),
+:data:`MAX_PIVOT_VALUES` pivot values (``too_many_columns``; listed, ``bad_pivot``),
+:data:`MAX_ROWS` rows after ``top`` (``too_many_rows``) and :data:`MAX_CELLS` values
+(``too_many_cells``),
 :data:`MAX_RUNS` runs of sources (``too_many_sources``), :data:`MAX_KEPT` numbers kept for
 medians and keys for distinct counts (``too_many_values``).
 
@@ -489,8 +490,8 @@ class Derived:
     :class:`~xlsx_agent.query.QueryResult` gives it; ``hidden`` the rows used that hold a
     hidden cell among the columns read; ``totals`` per ``share`` measure, its total;
     ``pivot_columns`` per pivoted column, its measure and pivot value; ``pivot_unlisted``
-    the values present but not in ``pivot_values``, each ``{name, v, t, rows}``; ``date1904`` the
-    date system its dates are in (its source's); ``source_key`` the key column its
+    the values present but not in ``pivot_values``, each ``{name, v, t, rows}``;
+    ``date1904`` the date system its dates are in (its source's); ``source_key`` the key column its
     sources are written by (``None``: as ranges; see the module's notes); ``cache`` the
     formula cells read (every row's, in every column the derive reads), counted by their
     cache status (``cached_unverified``, ``invalidated``, ``absent``) and ``external``
