@@ -398,7 +398,7 @@ each is named with its row count:
 ds = wb.derive("t:Sales", group_by=["Paid"], pivot="Region",
                pivot_values=["West", "Central"])
 ds.rows
-# [{'Paid': False, 'West': 1, 'Central': 0}, {'Paid': True, 'West': 1, 'Central': 0}]
+# [{'Paid': True, 'West': 1, 'Central': 0}, {'Paid': False, 'West': 1, 'Central': 0}]
 ds.pivot_unlisted   # [{'name': 'North', 'v': 'North', 't': 'text', 'rows': 4}, ...]
 ```
 

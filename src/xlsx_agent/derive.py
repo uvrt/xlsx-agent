@@ -193,11 +193,13 @@ out, counted in :attr:`Derived.left_out` under the pivot column (``not_listed``,
 first cells), and each such value is named in :attr:`Derived.pivot_unlisted` (``name``, as
 its column would be named, ``v``, ``t`` and its ``rows``, in the order first met; at most
 :data:`MAX_PIVOT_VALUES` of them, ``left_out`` counting every row).  There is no option to
-add them as columns: list them, or pivot without ``pivot_values``.  A group whose rows all
-hold unlisted values is not a result row, as a group whose rows lie outside the bins is
-not.  A blank cell is not a value that can be listed (it is left out, ``(blank)``), and
-neither is a cell of another type than the column's (the text ``"5"`` in a number column:
-named with its ``t``).  With ``coerce``, the pivot's text is read as ``group_by``'s is, so a
+add them as columns: list them, or pivot without ``pivot_values``.  The columns are fixed by
+the list and the rows by ``group_by``: a group whose rows all hold unlisted values is still
+a row, every cell of it empty (``count`` 0, the others blank), its key's sources none (the
+rows used), its rows counted as above.  (Bins differ: a row outside them has no bin.)  A
+blank cell is not a value that can be listed (it is left out, ``(blank)``), and neither is
+a cell of another type than the column's (the text ``"5"`` in a number column: named with
+its ``t``).  With ``coerce``, the pivot's text is read as ``group_by``'s is, so a
 listed date matches a date stored as text too.
 
 **Sort and top.**  ``sort`` is a list of output columns, each ``"name"`` (ascending) or
@@ -1414,6 +1416,7 @@ def _second_pass(plan: _Plan) -> _State:
                 continue
             index = min(bisect.bisect_right(edges, key) - 1, len(edges) - 2)
         pivot_key = None
+        unlisted = False        # a row of a value not in pivot_values: its group, no cell
         if plan.pivot is not None and plan.pivot_offset is not None:
             value = row[plan.pivot_offset - left]
             if value.issue == "no_cached_value" or value.t == "list":
@@ -1439,7 +1442,7 @@ def _second_pass(plan: _Plan) -> _State:
                         found[2] += 1
                     elif len(state.unlisted) < MAX_PIVOT_VALUES:
                         state.unlisted[pivot_key] = [shown, pivot_key[0], 1]
-                    continue
+                    unlisted = True
             elif pivot_key not in state.pivots:
                 if len(state.pivots) >= MAX_PIVOT_VALUES:
                     raise DeriveError("too_many_columns", f"{plan.pivot} holds more than "
@@ -1447,12 +1450,13 @@ def _second_pass(plan: _Plan) -> _State:
                                       "(where) or group by it instead", field="pivot",
                                       column=plan.pivot)
                 state.pivots[pivot_key] = (shown, pivot_key[0])
-        state.used += 1
-        for o in read:
-            value = row[o - left]
-            if value.hidden:
-                state.hidden.add(value)
-                break
+        if not unlisted:
+            state.used += 1
+            for o in read:
+                value = row[o - left]
+                if value.hidden:
+                    state.hidden.add(value)
+                    break
         group_key = tuple(k for k, _ in parts)
         key = (group_key, index)
         group = state.groups.get(key)
@@ -1465,6 +1469,10 @@ def _second_pass(plan: _Plan) -> _State:
             if group_key not in state.met:
                 state.met.add(group_key)
                 state.order.append(group_key)
+        if unlisted:
+            # the listed columns are fixed, and so are the groups: a group of unlisted
+            # values only is a row of empty cells (its rows left out, counted)
+            continue
         runs(group.runs.add(number))
         group.count += 1
         cell = group.cells.get(pivot_key)

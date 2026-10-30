@@ -292,7 +292,7 @@ def test_xlsx_derive_lists_pivot_values_and_names_the_others(box):
     assert result.ok, result.error
     data = result.data
     assert data["columns"] == ["Paid", "West", "Central"]
-    assert [[v["v"] for v in row] for row in data["rows"]] == [[False, 1, 0], [True, 1, 0]]
+    assert [[v["v"] for v in row] for row in data["rows"]] == [[True, 1, 0], [False, 1, 0]]
     assert data["pivot_unlisted"] == [{"name": "North", "v": "North", "t": "text", "rows": 4},
                                       {"name": "South", "v": "South", "t": "text", "rows": 4},
                                       {"name": "East", "v": "East", "t": "text", "rows": 2}]

@@ -1149,7 +1149,8 @@ and the seven open codes. No tool definition changes.
 and `distinct` 0, every other measure blank: 0 would claim a sum of nothing). Listed values
 are written as filter values and matched by type and value as `group_by` groups; values
 present but not listed are left out (`not_listed`) and named with their row counts in
-`pivot_unlisted`, never silently dropped and never appended as columns. A coerced pivot
+`pivot_unlisted`, never silently dropped and never appended as columns; a group of
+unlisted values only is still a row, its cells empty. A coerced pivot
 column reads its text as `group_by` does. Budget: `xlsx_derive` 1,045 -> 1,110, the core
 4,460 -> 4,525 estimated (about 6,430 counted online at the measured ratio); every
 definition 5,201 -> 5,266; the strict set unchanged.

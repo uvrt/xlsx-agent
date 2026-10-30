@@ -27,8 +27,10 @@ Production round 27, X6. One tool parameter added (`xlsx_derive`'s `pivot_values
   each value is named in `pivot_unlisted` (`{name, v, t, rows}`, the name its column would
   have, in the order first met; at most 100 values, `left_out` counting every row). A
   blank, and a cell of another type than the column's (the text `"5"` in a number column),
-  is such a value. A group whose rows all hold unlisted values is no result row, as with
-  rows outside the bins.
+  is such a value. The columns are fixed by the list and the rows by `group_by`: a group
+  whose rows all hold unlisted values is still a row, its cells empty (`count` 0, the others
+  blank), its rows counted as left out. (Bins keep their behaviour: a row outside them has
+  no bin.)
 - **A coerced pivot column** reads its text as a `group_by` column does: with
   `coerce: ["date_as_text"]` a date stored as text in a date column is its date, matching a
   listed date and counted in `coerced` under the pivot column. This applies to `pivot`

@@ -961,10 +961,28 @@ def test_pivot_values_give_one_column_per_listed_value_in_order(wb):
         every.as_dict()
 
 
-def test_a_group_whose_rows_hold_only_unlisted_values_is_no_row(wb):
-    ds = wb.derive("t:Sales", group_by=["Region"], pivot="Rep", pivot_values=["Ann", "Cy"])
-    assert ds.rows == [{"Region": "North", "Ann": 2, "Cy": 0},
-                       {"Region": "South", "Ann": 0, "Cy": 2}]
+def test_a_group_whose_rows_hold_only_unlisted_values_is_still_a_row(wb):
+    """The columns are the list, the rows the groups: a group of unlisted values only is a
+    row of empty cells, its rows counted as left out."""
+    ds = wb.derive("t:Sales", group_by=["Region"], pivot="Rep", pivot_values=["Ann", "Cy"],
+                   measures=[{"fn": "count", "as": "n"},
+                             {"fn": "distinct", "column": "Day", "as": "days"},
+                             {"fn": "sum", "column": "Rate", "as": "rate"}])
+    assert [(r["Region"], r["Ann n"], r["Cy n"]) for r in ds.rows] == [
+        ("North", 2, 0), ("South", 0, 2), ("East", 0, 0), ("West", 0, 0)]
+    assert ds.rows[2] == {"Region": "East", "Ann n": 0, "Ann days": 0, "Ann rate": None,
+                          "Cy n": 0, "Cy days": 0, "Cy rate": None}
+    assert ds.groups == 4 and (ds.matched, ds.used) == (12, 4)
+    assert ds.provenance[2]["Region"].count == 0          # its key's sources: the rows used
+    assert ds.left_out["Rep"]["not_listed"].count == 8
+    # sorted and cut as any row
+    top = wb.derive("t:Sales", group_by=["Region"], pivot="Rep", pivot_values=["Ann", "Cy"],
+                    sort=[("Cy", "desc"), "Region"], top=3)
+    assert [r["Region"] for r in top.rows] == ["South", "East", "North"]
+    # bins keep theirs: a row outside every bin has no bin, and its group no row
+    binned = wb.derive("t:Sales", bins={"column": "Rate", "edges": [0, 0.2]}, group_by=["Region"],
+                       pivot="Paid", pivot_values=["true"])
+    assert [r["Region"] for r in binned.rows] == ["North", "South"]   # not East, West
     assert {u["name"]: u["rows"] for u in ds.pivot_unlisted} == {"Bob": 2, "Dee": 2,
                                                                   "Eve": 2, "Fay": 2}
     # without a group, one row, even when no row holds a listed value

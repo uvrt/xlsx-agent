@@ -243,7 +243,8 @@ listed value, in that order, rows or none: `count` 0 where none occur, every oth
 blank (a sum of nothing is not 0). Values are written as filter values are and matched as
 `group_by` groups, by type and value (in a number column `"5"` is the number 5, not the
 text `"5"`). Values present but not listed are no columns: their rows are left out
-(`left_out`, `not_listed`) and each value is named in `pivot_unlisted` with its row count.
+(`left_out`, `not_listed`) and each value is named in `pivot_unlisted` with its row count;
+a group holding only such values is still a row, its cells empty.
 
 **Joins** (round 25). `xlsx_derive`'s `join` --
 `{"from": "t:Issues", "on": ["Ref", "Items"], "columns": ["Issue"]}` -- adds another table's
