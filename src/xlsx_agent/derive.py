@@ -312,7 +312,8 @@ class _Keyed:
     """A keyed table's rows by key, for sources written by key: ``whole`` the table's
     address, ``keys`` each data row's key by position (from the first data row),
     ``first_row`` the first data row's sheet row, ``columns`` the region's column names
-    from its ``first_column``, ``column`` the key column's name."""
+    from its ``first_column`` (for a field derived from another, the column it reads: its
+    cells are that column's), ``column`` the key column's name."""
 
     __slots__ = ("whole", "keys", "first_row", "first_column", "columns", "column")
 
@@ -323,7 +324,9 @@ class _Keyed:
         self.first_row = region.data.first.row
 
         self.first_column = region.area.first.column
-        self.columns = region.columns
+        # A field derived from another is that column's cells: its sources name that one.
+        self.columns = tuple(source or name for name, source in
+                             zip(region.columns, region.derived or (None,) * len(region.columns)))
         self.column = index.column
 
     def address(self, column: int, runs: Sequence[int]) -> "TableAddress | None":

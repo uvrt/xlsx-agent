@@ -280,7 +280,9 @@ def _areas(workbook: "Workbook", policy: WritePolicy) -> dict[str, list[Area]]:
             raise PolicyError(f"{path}.table", f"{entry.table} is no table, name or region "
                               "of the workbook", valid_options=workbook.regions.known()[:50]
                               ) from None
-        columns = entry.columns if entry.columns is not None else region.columns
+        derived = region.derived or (None,) * len(region.columns)
+        columns = entry.columns if entry.columns is not None else \
+            [c for c, source in zip(region.columns, derived) if source is None]
         own: list[int] = []
         for m, column in enumerate(columns):
             try:
@@ -288,6 +290,11 @@ def _areas(workbook: "Workbook", policy: WritePolicy) -> dict[str, list[Area]]:
             except NameNotFound:
                 raise PolicyError(f"{path}.columns[{m}]", f"{entry.table} has no column "
                                   f"{column!r}", valid_options=list(region.columns)) from None
+            source = derived[own[-1]]
+            if source is not None:
+                raise PolicyError(f"{path}.columns[{m}]", f"{column!r} is read from column "
+                                  f"{source!r} by the table's own rules, and is never "
+                                  f"written: name {source!r}", valid_options=[source])
         data = region.data
         for index in own:
             at = region.area.first.column + index

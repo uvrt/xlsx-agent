@@ -90,6 +90,7 @@ from __future__ import annotations
 
 import difflib
 from contextlib import contextmanager
+from copy import copy
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Iterator, Sequence
 
@@ -178,7 +179,9 @@ class Region:
     (a :class:`Span`) maps its rows and columns to the cells they are, its ``sheet`` is its
     own (``t:<name>``, a name no sheet can have), and every value read from it carries its
     cell's own address (:attr:`Value.origin <xlsx_agent.read.types.Value.origin>`);
-    :attr:`where` gives its cells as ranges of the sheets.
+    :attr:`where` gives its cells as ranges of the sheets.  ``derived`` gives, per
+    column, the column a field derived from another reads (``from_field``: the same
+    cells, its own rules), or ``None``; empty when no field is derived.
 
     A declared table with ``capacity`` (:mod:`xlsx_agent.declare`) holds at most that many
     data rows on its one sheet: the rows below its data down to the last of them are its
@@ -215,7 +218,15 @@ class Region:
     shape: str = "rows"
     title: str | None = None
     capacity: int | None = None
+    derived: tuple[str | None, ...] = ()
     workbook: "Workbook | None" = field(default=None, repr=False, compare=False)
+
+    def source_of(self, name: str) -> str | None:
+        """The column the column called ``name`` is derived from (a declared field with
+        ``from_field``: the same cells, read by rules of its own), or ``None``."""
+        if not self.derived:
+            return None
+        return self.derived[self.column_index(name)]
 
     @property
     def sheet_ref(self) -> SheetRef:
@@ -485,7 +496,8 @@ class Span:
     from the model.  In its own rectangle, row 1 is the header row (the first sheet's;
     ``header_rows`` 0: none), the data rows follow sheet by sheet, and column ``n`` is the
     sheet column ``columns[n - 1]``; ``left`` to ``right`` are the sheet columns declared,
-    ``hidden`` the ones hidden from the model among them; ``clean`` each of its own
+    ``hidden`` the ones hidden from the model among them (a sheet column may be
+    ``columns`` twice: a field derived from another reads its cells); ``clean`` each of its own
     columns' cleaning rules (``None``: none; empty: no column has any), applied to the data
     rows as they are read (:mod:`xlsx_agent.clean`).  ``name`` is the sheet name its
     region reads through (``t:<name>``: no sheet can be called that, since a sheet's
@@ -527,7 +539,9 @@ class Span:
     def locate(self, area: Area) -> list[RangeAddress]:
         """Cells of its own rectangle as the sheets' ranges, sheet by sheet; a run of
         columns broken by a hidden one is two ranges."""
-        real = [self.columns[c - 1] for c in range(area.first.column, area.last.column + 1)]
+        # A field derived from another is the same sheet column: its cells once.
+        real = list(dict.fromkeys(self.columns[c - 1]
+                                  for c in range(area.first.column, area.last.column + 1)))
         spans: list[list[int]] = []
         for column in real:
             if spans and spans[-1][1] + 1 == column:
@@ -586,22 +600,33 @@ class Span:
                  if self.clean and self.clean[column - 1] is not None]
         if rules:
             from ..clean import clean_value
+        # A rule that reads a number as shown needs its format's code.
+        codes = any(rule is not None and rule.on == "shown" for _, _, rule in rules)
         for part, top, bottom, first in self.runs(area.first.row, area.last.row):
             cells = RangeAddress(SheetRef(name=part.sheet), Area(Cell(top, left),
                                                                  Cell(bottom, right)))
-            for row in workbook._read(cells, formats=formats, columns=typed,
+            for row in workbook._read(cells, formats=formats or codes, columns=typed,
                                       markdown=markdown):
                 at = first + row[0].row - top
                 out = []
+                taken: set[int] = set()
                 for column, sheet_column in zip(own, real):
                     value = row[sheet_column - left]
-                    value.origin = (value.sheet, value.row, value.column)
+                    if sheet_column in taken:
+                        # A field derived from another reads the same cell: a value of its own.
+                        value = copy(value)
+                    else:
+                        taken.add(sheet_column)
+                        value.origin = (value.sheet, value.row, value.column)
                     value.sheet, value.row, value.column = name, at, column
                     out.append(value)
                 if rules and at > self.header_rows:
                     for n, _, rule in rules:
                         assert rule is not None   # rules are the columns that have one
                         clean_value(out[n], rule, workbook)
+                if codes and not formats:
+                    for value in out:
+                        value.format = None
                 yield out
 
 

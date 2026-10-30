@@ -67,7 +67,8 @@ session's), and :meth:`Workbook.declare_tables
   collapsed, a split into a list --
   ``{"strip": "^Lead:[^;]*;\\s*", "collapse_space": true, "split": ";"}``; see
   :mod:`xlsx_agent.clean`; never on the key column, ``clean_key``, nor on a hidden one).
-  Columns not listed keep their header's name.
+  Columns not listed keep their header's name.  Or a field derived from another, with
+  ``from_field`` instead of ``header`` or ``column`` (see below).
 * ``optional``: ``true`` when a workbook without the sheets is no error: the table is then
   not declared.
 * ``capacity``: the most data rows the table holds, counted from its first data row --
@@ -86,6 +87,39 @@ session's), and :meth:`Workbook.declare_tables
   the table, and leaves it when undone (:meth:`Regions.refresh_capacity
   <xlsx_agent.read.regions.Regions.refresh_capacity>`).  ``describe`` shows ``capacity``
   and the rows ``free``.
+
+**A field derived from another** (``{"id": "code", "from_field": "notes", "clean":
+{"extract": "Code:\\s*(\\S+)$"}}``): a second column of the table that reads another's
+cells by rules of its own -- a value extracted from a narrative beside the narrative, both
+in one table.  ``from_field`` names the column it reads, by its id or header; ``id`` and
+``clean`` are required (its name, and what makes it differ), ``description`` is taken, and
+``header``, ``column`` and ``hidden`` are not (it has the other column's cells, and is
+declared to be shown).  It stands right after the column it reads (fields derived from one
+column in the order declared), and is addressed, read, queried, profiled, derived from,
+grouped by and joined on like any column (``t:checks[code]``).  Decided:
+
+* *The same cells*: every value it gives carries the cell it read (``'Area 2'!D5``), and
+  so does every source a derive gives -- a key set names the column read
+  (``t:checks/{C-07,C-09}/notes``), not the derived one.  The column read keeps its own
+  rules, or none: each reads the stored cell.
+* *Never written*: a value by key in its column is refused (``derived_column``), naming
+  the column to write; so is it in a write policy's ``columns``, and a policy's table
+  without ``columns`` leaves it out.  A value written through it would not read back as
+  given (an extract of the text written), and a write to the other column is what changes
+  it; a dataset derived from it goes stale when that cell is written, as from any cell.
+* *One column, for hiding*: it is the column it reads, so hiding has nothing more to say
+  of it -- no ``duplicate_field`` (a column declared twice is still refused), no
+  ``hidden_elsewhere`` beyond the column's own, and no second table over the same cells is
+  needed to read them two ways.  A field derived from a hidden column is refused
+  (``bad_source``): it would show the cells the column hides.
+* *No chains*: ``from_field`` names a column of the table's own, never another derived
+  field (``bad_source``), so no cycle can be declared; rules that need two steps are one
+  ``clean`` (``strip`` then ``extract``).  A ``from_field`` that names no column is
+  ``unknown_column``; a derived field is never the ``key`` (``derived_key``).
+
+``describe`` shows it with ``derived_from`` (the column it reads); ``xlsx_profile`` too,
+its ``range`` the cells it reads (:attr:`Region.derived
+<xlsx_agent.read.regions.Region.derived>`).
 
 **A header found by its text** (``"header_row": {"match": [...], "rows": "8:40"}``), for a
 sheet of several sections: on each sheet, the one row whose text cells, in the table's
@@ -262,7 +296,7 @@ MATCH_KEYS = ("match", "rows")
 MAX_MATCH = 50
 
 #: The keys a field takes.
-FIELD_KEYS = ("header", "column", "id", "description", "hidden", "clean")
+FIELD_KEYS = ("header", "column", "id", "description", "hidden", "clean", "from_field")
 
 #: The longest description (characters) a table or column takes: ``describe`` shows it.
 MAX_DESCRIPTION = 300
@@ -284,7 +318,8 @@ class DeclarationError(ValueError):
     ``no_rows``, ``unknown_column``, ``duplicate_field``, ``bad_id``, ``id_taken``,
     ``no_columns``, ``hidden_key``, ``no_key``, ``duplicate_key``, ``bad_pattern``,
     ``clean_key``, ``hidden_elsewhere``, ``ambiguous_header``, ``on_hidden_sheet``,
-    ``redacted_term``, ``redact_late``, ``bad_capacity``, ``capacity_not_empty``), ``path``
+    ``redacted_term``, ``redact_late``, ``bad_capacity``, ``capacity_not_empty``,
+    ``bad_source``, ``derived_key``), ``path``
     where in the
     declarations (``tables[0].fields[2].header``), ``valid_options`` what would do instead.
     The message names sheets, cells, paths and what the declaration gave, never a cell's
@@ -310,6 +345,7 @@ class FieldSpec:
     description: str | None = None
     hidden: bool = False
     clean: "Clean | None" = None
+    from_field: str | None = None
 
 
 @dataclass(frozen=True)
@@ -560,7 +596,10 @@ def _field(item: Any, path: str) -> FieldSpec:
         if key not in FIELD_KEYS:
             raise DeclarationError("bad_declaration", f"{path}.{key}", "unknown key",
                                    valid_options=nearest(str(key), FIELD_KEYS))
-    if ("header" in item) == ("column" in item):
+    source = item.get("from_field")
+    if "from_field" in item:
+        _derived_form(item, path)
+    elif ("header" in item) == ("column" in item):
         raise DeclarationError("bad_declaration", path, "a field names its column by header "
                                "or by column (its letter), one of the two",
                                valid_options=["header", "column"])
@@ -592,7 +631,32 @@ def _field(item: Any, path: str) -> FieldSpec:
             raise DeclarationError("bad_declaration", f"{path}.clean", "a column hidden from "
                                    "the model is never shown: its text is not cleaned")
     return FieldSpec(path=path, header=header, column=column, id=ident,
-                     description=_description(item, path), hidden=hidden, clean=clean)
+                     description=_description(item, path), hidden=hidden, clean=clean,
+                     from_field=source)
+
+
+def _derived_form(item: Mapping, path: str) -> None:
+    """A field derived from another (``from_field``), checked for its form: the other
+    field's id or header, an ``id`` and a ``clean`` of its own, and no column of its own."""
+    source = item["from_field"]
+    if not (isinstance(source, str) and source):
+        raise DeclarationError("bad_declaration", f"{path}.from_field", "the id or header of "
+                               "the column the field reads", valid_options=["notes"])
+    for key in ("header", "column"):
+        if key in item:
+            raise DeclarationError("bad_declaration", f"{path}.{key}", "a field derived from "
+                                   "another reads that field's column: no header or column "
+                                   "of its own", valid_options=["from_field"])
+    if item.get("hidden"):
+        raise DeclarationError("bad_declaration", f"{path}.hidden", "a field derived from "
+                               "another is there to be shown: leave it out to hide it")
+    if "id" not in item:
+        raise DeclarationError("bad_declaration", f"{path}.id", "is required: a field derived "
+                               "from another is addressed by its id")
+    if "clean" not in item:
+        raise DeclarationError("bad_declaration", f"{path}.clean", "is required: its rules "
+                               "are what it reads the other field's cells by",
+                               valid_options=list(CLEAN_KEYS))
 
 
 def _description(item: Mapping, path: str) -> str | None:
@@ -716,6 +780,8 @@ def _redacted_spec(workbook: "Workbook", spec: TableSpec) -> TableSpec:
     for field in spec.fields:
         own(field.id, f"{field.path}.id")
         own(field.description, f"{field.path}.description")
+        if field.from_field:
+            field = replace(field, from_field=workbook._redacted(field.from_field))
         fields.append(replace(field, header=workbook._redacted(field.header))
                       if field.header else field)
     return replace(spec, fields=tuple(fields),
@@ -1142,6 +1208,8 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
         ids[:2] = list(KEY_VALUE_COLUMNS)
     seen: dict[int, str] = {}
     for field in spec.fields:
+        if field.from_field is not None:
+            continue
         if field.column is not None:
             offset = field.column - left
             if not 0 <= offset < width:
@@ -1173,22 +1241,34 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
     visible = [i for i in range(width) if not hidden[i]]
     if not visible:
         raise DeclarationError("no_columns", f"{path}.fields", "every column is hidden")
+    own = _own_columns(spec, visible, columns, names, hidden)
     taken: dict[str, int] = {}
-    for i in visible:
-        for name in dict.fromkeys([columns[i].casefold(), names[i].casefold()]):
-            if name in taken and taken[name] != i:
-                n = _field_of(spec, i, left, names)
-                which = spec.fields[n].path if n is not None else f"{path}.fields"
-                raise DeclarationError("id_taken", f"{which}.id", f"{columns[i]!r} is another "
+    for place, (i, derived_field) in enumerate(own):
+        called = [derived_field.id] if derived_field is not None and derived_field.id \
+            else [columns[i], names[i]]
+        for name in dict.fromkeys(c.casefold() for c in called):
+            if name in taken and taken[name] != place:
+                culprit = derived_field if derived_field is not None else own[taken[name]][1]
+                if culprit is not None:     # a derived field's id: its own path
+                    which = culprit.path
+                else:
+                    m = _field_of(spec, i, left, names)
+                    which = spec.fields[m].path if m is not None else f"{path}.fields"
+                raise DeclarationError("id_taken", f"{which}.id", f"{called[0]!r} is another "
                                        "column's name or header: a column is found by "
                                        "either, so each names one column")
-            taken[name] = i
+            taken[name] = place
     if spec.type == "key_value" and (hidden[0] or hidden[1]):
         raise DeclarationError("hidden_key", f"{path}.fields", "a key-value table's field "
                                "and value columns are never hidden")
     key = None
     if spec.key is not None:
         wanted = spec.key.casefold()
+        if any(field is not None and field.id is not None and field.id.casefold() == wanted
+               for _, field in own):
+            raise DeclarationError("derived_key", f"{path}.key", f"{spec.key!r} is a field "
+                                   "derived from another: an address by key names the key "
+                                   "as its cell holds it; name the column it reads")
         found = next((i for i in range(width)
                       if wanted in (columns[i].casefold(), names[i].casefold())), None)
         if found is None or hidden[found]:
@@ -1210,7 +1290,7 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
             raise DeclarationError("clean_key", f"{field_path}.clean", "the key column is "
                                    "not cleaned: an address by key names the key as its cell "
                                    "holds it, and two keys cleaned alike would name one row")
-    sheet_columns = tuple(left + i for i in visible)
+    sheet_columns = tuple(left + i for i, _ in own)
     # What the table says of its cells names no cell of a column hidden from the model:
     # a header flag there is dropped, and more below is flagged at its first visible cell.
     flags = [f for f in flags if f.address is None
@@ -1222,16 +1302,21 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
             flags.append(Problem("rows_below", seen_below[0][2]))
 
     header_rows = 1 if spec.header_row else 0
-    common: dict[str, Any] = dict(kind="declared", name=spec.name,
-                  columns=tuple(columns[i] for i in visible),
-
-                  header_rows=header_rows, key=key, flags=tuple(dict.fromkeys(flags)),
-                  headers=tuple(names[i] for i in visible),
-                  notes=tuple(notes[i] for i in visible), about=spec.description,
-                  shape=spec.type, capacity=spec.capacity, workbook=workbook)
+    derived = tuple(columns[i] if field is not None else None for i, field in own)
+    common: dict[str, Any] = dict(
+        kind="declared", name=spec.name,
+        columns=tuple(field.id if field is not None and field.id else columns[i]
+                      for i, field in own),
+        header_rows=header_rows, key=key, flags=tuple(dict.fromkeys(flags)),
+        headers=tuple(field.id if field is not None and field.id else names[i]
+                      for i, field in own),
+        notes=tuple(field.description if field is not None else notes[i] for i, field in own),
+        about=spec.description, shape=spec.type, capacity=spec.capacity,
+        derived=derived if any(derived) else (), workbook=workbook)
     hidden_columns = tuple(left + i for i in range(width) if hidden[i])
-    rules = tuple(cleans[i] for i in visible) if any(cleans) else ()
-    if len(parts) == 1 and not hidden_columns and not rules:
+    every = [field.clean if field is not None else cleans[i] for i, field in own]
+    rules = tuple(every) if any(every) else ()
+    if len(parts) == 1 and not hidden_columns and not rules and not any(derived):
         part = parts[0]
         top = part.header if part.header is not None else part.first
         if part.last < top:
@@ -1254,6 +1339,41 @@ def _region(workbook: "Workbook", spec: TableSpec, parts: list[Part], left: int,
         else:
             _check_keys(workbook, region, path)
     return region
+
+
+def _own_columns(spec: TableSpec, visible: "list[int]", columns: "list[str]",
+                 names: "list[str]", hidden: "list[bool]") -> "list[tuple[int, FieldSpec | None]]":
+    """The table's own columns, in order: each visible column (its offset, ``None``), each
+    followed by the fields derived from it (its offset, the field), in the declaration's
+    order.  A field derived from another reads a visible column that is no derived field
+    itself (``bad_source``) -- so no chain and no cycle -- named by its id or header."""
+    derived = [field for field in spec.fields if field.from_field is not None]
+    ids = {field.id.casefold() for field in derived if field.id is not None}
+    after: dict[int, list[FieldSpec]] = {}
+    for field in derived:
+        assert field.from_field is not None   # the fields derived from another
+        wanted = field.from_field.casefold()
+        where = f"{field.path}.from_field"
+        found = next((i for i in range(len(columns))
+                      if wanted in (columns[i].casefold(), names[i].casefold())), None)
+        if found is None and wanted in ids:
+            raise DeclarationError("bad_source", where, f"{field.from_field!r} is itself a "
+                                   "field derived from another: name the column that one "
+                                   "reads (a field derives from a column of the table's own)")
+        if found is None:
+            raise DeclarationError("unknown_column", where, f"no column {field.from_field!r} "
+                                   "in the table", valid_options=nearest(
+                                       field.from_field, [columns[i] for i in visible]))
+        if hidden[found]:
+            raise DeclarationError("bad_source", where, f"column {field.from_field!r} is "
+                                   "hidden from the model, and a field derived from it would "
+                                   "show its cells: show the column, or derive from another")
+        after.setdefault(found, []).append(field)
+    out: list[tuple[int, FieldSpec | None]] = []
+    for i in visible:
+        out.append((i, None))
+        out += [(i, field) for field in after.get(i, [])]
+    return out
 
 
 def _column_of(address: str) -> int | None:

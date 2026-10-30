@@ -5,6 +5,39 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## 0.1.9 (2026-10-30) -- a value read out of a column, beside it
+
+Production round 26, X4 and X5. No tool definition changes: both are declarations, the
+application's configuration.
+
+- **A field derived from another** (X4, `xlsx_agent.declare`). A declared field may read
+  another column's cells by rules of its own: `{"id": "part", "from_field": "notes",
+  "clean": {"extract": "Part:\\s*(\\S+)$"}}` is a column `part` right after `notes`, in
+  the same table, read, queried, profiled, grouped by, joined on and derived from like any
+  other. Its values carry the cells they read (`Log!B2`), and so does every source a
+  derive gives (by key, `t:jobs/{J-1,J-4}/notes`: the column read). `from_field` names a
+  column of the table by id or header; `id` and `clean` are required; `header`, `column`
+  and `hidden` are refused. No chains: a field derived from a derived field is refused
+  (`bad_source`), so no cycle can be declared; so is one derived from a hidden column (it
+  would show what the column hides), and a derived `key` (`derived_key`). A value by key
+  in a derived column is refused (`derived_column`), naming the column to write; a write
+  policy naming it is refused, and a policy's table without `columns` leaves it out. It
+  is one column for hiding: nothing is declared twice, and no second table over the same
+  cells (which had to hide the same columns) is needed. `describe` and `xlsx_profile`
+  show `derived_from`; `Region.derived` and `Region.source_of` in Python.
+- **Rules on numbers as shown** (X5, `xlsx_agent.shown`). A `clean` with `"on": "shown"`
+  reads number and percent cells too, each as the text Excel shows it with its number
+  format in the workbook's locale, so `{"extract": "^(\\d+)", "on": "shown"}` reads the
+  text `"5.1"` and the number 5.2 alike, as `"5"` (flagged `number_as_text`). The default,
+  `"text"`, is as before. The text is made only where it is measured: the forms of the 43
+  number codes of `ooxml_common.numfmt.MEASURED` (Excel for Mac 16.106, 2026-10-25), each
+  of the 36 rendered held to Excel's text in the tests. The seven measured codes those
+  forms do not give (a fraction, a fill, two conditions, a numeral system, engineering
+  notation), any other form, a negative number, zero with a zero section, a half where
+  roundings differ, and a long number in `General` are refused: the cell reads `blank`
+  with `issue: "unmeasured_format"`, never a guess. Dates, times, bools and errors are
+  never changed.
+
 ## 0.1.8 (2026-10-30) -- datasets that match the table an agent shows
 
 Production round 25, X0-X3.  0.1.8, not 0.2.0: the public API grows (a derive's `join`,

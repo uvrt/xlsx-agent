@@ -22,7 +22,10 @@ values the application supplies: a key column with a formula in any data row (an
 from the row's number, ``="P-"&TEXT(ROW()-9,"000")``) is refused (``formula_key``), since
 its keys are cached results that a sort, a row moved or a recalculation gives to other
 rows; declare a key column of values instead.  A key two rows share refuses the cell
-(``duplicate_key``); a key no row has refuses it (``missing_key``) unless the call
+(``duplicate_key``); a column derived from another (a declared field's ``from_field``)
+refuses it (``derived_column``, naming the column to write: its cells are that one's,
+read by rules of its own, so a value written there would not read back as given); a key
+no row has refuses it (``missing_key``) unless the call
 allocates it a row; a row by position (``t:stock/#3``), a key set, a row range, a wildcard
 or a whole row or column is refused (``positional``): there is no fallback to a place.  A
 key is cell content, so a refusal names such a value by its place in the call
@@ -129,6 +132,12 @@ def resolve(workbook: "Workbook", text: str, new_rows: bool,
         return None
     except RegionError as error:
         refuse("bad_address", error.code)
+        return None
+    source = region.derived[index] if region.derived else None
+    if source is not None:
+        refuse("derived_column", f"{region.address.text}'s column {address.column!r} is read "
+               f"from column {source!r} by the table's own rules: write "
+               f"{region.address.text}/<key>/{source}")
         return None
     keys = _keys(workbook, region, refuse)
     if keys is None:

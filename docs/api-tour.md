@@ -277,6 +277,16 @@ wb.column("t:tasks[owners]").stats().flags
   one repeat that can give characters back (`.*;` can; `[^;]*;` cannot). An `extract`
   pattern is tried at every place of its window, so none of its repeats may give
   characters back: `\s*(.+)$` is refused, `\s*(\S.*)$` taken.
+- **Numbers as shown**: `"on": "shown"` applies the rules to number and percent cells too,
+  each as the text Excel shows it with its format, in the workbook's locale
+  (`xlsx_agent.shown`): `{"extract": r"^(\d+)", "on": "shown"}` reads the text `"5.1"`
+  and the number 5.2 alike, as `"5"`. Where that text is not measured (a fraction, a
+  condition, a negative number, ...) the cell reads `blank` with
+  `issue: "unmeasured_format"`.
+- **Beside its column**: a field with `from_field` reads another column's cells by rules
+  of its own -- `{"id": "part", "from_field": "notes", "clean": {"extract":
+  r"Part:\s*(\S+)$"}}` -- right after it, its sources the cells read; a value by key in
+  it is refused (`derived_column`), naming the column to write.
 - **Not the key**: the key column is never cleaned (`clean_key`): an address by key names
   the key as its cell holds it, and two keys cleaned alike would name one row. Nor is a
   hidden column, nor the header.
