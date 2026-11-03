@@ -33,6 +33,10 @@ anything else is refused with an `OpenError` whose `code` says why; a package ov
 ooxml-edit's zip limits (`Limits`, given as `limits=`) is refused before it is unpacked.
 A macro is kept and never run; an external link is listed, never followed.
 
+**Threads.** A `Workbook` is one thread's at a time: its indexes, regions and package do not
+lock. The tools give each call its workbook alone (a session's entry lock); used directly
+from several threads, hold a lock of your own around every use.
+
 **Locale and reader options.** The locale decides how text that looks like a number or a
 date is recognised (and the language of the language-dependent built-in formats); en-US
 when none is given, never the machine's:
