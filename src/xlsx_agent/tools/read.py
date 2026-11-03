@@ -35,7 +35,7 @@ rows holding them in ``held_by`` (``"read": "cells"``).
 **A row by key** is a target, ``t:Parts/BX-17`` (the one way every tool names it);
 its key column is the region's own (declared, or the only column that can be one), else
 ``key``.  ``columns`` picks a ``t:`` target's columns, in the order given (an address's own
-column first).  What a model that misreads ``key`` meant is read where it can only mean
+column first), and a ``d:`` target's the same way (round 28, X7).  What a model that misreads ``key`` meant is read where it can only mean
 one thing, with a warning (:func:`_keyed`): a column that does not hold the key, while one
 key column does, is a column to read; the row's key given as ``key`` is the row.  A key not
 found names the key column that holds it, else the rows with a key like it, by position
@@ -157,8 +157,8 @@ CURSOR = string("next_cursor of the previous page, with the same target.", optio
                           "for one value, all, paged.", optional=True),
        "key": string("Column holding target's key (Code for t:Parts/BX-17) if "
                      "several key_candidates; not one to read.", optional=True),
-       "columns": array(string(), "Only these columns of a t: target (or of the table "
-                        "rows a cell is in), in order.", optional=True),
+       "columns": array(string(), "Only these columns of a t: or d: target (or of the "
+                        "table rows a cell is in), in order.", optional=True),
        "cells_only": boolean("A cell or range inside a table: read just those cells, as "
                              "stored, not its table rows. Default false.", optional=True),
        "limit": integer(f"Rows per page. Default 50, at most {READ_ROWS}.", minimum=1,
@@ -180,12 +180,8 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     from .derive import read_dataset, workbook_of
 
     if isinstance(target, str) and target.startswith(DATASET_PREFIX):
-        if columns:
-            raise ToolError("invalid_arguments", "columns picks a t: target's columns; a "
-                            "dataset's column goes in target (d:by_region[total])",
-                            field="columns")
         return read_dataset(call, target, sources=bool(sources), limit=limit,
-                            max_chars=max_chars, cursor=cursor)
+                            max_chars=max_chars, cursor=cursor, columns=columns or None)
     if sources:
         raise ToolError("invalid_arguments", "sources works on a dataset (d:) only, where "
                         "each value lists the cells it came from; a t: or cell read gives "

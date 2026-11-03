@@ -25,6 +25,7 @@ from test_catalogue import FIXTURES, MARKER
 from xlsx_agent import (DeriveError, Locale, NameNotFound, QueryError, Region, RegionError,
                         Workbook)
 from xlsx_agent import derive as derive_module
+from xlsx_agent.dataset import as_dataset
 from xlsx_agent.derive import FUNCTIONS, TYPES_BY_FUNCTION, _round
 from xlsx_agent.address import TableAddress
 from xlsx_agent.query import _key
@@ -1020,8 +1021,9 @@ def test_pivot_values_match_by_type_and_value_as_groups_do():
     with pytest.raises(DeriveError) as caught:
         workbook.derive("t:P", pivot="Code", pivot_values=[5])
     assert (caught.value.code, caught.value.column_type) == ("wrong_type", "text")
-    assert str(caught.value) == ("Code is a text column: each of pivot_values is a value of "
-                                 "its type, as filters are written")
+    assert str(caught.value) == ("pivot_values[0] is not text: Code is a text column, and "
+                                 "each of pivot_values is a value of its type, as filters are "
+                                 "written (\"\": the blank cells)")
 
 
 def test_pivot_values_of_dates_and_bools(wb):
@@ -1033,6 +1035,63 @@ def test_pivot_values_of_dates_and_bools(wb):
                      pivot_values=["false", "true"])
     assert paid.columns == ("Region", "false", "true")
     assert paid.rows[0] == {"Region": "North", "false": 1, "true": 3}
+
+
+# -- the blank cells listed (round 28, X8) ----------------------------------------------------------
+
+
+def _blanks() -> Workbook:
+    book = WorkbookBuilder()
+    sheet = book.sheet("S")
+    sheet.rows("A1", [["Store", "Code", "Qty", "Size"], ["N", "(blank)", 1, 5], ["N", None, 2, None],
+                      ["S", "a", 4, 5], ["S", None, 8, None],
+                      ["S", Formula('""', cached=""), 16, 7]])
+    sheet.table("P", "A1:D6", ["Store", "Code", "Qty", "Size"], write_header=False)
+    return _open(book)
+
+
+def test_pivot_values_list_the_blank_cells_as_an_empty_string():
+    """"" is the blank cells: their column is (blank), as without pivot_values, and they are
+    counted there, not in pivot_unlisted; a text "(blank)" takes its type, wherever it is."""
+    workbook = _blanks()
+    q = [{"fn": "sum", "column": "Qty", "as": "q"}]
+    ds = workbook.derive("t:P", group_by=["Store"], pivot="Code",
+                         pivot_values=["(blank)", "a", ""], measures=q)
+    assert ds.columns == ("Store", "(blank) (text)", "a", "(blank)")
+    assert ds.rows == [{"Store": "N", "(blank) (text)": 1.0, "a": None, "(blank)": 2.0},
+                       {"Store": "S", "(blank) (text)": None, "a": 4.0, "(blank)": 8.0}]
+    assert ds.pivot_columns["(blank)"] == {"measure": "q", "v": None, "t": "blank"}
+    assert ds.pivot_columns["(blank) (text)"] == {"measure": "q", "v": "(blank)", "t": "text"}
+    # a formula's "" is text, not blank: never listed by "", named (empty text)
+    assert ds.pivot_unlisted == [{"name": "(empty text)", "v": "", "t": "text", "rows": 1}]
+    assert ds.left_out["Code"]["not_listed"].count == 1
+    # without pivot_values the same names, in the order met
+    every = workbook.derive("t:P", pivot="Code", measures=q)
+    assert every.columns == ("(blank) (text)", "(blank)", "a", "(empty text)")
+    # more measures: (blank) <as>; a number column takes "" too
+    two = workbook.derive("t:P", pivot="Size", pivot_values=["", 5],
+                          measures=[{"fn": "count", "as": "n"}, *q])
+    assert two.columns == ("(blank) n", "(blank) q", "5 n", "5 q")
+    assert two.rows == [{"(blank) n": 2, "(blank) q": 10.0, "5 n": 2, "5 q": 5.0}]
+    assert two.as_dict()["pivot_unlisted"] == [{"name": "7", "v": 7, "t": "number", "rows": 1}]
+    # the tool's dataset takes the names (an empty name was refused as a dataset's column)
+    assert as_dataset(ds).columns == ds.columns
+
+
+def test_a_refused_pivot_value_is_named_by_its_place():
+    workbook = _blanks()
+    for listed, code, text in (
+            ([5, "", "x"], "wrong_type", "pivot_values[2] is not a number: Size is a number "
+                                          "column"),
+            (["", 5, "5.0"], "bad_pivot", "pivot_values[2] repeats pivot_values[1]"),
+            (["", 5, ""], "bad_pivot", "pivot_values[2] repeats pivot_values[0]"),
+            ([5, None], "bad_pivot", "pivot_values[1] is no value"),
+            ([5, {"v": 6}], "bad_pivot", "pivot_values[1] is no value")):
+        with pytest.raises(DeriveError) as caught:
+            workbook.derive("t:P", pivot="Size", pivot_values=listed)
+        assert (caught.value.code, caught.value.field) == (code, "pivot_values"), listed
+        assert str(caught.value).startswith(text), str(caught.value)
+        assert "dataset" not in str(caught.value)
 
 
 @pytest.mark.parametrize("options", [

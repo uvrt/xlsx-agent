@@ -174,8 +174,9 @@ with ``count`` 0 and no other value.
 (named by the value, ``North``, with one measure; ``North sales`` with more), in the order
 first met; a group without rows for a value has ``count`` 0 and no other value.  A
 value's name is its text, or a number as written (``number_text``), a date's ISO 8601,
-``true``/``false``, an error's code, ``(blank)``; names that would clash get the type
-(``1 (text)``) or a number.  :attr:`Derived.pivot_columns` maps each column to its value.
+``true``/``false``, an error's code, ``(blank)`` (a text of no characters ``(empty
+text)``: round 28); names that would clash get the type (``1 (text)``) or a number, the
+blank cells' never.  :attr:`Derived.pivot_columns` maps each column to its value.
 
 **Listed pivot values** (round 27, X6): ``pivot_values=["Open", "Closed", "Held"]`` gives
 one column (per measure) for each listed value, in that order, whether or not any row
@@ -196,10 +197,15 @@ its column would be named, ``v``, ``t`` and its ``rows``, in the order first met
 add them as columns: list them, or pivot without ``pivot_values``.  The columns are fixed by
 the list and the rows by ``group_by``: a group whose rows all hold unlisted values is still
 a row, every cell of it empty (``count`` 0, the others blank), its key's sources none (the
-rows used), its rows counted as above.  (Bins differ: a row outside them has no bin.)  A
-blank cell is not a value that can be listed (it is left out, ``(blank)``), and neither is
-a cell of another type than the column's (the text ``"5"`` in a number column: named with
-its ``t``).  With ``coerce``, the pivot's text is read as ``group_by``'s is, so a
+rows used), its rows counted as above.  (Bins differ: a row outside them has no bin.)  The
+blank cells are listed as ``""`` (round 28, X8), in a column of any type: their column is
+named ``(blank)`` (``(blank) total`` with more measures), as without ``pivot_values``, and
+a text value ``"(blank)"`` is the one that gets its type, ``(blank) (text)``, whichever
+comes first; unlisted, they are left out and named ``(blank)``.  A text cell of no
+characters (a formula's ``""``) is not blank: it is named ``(empty text)``, and cannot be
+listed.  Neither can a cell of another type than the column's (the text ``"5"`` in a
+number column: named with its ``t``).  A refusal of a listed value names its place,
+``pivot_values[2]``, and what is wrong with it.  With ``coerce``, the pivot's text is read as ``group_by``'s is, so a
 listed date matches a date stored as text too.
 
 **Sort and top.**  ``sort`` is a list of output columns, each ``"name"`` (ascending) or
@@ -937,9 +943,12 @@ class _Plan:
         if not 1 <= len(values) <= MAX_PIVOT_VALUES:
             raise DeriveError("bad_pivot", f"pivot_values lists 1 to {MAX_PIVOT_VALUES} values",
                               field="pivot_values")
-        if not all(isinstance(v, (str, int, float)) for v in values):
-            raise DeriveError("bad_pivot", "each of pivot_values is a value as filters are "
-                              "written: text, a number or true/false", field="pivot_values")
+        for index, v in enumerate(values):
+            if not isinstance(v, (str, int, float)):
+                raise DeriveError("bad_pivot", f"pivot_values[{index}] is no value: each of "
+                                  "pivot_values is a value as filters are written (text, a "
+                                  "number or true/false), or \"\" for the blank cells",
+                                  field="pivot_values")
         return values
 
     def _bins(self, bins: Any) -> _Bins | None:
@@ -1085,27 +1094,46 @@ def _listed(raw: list, column: str, t: str, date1904: bool) -> dict[tuple, tuple
     """``pivot_values`` as group keys of a ``t`` column (:func:`_group_key`'s), in order,
     each with the value a cell of it shows: read as a filter's value is
     (:func:`xlsx_agent.query._operand`), so ``"5"`` and ``5`` are the number 5 in a number
-    column and the text ``"5"`` in a text column."""
+    column and the text ``"5"`` in a text column; ``""`` is the blank cells (round 28, X8),
+    in a column of any type.  A refusal names the value by its place
+    (``pivot_values[2]``), never by itself."""
     out: dict[tuple, tuple[Any, str]] = {}
-    for item in raw:
-        try:
-            key = _operand(item, t, date1904)
-        except _Bad:
-            raise DeriveError("wrong_type", f"{column} is a {t} column: each of pivot_values "
-                              "is a value of its type, as filters are written",
-                              field="pivot_values", column=column, column_type=t) from None
-        if t in _NUMBERS:
-            key = float(key)
-            shown: Any = int(key) if key.is_integer() and abs(key) < 2 ** 53 else key
-        elif t in _MOMENTS:
-            shown = _edge_text(key, t, date1904)
+    places: dict[tuple, int] = {}
+    for index, item in enumerate(raw):
+        if isinstance(item, str) and item == "":
+            key_t: tuple = ("blank", None)
+            shown: Any = None
+            kind = "blank"
         else:
-            shown = key
-        if (t, key) in out:
-            raise DeriveError("bad_pivot", "pivot_values lists each value once (as its "
-                              f"{t} column reads it)", field="pivot_values", column=column)
-        out[(t, key)] = (shown, t)
+            try:
+                key = _operand(item, t, date1904)
+            except _Bad:
+                raise DeriveError("wrong_type", f"pivot_values[{index}] is not {_a(t)}: {column} "
+                                  f"is a {t} column, and each of pivot_values is a value of "
+                                  "its type, as filters are written (\"\": the blank cells)",
+                                  field="pivot_values", column=column, column_type=t) from None
+            if t in _NUMBERS:
+                key = float(key)
+                shown = int(key) if key.is_integer() and abs(key) < 2 ** 53 else key
+            elif t in _MOMENTS:
+                shown = _edge_text(key, t, date1904)
+            else:
+                shown = key
+            key_t, kind = (t, key), t
+        if key_t in out:
+            raise DeriveError("bad_pivot", f"pivot_values[{index}] repeats "
+                              f"pivot_values[{places[key_t]}] (as its {t} column reads them): "
+                              "list each value once", field="pivot_values", column=column)
+        out[key_t] = (shown, kind)
+        places[key_t] = index
     return out
+
+
+def _a(t: str) -> str:
+    """A type as a noun: ``text``, ``a number``, ``an error``."""
+    if t == "text":
+        return t
+    return f"an {t}" if t[0] in "aeiou" else f"a {t}"
 
 
 def _edge_text(key: Any, t: str, date1904: bool) -> str:
@@ -1639,9 +1667,17 @@ def _output_type(m: _Measure, plan: _Plan) -> str:
     return plan.offset_types[m.offset]
 
 
+#: A pivot column's name for the blank cells; and for a text cell holding no characters
+#: (a formula's ``""``), which is not blank (round 28, X8).
+BLANK_NAME = "(blank)"
+EMPTY_TEXT_NAME = "(empty text)"
+
+
 def _label(v: Any, t: str) -> str:
     if t == "blank":
-        return "(blank)"
+        return BLANK_NAME
+    if t == "text" and v == "":
+        return EMPTY_TEXT_NAME
     if t == "bool":
         return "true" if v else "false"
     if t in _NUMBERS:
@@ -1671,13 +1707,17 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
         measure_columns = [(m.name, m, None) for m in plan.measures]
     else:
         pivots = plan.listed if plan.listed is not None else state.pivots
+        # the blank cells' columns keep their names, (blank), wherever they are: a value
+        # named so by its text is the one that gets its type, (blank) (text)
+        blank = {(f"{BLANK_NAME} {m.name}" if len(plan.measures) > 1 else BLANK_NAME)
+                 .casefold() for m in plan.measures} if ("blank", None) in pivots else set()
         for pkey, (v, t) in pivots.items():
             for m in plan.measures:
                 base = _label(v, t)
                 if len(plan.measures) > 1:
                     base = f"{base} {m.name}"
                 name = base
-                if name.casefold() in taken:
+                if name.casefold() in taken or (t != "blank" and name.casefold() in blank):
                     name = f"{base} ({t})"
                 n = 2
                 while name.casefold() in taken:

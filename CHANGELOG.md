@@ -5,6 +5,35 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## 0.1.11 (2026-11-03) -- a dataset's columns picked, the blank cells listed
+
+Production round 28, X7 and X8. Two descriptions changed; no parameter added.
+
+- **`xlsx_read` of a dataset takes `columns`** (X7), as a table's read does:
+  `{"target": "d:by_region", "columns": ["total", "Region"]}` reads those columns, in the
+  order given, each once, the address's own column first (`d:by_region[total]` with
+  `columns: ["Region"]` reads `total`, then `Region`; a row or a value address reads its
+  row's columns). A name the dataset has no column of is `not_found` (`field: "columns"`),
+  its message and `valid_options` listing the dataset's columns. A cursor belongs to the
+  columns asked for. Before, `columns` with a `d:` target was refused; `d:by_region[total]`
+  reads as before.
+- **`pivot_values: [""]` is the blank cells** (X8), in a pivot column of any type: their
+  column is named `(blank)` (`(blank) total` with more measures), as a pivot without
+  `pivot_values` names it, and their rows count there instead of in `pivot_unlisted`.
+  Before, `""` was read as the empty text, and the column without a name was refused with
+  the dataset's generic message. A clash with a text value `"(blank)"` is resolved for the
+  blank cells: the blank cells' column is always `(blank)`, the text's `(blank) (text)`,
+  whichever comes first (with or without `pivot_values`; before, the one met first kept
+  the name). A text cell of no characters (a formula's `""`) is not blank: its column, or
+  its `pivot_unlisted` entry, is named `(empty text)` (before, it had no name and the tool
+  refused the dataset), and `""` does not list it.
+- **A refused pivot value names its place**: `pivot_values[2] is not a number: Size is a
+  number column, ...`, `pivot_values[2] repeats pivot_values[1] ...`, `pivot_values[1] is
+  no value: ...` (codes and `field` as before; never the value itself).
+- Tokens (offline proxy): `xlsx_read` 688 -> 690, `xlsx_derive` 1,110 -> 1,116, the core
+  4,525 -> 4,533, every definition 5,266 -> 5,274. Neither tool is strict; the strict set is
+  unchanged.
+
 ## 0.1.10 (2026-10-30) -- a pivot's columns, listed
 
 Production round 27, X6. One tool parameter added (`xlsx_derive`'s `pivot_values`).
