@@ -244,7 +244,10 @@ blank (a sum of nothing is not 0). Values are written as filter values are and m
 `group_by` groups, by type and value (in a number column `"5"` is the number 5, not the
 text `"5"`). Values present but not listed are no columns: their rows are left out
 (`left_out`, `not_listed`) and each value is named in `pivot_unlisted` with its row count;
-a group holding only such values is still a row, its cells empty.
+a group holding only such values is still a row, its cells empty. The blank cells are
+listed as `""` (round 28), their column named `(blank)` as without `pivot_values`; a text
+value `"(blank)"` is then `(blank) (text)`. A refused value is named by its place,
+`pivot_values[2]`, and what is wrong with it.
 
 **Joins** (round 25). `xlsx_derive`'s `join` --
 `{"from": "t:Issues", "on": ["Ref", "Items"], "columns": ["Issue"]}` -- adds another table's
@@ -259,7 +262,9 @@ goes stale when either side's source changes, the joined one's too.
 
 **Datasets (`d:`).** `xlsx_derive` keeps its figures in the session as a dataset,
 `d:<id>`: columns, rows, and beside every value the cells it came from. `xlsx_read` reads
-it back (`{"target": "d:by_region", "sources": true}`, no `doc` needed), `xlsx_derive`
+it back (`{"target": "d:by_region", "sources": true}`, no `doc` needed; `columns` picks
+its columns in order, as a table's: `{"target": "d:by_region", "columns": ["Region",
+"total"]}`, round 28), `xlsx_derive`
 derives from it again, and it outlives `close_document`. When the table has a key column
 (the one `describe` reports, or one the caller declares with `Workbook.declare_key` on the
 session's workbook), a value's sources are written by key, `t:Stock/{SKU-0001,SKU-0004}/Qty`:

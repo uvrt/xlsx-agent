@@ -361,8 +361,9 @@ def test_cleaning_changes_no_tool_definition():
 #: since round 10's O5 let xlsx_query take a dataset (+59: ``doc`` optional), and since
 #: round 25 gave xlsx_read a cited cell's table row (X0) and xlsx_derive its join (X1)
 #: (+1,184; X2's extract is a declared rule, and changes no definition), and since round 27
-#: gave xlsx_derive its pivot_values (X6, +228).
-XLSX_CHARS = 12_321
+#: gave xlsx_derive its pivot_values (X6, +228), and since round 28 let xlsx_read's columns
+#: pick a dataset's (X7) and said pivot_values' "" is the blank cells (X8) (+28).
+XLSX_CHARS = 12_349
 
 
 def test_a_deck_table_from_a_cleaned_table_warns_in_the_tools_result():

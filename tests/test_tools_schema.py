@@ -93,6 +93,11 @@ column without rows holds; the values not listed named in ``pivot_unlisted``), 1
 about 6,334 -> 6,430 at the same ratio; the main session counts it); every definition
 5,201 -> 5,266; the guards 4,465 -> 4,530 and 5,205 -> 5,270.  ``xlsx_derive`` is not
 strict (12 optional parameters): the strict set is unchanged.
+Round 28, X7 and X8: ``xlsx_read``'s ``columns`` names a ``d:`` target too, 688 -> 690;
+``xlsx_derive``'s ``pivot_values`` says ``""`` is the blank cells, 1,110 -> 1,116: the core
+4,525 -> 4,533 estimated (online 6,418 on 2026-11-03, about 6,430 at the same ratio; the
+main session counts it); every definition 5,266 -> 5,274; the guards 4,530 -> 4,535 and
+5,270 -> 5,275.  Neither tool is strict: the strict set is unchanged.
 """
 
 from __future__ import annotations
@@ -112,8 +117,8 @@ CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
 #: The core's estimate, a regression guard (round 25: past the proxy's budget, by choice).
-CORE_GUARD = 4530
-ALL_GUARD = 5270
+CORE_GUARD = 4535
+ALL_GUARD = 5275
 
 
 @pytest.fixture(scope="module")

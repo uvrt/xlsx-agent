@@ -394,6 +394,44 @@ def test_a_dataset_survives_closing_its_workbook_and_is_read_back_by_address(box
                                     "t": "number"}]]
 
 
+def test_xlsx_read_picks_a_datasets_columns_as_a_tables(box):
+    """Round 28, X7: columns picks a d: target's columns, in the order given, the address's
+    own column first; a name it has no column of is refused with its columns; paged with a
+    cursor of those columns only."""
+    session = _session(box, sales())
+    derive_by_rep(box, session)
+    read = call(box, session, "xlsx_read", target="d:by_rep", columns=["total", "rep"])
+    assert read.ok, read.error
+    assert (read.data["target"], read.data["columns"]) == ("d:by_rep", ["total", "Rep"])
+    assert read.data["rows"][0] == [{"a": "d:by_rep/#1/total", "v": 3.7, "t": "number"},
+                                    {"a": "d:by_rep/#1/Rep", "v": "Ann", "t": "text"}]
+    assert len(read.data["rows"]) == 6
+    # the old form still reads one column; a column, a row and a value take columns too
+    assert call(box, session, "xlsx_read", target="d:by_rep[total]").data["columns"] == [
+        "total"]
+    both = call(box, session, "xlsx_read", target="d:by_rep[count]", columns=["total", "count"])
+    assert (both.data["target"], both.data["columns"]) == ("d:by_rep", ["count", "total"])
+    row = call(box, session, "xlsx_read", target="d:by_rep/#2", columns=["Rep"])
+    assert row.data["rows"] == [[{"a": "d:by_rep/#2/Rep", "v": "Bob", "t": "text"}]]
+    value = call(box, session, "xlsx_read", target="d:by_rep/#2/Rep", columns=["total"])
+    assert (value.data["target"], value.data["columns"]) == ("d:by_rep/#2", ["Rep", "total"])
+    every = call(box, session, "xlsx_read", target="d:by_rep/*/Rep", columns=["Region"])
+    assert every.data["columns"] == ["Rep", "Region"] and len(every.data["rows"]) == 6
+    # paged: the cursor belongs to these columns
+    first = call(box, session, "xlsx_read", target="d:by_rep", columns=["Rep"], limit=4)
+    assert first.next_cursor and len(first.data["rows"]) == 4
+    rest = call(box, session, "xlsx_read", target="d:by_rep", columns=["Rep"], limit=4,
+                cursor=first.next_cursor)
+    assert [r[0]["a"] for r in rest.data["rows"]] == ["d:by_rep/#5/Rep", "d:by_rep/#6/Rep"]
+    other = call(box, session, "xlsx_read", target="d:by_rep", columns=["Region"],
+                 cursor=first.next_cursor)
+    assert not other.ok and err(other)["field"] == "cursor"
+    unknown = err(call(box, session, "xlsx_read", target="d:by_rep", columns=["Rep", "sum"]))
+    assert (unknown["code"], unknown["field"]) == ("not_found", "columns")
+    assert unknown["valid_options"] == ["Region", "Rep", "total", "count"]
+    assert "'Region', 'Rep', 'total', 'count'" in unknown["message"]
+
+
 def test_a_dataset_is_stale_once_its_workbook_changes_and_never_refreshed(box):
     session = _session(box, sales())
     derive_by_rep(box, session)

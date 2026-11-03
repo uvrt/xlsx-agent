@@ -1155,6 +1155,15 @@ column reads its text as `group_by` does. Budget: `xlsx_derive` 1,045 -> 1,110, 
 4,460 -> 4,525 estimated (about 6,430 counted online at the measured ratio); every
 definition 5,201 -> 5,266; the strict set unchanged.
 
+*A dataset's columns picked, the blank cells listed* (production feedback, round 28, X7
+and X8, 2026-11-03; 0.1.11). `xlsx_read`'s `columns` picks a `d:` target's columns as a
+`t:` target's (in order, the address's own column first; an unknown name `not_found` with
+the dataset's columns). `xlsx_derive`'s `pivot_values` takes `""` for the blank cells, their
+column `(blank)`; the blank cells keep that name in any clash (a text `"(blank)"` is
+`(blank) (text)`), a text of no characters is `(empty text)`, and a refused listed value is
+named by its place (`pivot_values[2]`). Budget: the core 4,525 -> 4,533 estimated; every
+definition 5,266 -> 5,274; the strict set unchanged.
+
 ### 0.2 — edit
 
 | # | Item | Effort | Done when |

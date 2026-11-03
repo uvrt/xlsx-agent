@@ -5,7 +5,8 @@ of ``xlsx_read`` (ROADMAP.md, "Tools"; "Design rules", 1 and 2).  Both in the lo
 workbook ``doc``, or on a dataset (``d:``; no ``doc`` needed): ``where`` and ``sort`` as
 ``xlsx_query`` writes them (``sort`` by the result's columns: a ``group_by`` column, a
 bin's or a measure's ``as``; never an input column a measure reads), ``group_by``, ``measures``, ``bins`` (edges as filter values
-are written), ``pivot`` (with ``pivot_values``, its columns listed in order: round 27, X6),
+are written), ``pivot`` (with ``pivot_values``, its columns listed in order: round 27, X6;
+``""`` the blank cells, ``(blank)``: round 28, X8),
 ``top``, ``round`` and ``coerce``.  The result is kept in the
 session as ``d:<id>`` (:meth:`Call.define_dataset <ooxml_edit.tools.Call.define_dataset>`:
 the :class:`~ooxml_edit.tools.Dataset` of :func:`xlsx_agent.dataset.as_dataset`, the
@@ -38,7 +39,10 @@ gives the target and cursor that continue it there.
 
 **xlsx_read of a dataset** (:func:`read_dataset`): ``d:by_region`` (its rows),
 ``d:by_region[total]``, ``d:by_region/#2``, ``d:by_region/North`` (one key column) and
-``d:by_region/North/total``, paged as cells are, with ``sources`` adding each value's
+``d:by_region/North/total``, paged as cells are; ``columns`` picks its columns, as a
+table's (round 28, X7: in the order given, the address's own column first; a name it has no
+column of ``not_found``, with its columns; a cursor belongs to those columns), with
+``sources`` adding each value's
 first :data:`SOURCES_SHOWN` units; one value with ``sources`` pages through all of its
 units instead, ``limit`` a page, a page's keys of one column written as one key set.  A dataset outlives its workbook: no ``doc`` is needed.  ``dataset`` says
 where it came from and whether it is ``stale`` (its source has changed since, or it was
@@ -51,13 +55,14 @@ dataset and count, errors name columns, functions and types.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Iterator
 
 from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, boolean, integer,
                               obj, string, tool)
 
-from ..address import DatasetAddress, parse_address
-from ..dataset import DatasetTable, cut_sources, join_units, source_units
+from ..address import DatasetAddress, NameNotFound, parse_address
+from ..dataset import DatasetSelection, DatasetTable, cut_sources, join_units, source_units
 from ..derive import COERCIONS, FUNCTIONS, MAX_DIGITS, MAX_ROWS, derive
 from .docformat import KIND, handler
 from .query import WHERE
@@ -131,8 +136,8 @@ def _about(entry: Any) -> dict[str, Any]:
                    optional=True),
        "pivot": string("A column whose values become columns.", optional=True),
        "pivot_values": array(string(), "pivot's columns, in this order, rows or none (count "
-                             "0, others blank); as filter values are written. Other values: "
-                             "rows left out, named in pivot_unlisted.", optional=True),
+                             "0, others blank); as filter values are written, \"\" the blank "
+                             "cells. Other values: rows left out, named in pivot_unlisted.", optional=True),
        "sort": SORT,
        "top": integer("Keep the first rows after sorting.", minimum=1, maximum=MAX_ROWS,
                       optional=True),
@@ -317,10 +322,15 @@ _CUT_ROOM = {"rows": 1000, "cells": 10000, "chars": True, "text": 100000}
 
 
 def read_dataset(call: Any, target: str, *, sources: bool, limit: int | None,
-                 max_chars: int | None, cursor: str | None) -> Result:
+                 max_chars: int | None, cursor: str | None,
+                 columns: list[str] | None = None) -> Result:
     """``xlsx_read`` of a ``d:`` target (see the module's notes)."""
     entry, address, table = _entry(call, target, "target")
     selection = table.select(address)
+    token = selection.text
+    if columns:
+        selection = _picked(table, address, columns)
+        token = f"{selection.text}|{','.join(map(str, selection.offsets))}"
     chars = min(max_chars or call.limits.max_result_chars, call.limits.max_result_chars)
     rows_limit = min(limit or call.limits.max_list_items, READ_ROWS)
     data: dict[str, Any] = {"target": selection.text, "dataset": _about(entry)}
@@ -328,7 +338,7 @@ def read_dataset(call: Any, target: str, *, sources: bool, limit: int | None,
         return _value_sources(table, selection, data, chars, rows_limit, cursor)
     total = selection.rows
     width = len(selection.offsets)
-    start_row, start_column = _read_cursor(cursor, selection.text, total, width)
+    start_row, start_column = _read_cursor(cursor, token, total, width)
     data["columns"] = [table.columns[o] for o in selection.offsets]
     if _size(data["columns"]) > chars // 4:
         data.pop("columns")
@@ -352,7 +362,7 @@ def read_dataset(call: Any, target: str, *, sources: bool, limit: int | None,
             cut["cells"] = width - stop[1]
         if full:
             cut["chars"] = True
-        next_cursor = _cursor(selection.text, *stop)
+        next_cursor = _cursor(token, *stop)
     if cut_text:
         cut["text"] = len(cut_text)
     if cut:
@@ -360,6 +370,22 @@ def read_dataset(call: Any, target: str, *, sources: bool, limit: int | None,
     return Result(summary=_summary(selection.text, start_row + 1, start_row + len(shown),
                                    total, next_cursor is not None, entry.stale),
                   data=data, total=total, next_cursor=next_cursor)
+
+
+def _picked(table: DatasetTable, address: DatasetAddress,
+            columns: list[str]) -> DatasetSelection:
+    """The rows ``address`` names, of the ``columns`` asked for, in their order, as a
+    table's are picked (round 28, X7): the address's own column first, each column once;
+    ``not_found`` for a name the dataset has no column of, with its columns."""
+    wanted = ([address.column] if address.column is not None else []) + list(columns)
+    try:
+        offsets = tuple(dict.fromkeys(table.column_index(name) for name in wanted))
+    except NameNotFound as error:
+        raise ToolError("not_found", f"{error.message}; columns picks some of them",
+                        field="columns", valid_options=list(table.columns)[:50],
+                        details={"what": "column"}) from None
+    rows = table.select(replace(address, column=None, any_row=False, any_column=False))
+    return replace(rows, offsets=offsets)
 
 
 def _value_sources(table: DatasetTable, selection: Any, data: dict[str, Any], chars: int,
