@@ -1189,6 +1189,21 @@ unit, a word of a quantity or a score, `trace.UNITS`). On 31 made-up prose texts
 table of 145 keys) every reference was found and no quantity was. Key refusals name the data rows and the addresses by position; a
 bare `#4` says it names no table. No definition changed.
 
+*A value after its label, anywhere* (production feedback, round 32, R9, 2026-11-05; 0.1.14).
+`clean.extract` found nothing when its label started more than 256 characters from the
+cell's end (`EXTRACT_WINDOW`: status lines with 260-350-character justifications read
+blank). A pattern that begins with a label (literal text of 3+ characters or a choice of
+them, `clean.pattern_label`, not anchored at the start) is now tried once more where the
+label last occurs; `clean.after` names the labels, found by a plain case-insensitive
+string search, and applies `extract` after the last one (as if the cell began there; or
+from it). Bounded: `str.rfind`, then a window of 256 places reading 512 characters
+(`EXTRACT_REACH`), one whole-text match where that was not enough; 100,000-character
+cells at most about 15 ms, a label pattern's about 0.2 ms; a 5,000-row table with three
+extract columns as fast as before. A cell with the label but no value is
+`extract_unmatched`: counted per column with its first cell (`describe`, `xlsx_profile`,
+`Derived.unmatched`, `xlsx_read`/`xlsx_query` pages, a deck's or document's `from`), and
+warned about. No definition changed (rules are declarations, never a model's).
+
 ### 0.2 — edit
 
 | # | Item | Effort | Done when |

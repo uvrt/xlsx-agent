@@ -30,7 +30,31 @@ otherwise:
   match starts within the last :data:`EXTRACT_WINDOW` characters of the text (after
   ``strip``): a status line at the end of a long narrative is found, a value in its middle
   is not (a pattern anchored with ``^`` finds nothing in a text longer than the window).
-  It is for a value at the end of a cell; ``strip`` is for a label at its start.
+  It is for a value at the end of a cell; ``strip`` is for a label at its start.  A
+  pattern that begins with a label -- literal text of :data:`MIN_LABEL` characters or
+  more, or a choice of such texts (``(?i)(?:Review state|Next step)\\s*:\\s*(\\S[^,.;\\n]*)``)
+  -- finds it anywhere (round 32): where nothing matches in the window, the pattern is
+  tried once more where the label last occurs (case-insensitively when the pattern is),
+  however far from the end.  The value found so is the one the pattern gives there; a cell
+  that matched in the window reads as it did.  (A pattern anchored at the text's start,
+  ``^`` without ``(?m)`` or ``\\A``, is not tried so: it can match nowhere else.)
+* ``after``: the label a value follows, for ``extract`` (which it needs): literal text, or
+  a list of up to :data:`MAX_LABELS` texts, each 1 to :data:`MAX_LABEL` characters --
+  ``{"after": ["Review state", "Next step"], "extract": "^\\s*[:：]\\s*(\\S[^,.;\\n]*)"}``.
+  The last occurrence in the text of any of them is found (a plain string search, never a
+  pattern, case-insensitive), and ``extract`` is applied to the text that follows it, as
+  if the cell began there (``^`` is the label's end); where it matches nothing there, to
+  the text from the label on (so a pattern written for the whole cell, label and all,
+  works as well).  A match starts within the first :data:`EXTRACT_WINDOW` characters of
+  either, wherever the label is.  A cell without the label is ``blank``.
+* **A label without a value** -- the cell holds the label (``after``'s, or the label a
+  pattern begins with), but ``extract`` found nothing -- is ``blank`` with
+  ``issue="extract_unmatched"``: counted per column with its first addresses in
+  ``xlsx_profile`` and ``describe`` (``extract_unmatched``), in ``xlsx_derive``'s result
+  (:attr:`Derived.unmatched <xlsx_agent.derive.Derived.unmatched>`), and in an
+  ``xlsx_read`` or ``xlsx_query`` page, each time with a warning.  Usually the pattern does
+  not fit how that cell writes the value (a dash where a colon was expected, the value on
+  the next line); a cell read by its address on the sheet shows the text as stored.
 * ``split``: a separator, literal text (``";"``, ``"\\n"``, ``" / "``), not a pattern:
   the text is cut at each, every piece trimmed of white space at its ends, and the empty
   pieces dropped.  The value is then a **list** (type ``list``, a tuple in Python, a list
@@ -101,7 +125,16 @@ Intel Core i7-6567U); a declared label (``^Lead:[^;]*;\\s*``) takes about a micr
 An ``extract`` costs at most about the square of its 256-character window: the worst forms
 allowed (``([^;]*);``, ``( *)\\S``, ``(\\s*)$`` on a cell of 32,767 characters) took about
 1 ms a cell on Python 3.12, a label's (``Status:\\s*(\\S.*)$``) about 10 microseconds
-(measured 2026-10-30, the same machine).  A repeat followed only by the end of the text
+(measured 2026-10-30, the same machine).  A label is found by :meth:`str.rfind` on the text
+case-folded (linear); the pattern is then tried once at a pattern's own label (a match
+that gives nothing back: linear in what it reads), or, for ``after``, at the places of a
+window reading at most :data:`EXTRACT_REACH` characters, twice (after the label, from it),
+plus one match on the whole text where that reach was not enough (linear): about the
+square of the reach and the text's length.  On cells of 100,000 characters the worst
+taken (``([^;]*);`` after a label at the start) took about 15 ms a cell, ``( *)\\S``
+about 7 ms, a label's pattern (``(?i)(?:Review state|Next step)\\s*:\\s*(\\S[^,.;\\n]*)``)
+about 0.2 ms; on 32,767 characters about 6 ms, 6 ms and 0.1 ms (measured 2026-11-04, the
+same machine, Python 3.12).  A repeat followed only by the end of the text
 (``$``, ``\\Z``) gives back to nothing but that one test, and counts as one at the end; a
 repeat at the end of a group is followed by what follows the group.
 The checks read the pattern as Python's own parser does (:mod:`re._parser`, Python 3.11
@@ -118,7 +151,7 @@ cleaned alike would name one row.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Mapping
 
 from .read.types import looks_like_date, looks_like_number
@@ -127,7 +160,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from .read.types import Value
 
 #: The keys a field's ``clean`` takes.
-CLEAN_KEYS = ("strip", "extract", "split", "collapse_space", "on")
+CLEAN_KEYS = ("strip", "extract", "after", "split", "collapse_space", "on")
 
 #: Which cells the rules read (``on``): ``"text"`` (the default) text cells only;
 #: ``"shown"`` number cells too, as the text Excel shows them (:mod:`xlsx_agent.shown`).
@@ -142,8 +175,27 @@ MAX_SEPARATOR = 10
 #: How many characters at the start of a cell a ``strip`` pattern sees.
 LABEL_WINDOW = 256
 
-#: How many characters at the end of a cell an ``extract`` match may start in.
+#: How many characters at the end of a cell an ``extract`` match may start in (and, with
+#: ``after``, how many after the label).
 EXTRACT_WINDOW = 256
+
+#: How many characters after its label an ``after`` extract's match reads before it is
+#: tried on the whole text (:func:`_within`).
+EXTRACT_REACH = 2 * EXTRACT_WINDOW
+
+#: How many labels ``after`` takes, at most.
+MAX_LABELS = 16
+
+#: The longest label ``after`` takes (characters).
+MAX_LABEL = 100
+
+#: The shortest text an ``extract`` pattern begins with that counts as its label (found
+#: anywhere in a cell: :class:`Labels`).
+MIN_LABEL = 3
+
+#: The issue of a cleaned value whose cell holds the extract's label, but where the
+#: pattern found no value.
+UNMATCHED = "extract_unmatched"
 
 #: How many repeats in a pattern may give characters back to what follows them.
 MAX_LOOSE_REPEATS = 1
@@ -171,16 +223,66 @@ class RuleError(ValueError):
 
 
 @dataclass(frozen=True)
+class Labels:
+    """Label texts, found in a cell by their last occurrence -- a plain string search, never
+    a pattern of the caller's.  ``folds``: in any case (the text and the labels compared
+    case-folded; where folding would change the text's length, as ``ß`` to ``ss`` does,
+    lower-cased; where that would too, by a case-insensitive search of the text read
+    backwards).  The last occurrence is the one that ends last, the longest where two do
+    (``Review state`` rather than ``state``)."""
+
+    texts: tuple[str, ...]
+    folds: bool = True
+    _longest: "tuple[str, ...]" = field(init=False, repr=False, compare=False)
+    _reversed: "re.Pattern[str]" = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        ordered = sorted(dict.fromkeys(self.texts), key=len, reverse=True)
+        object.__setattr__(self, "_longest", tuple(ordered))
+        object.__setattr__(self, "_reversed", re.compile(
+            "|".join(re.escape(text[::-1]) for text in ordered),
+            re.IGNORECASE if self.folds else 0))
+
+    def last(self, text: str) -> "tuple[int, int] | None":
+        """Where the last occurrence of any label in ``text`` starts and ends, or ``None``."""
+        if not self.folds:
+            return _last(text, self._longest)
+        for fold in (str.casefold, str.lower):
+            folded = fold(text)
+            if len(folded) == len(text):   # one character for one: the places are the text's
+                return _last(folded, [fold(label) for label in self._longest])
+        found = self._reversed.search(text[::-1])   # pragma: no cover - rare characters
+        if found is None:
+            return None
+        return len(text) - found.end(), len(text) - found.start()
+
+
+def _last(text: str, labels: "list[str] | tuple[str, ...]") -> "tuple[int, int] | None":
+    """The start and end of the label occurrence in ``text`` that ends last (the first of
+    ``labels``, the longest, where two end alike)."""
+    best: "tuple[int, int] | None" = None
+    for label in labels:
+        at = text.rfind(label)
+        if at >= 0 and (best is None or at + len(label) > best[1]):
+            best = (at, at + len(label))
+    return best
+
+
+@dataclass(frozen=True)
 class Clean:
     """A column's rules: ``strip`` (a compiled pattern, or ``None``), ``split`` (the
     separator, or ``None``), ``collapse_space`` and ``extract`` (a compiled pattern with
-    one capture group, or ``None``).  ``spec`` is the rules as declared."""
+    one capture group, or ``None``); ``after`` the labels its value follows
+    (:class:`Labels`, or ``None``), and ``label`` the label ``extract`` begins with, found
+    anywhere (``None``: none it can be read from).  ``spec`` is the rules as declared."""
 
     strip: "re.Pattern[str] | None" = None
     split: str | None = None
     collapse_space: bool = False
     extract: "re.Pattern[str] | None" = None
     on: str = "text"
+    after: "Labels | None" = None
+    label: "Labels | None" = None
 
     @property
     def spec(self) -> dict:
@@ -189,6 +291,8 @@ class Clean:
             out["strip"] = self.strip.pattern
         if self.extract is not None:
             out["extract"] = self.extract.pattern
+        if self.after is not None:
+            out["after"] = list(self.after.texts)
         if self.split is not None:
             out["split"] = self.split
         if self.collapse_space:
@@ -201,14 +305,21 @@ class Clean:
         """``text`` cleaned -- text, a tuple of items (``split``), or ``None`` when nothing
         is left -- and whether a rule changed it (a one-item list of the text as it was is
         no change)."""
+        out, changed, _ = self.read(text)
+        return out, changed
+
+    def read(self, text: str) -> "tuple[str | tuple[str, ...] | None, bool, bool]":
+        """What :meth:`apply` gives, and whether the text holds the extract's label (its
+        ``after``, or the label its pattern begins with) although the pattern found no
+        value (:data:`UNMATCHED`)."""
         out = text
+        unmatched = False
         if self.strip is not None:
             found = self.strip.match(out, 0, LABEL_WINDOW)
             if found is not None and found.end():
                 out = out[found.end():]
         if self.extract is not None:
-            found = self.extract.search(out, max(len(out) - EXTRACT_WINDOW, 0))
-            out = (found.group(1) or "") if found is not None else ""
+            out, unmatched = self._extract(self.extract, out)
         if self.split is not None:
             items = []
             for piece in out.split(self.split):
@@ -216,18 +327,63 @@ class Clean:
                 if piece:
                     items.append(piece)
             changed = items != [text]
-            return (tuple(items) if items else None), changed
+            return (tuple(items) if items else None), changed, unmatched
         if self.collapse_space:
             out = " ".join(out.split())
-        return (out if out else None), out != text
+        return (out if out else None), out != text, unmatched
+
+    def _extract(self, compiled: "re.Pattern[str]", text: str) -> "tuple[str, bool]":
+        """The text ``compiled`` captures in ``text`` (``""``: none), and whether the
+        text held the label although nothing was captured."""
+        if self.after is not None:
+            at = self.after.last(text)
+            if at is None:
+                return "", False
+            start, end = at
+            for begin in (end, start):    # after the label; then from it, label and all
+                found = _within(compiled, text[begin:])
+                if found is not None:
+                    return found.group(1) or "", False
+            return "", True
+        found = compiled.search(text, max(len(text) - EXTRACT_WINDOW, 0))
+        if found is not None:
+            return found.group(1) or "", False
+        if self.label is None:
+            return "", False
+        at = self.label.last(text)
+        if at is None:
+            return "", False
+        if at[0] < len(text) - EXTRACT_WINDOW:     # before the window: not tried there yet
+            found = compiled.match(text, at[0])
+            if found is not None:
+                return found.group(1) or "", False
+        return "", True
+
+
+def _within(compiled: "re.Pattern[str]", text: str) -> "re.Match[str] | None":
+    """``compiled``'s first match in ``text`` that starts within its first
+    :data:`EXTRACT_WINDOW` characters, reading :data:`EXTRACT_REACH` characters at most: a
+    match that reaches that far (a ``$`` there, a value running on) is tried once more, at
+    the same place, on the whole text, and stands or falls by that; where none is found
+    within them, the pattern is tried once on the whole text at its start (a value right
+    after the label, longer than the reach, up to a separator past it)."""
+    reach = min(len(text), EXTRACT_REACH)
+    found = compiled.search(text, 0, reach)
+    if found is None:
+        return compiled.match(text) if reach < len(text) else None
+    if found.start() > EXTRACT_WINDOW:
+        return None
+    if found.end() == reach < len(text):
+        return compiled.match(text, found.start())
+    return found
 
 
 def parse_clean(item: Any) -> Clean:
     """A field's ``clean`` (a mapping of :data:`CLEAN_KEYS`) checked and compiled;
     :class:`RuleError` otherwise."""
     if not isinstance(item, Mapping) or not item:
-        raise RuleError("bad_declaration", "", "clean is a mapping of strip, extract, split, "
-                        "collapse_space and on")
+        raise RuleError("bad_declaration", "", "clean is a mapping of strip, extract, after, "
+                        "split, collapse_space and on")
     for key in item:
         if key not in CLEAN_KEYS:
             raise RuleError("bad_declaration", str(key), "unknown rule")
@@ -242,6 +398,14 @@ def parse_clean(item: Any) -> Clean:
                             f"group, the text it gives (this one has {extract.groups}): "
                             r"Status:\s*(\S.*)$; write (?:...) for a group that only "
                             "groups")
+    after = None
+    if "after" in item:
+        if extract is None:
+            raise RuleError("bad_declaration", "after", "after names the label a value "
+                            "follows, for an extract to read it: add the value's pattern, "
+                            "as {\"after\": [\"Review state\"], \"extract\": "
+                            "\"^\\\\s*:\\\\s*(\\\\S[^,.;\\\\n]*)\"}")
+        after = Labels(_labels(item["after"]))
     split = item.get("split")
     if split is not None and not (isinstance(split, str) and split
                                   and len(split) <= MAX_SEPARATOR):
@@ -258,7 +422,84 @@ def parse_clean(item: Any) -> Clean:
     if strip is None and extract is None and split is None and not collapse and on == "text":
         raise RuleError("bad_declaration", "", "clean names no rule: strip, extract, split, "
                         "collapse_space or on")
-    return Clean(strip=strip, split=split, collapse_space=collapse, extract=extract, on=on)
+    label = None
+    if extract is not None and after is None:
+        label = pattern_label(extract)
+    return Clean(strip=strip, split=split, collapse_space=collapse, extract=extract, on=on,
+                 after=after, label=label)
+
+
+def _labels(item: Any) -> tuple[str, ...]:
+    """``after``'s labels: one text, or a list of them (:data:`MAX_LABELS` at most, each 1
+    to :data:`MAX_LABEL` characters); :class:`RuleError` otherwise."""
+    texts = [item] if isinstance(item, str) else item
+    if not isinstance(texts, (list, tuple)) or not 1 <= len(texts) <= MAX_LABELS \
+            or not all(isinstance(t, str) and t.strip() and len(t) <= MAX_LABEL
+                       for t in texts):
+        raise RuleError("bad_declaration", "after", f"the label a value follows: text of 1 to "
+                        f"{MAX_LABEL} characters, or a list of 1 to {MAX_LABELS} of them "
+                        "(\"Review state\", [\"Review state\", \"Next step\"]), found as "
+                        "written, in any case -- not a pattern")
+    return tuple(dict.fromkeys(texts))
+
+
+def pattern_label(compiled: "re.Pattern[str]") -> "Labels | None":
+    """The label an extract pattern (``compiled``) begins with, when every match must begin with one
+    of a few literal texts of :data:`MIN_LABEL` characters or more (``Status:``,
+    ``(?:Review state|Next step)``); ``None`` otherwise, or when the pattern is anchored at
+    the text's start.  Case-insensitive when the pattern is."""
+    try:
+        from re import _parser as parser   # type: ignore[attr-defined]  # private: no stub
+    except ImportError:  # pragma: no cover - re._parser is Python 3.11's on
+        return None
+    try:
+        parsed = parser.parse(compiled.pattern, compiled.flags)
+    except Exception:  # pragma: no cover - compiled already
+        return None
+    texts, _ = _prefixes(list(parsed), compiled.flags)
+    if texts is None or not all(len(t) >= MIN_LABEL for t in texts):
+        return None
+    folds = bool(compiled.flags & re.IGNORECASE) \
+        or re.search(r"\(\?[a-zA-Z-]*i", compiled.pattern) is not None
+    return Labels(tuple(texts), folds=folds)
+
+
+def _prefixes(items: list, flags: int) -> "tuple[list[str] | None, bool]":
+    """The literal texts every match of a parsed sequence begins with (``None``: none
+    known), and whether they are the whole of it (so what follows extends them)."""
+    out = [""]
+    for op, av in items:
+        name = str(op)
+        if name == "LITERAL":
+            out = [text + chr(av) for text in out]
+            continue
+        if name == "AT":
+            where = str(av)
+            if where == "AT_BEGINNING_STRING" or (where == "AT_BEGINNING"
+                                                  and not flags & re.MULTILINE):
+                return None, False           # anchored at the start: nowhere else
+            continue                         # \b, (?m)^ and the like take no character
+        if name == "SUBPATTERN":
+            inner, whole = _prefixes(list(av[3]), flags | (av[1] or 0))
+        elif name == "BRANCH":
+            inner, whole = [], True
+            for choice in av[1]:
+                found, complete = _prefixes(list(choice), flags)
+                if found is None:
+                    inner = None
+                    break
+                inner.extend(found)
+                whole = whole and complete
+        else:
+            return (out if any(out) else None), False
+        if inner is None:
+            return (out if any(out) else None), False
+        out = [text + more for text in out for more in inner]
+        if len(out) > MAX_CHOICES:
+            return None, False
+        if not whole:
+            return out, False
+    return (out if any(out) else None), True
 
 
 def compile_pattern(text: Any, *, key: str = "strip",
@@ -289,9 +530,9 @@ def clean_value(value: "Value", rule: Clean, workbook: Any) -> None:
     if value.t != "text" or not isinstance(value.v, str):
         return
     text = value.v
-    out, changed = rule.apply(text)
+    out, changed, unmatched = rule.read(text)
     if out is None:
-        value.v, value.t, value.issue = None, "blank", None
+        value.v, value.t, value.issue = None, "blank", UNMATCHED if unmatched else None
     elif isinstance(out, tuple):
         value.v, value.t, value.issue = out, "list", None
     elif changed:
@@ -300,6 +541,17 @@ def clean_value(value: "Value", rule: Clean, workbook: Any) -> None:
             value.issue = looks(out, workbook)
     if changed:
         value.cleaned, value.original = True, text
+
+
+def unmatched_warning(count: int, first: str, column: "str | None" = None) -> str:
+    """The warning a tool's result carries for ``count`` cells (of ``column``, when given)
+    that hold a declared extract's label but no value its pattern found: what they read
+    as, the first, and how to see its text."""
+    where = f" of column {column}" if column is not None else ""
+    return (f"{count} cells{where} hold the label of a declared extract, but its pattern "
+            f"found no value after it, so they read blank ({UNMATCHED}, first {first}): the "
+            f"pattern does not fit how the value is written there; xlsx_read {first} with "
+            "cells_only shows the text as stored")
 
 
 #: The value types ``on: "shown"`` reads as their shown text.
@@ -321,10 +573,10 @@ def shown(value: "Value", rule: Clean, workbook: Any) -> None:
         value.v, value.t, value.issue, value.original = None, "blank", "unmeasured_format", None
         return
     text = workbook._redacted(text)
-    out, _ = rule.apply(text)
+    out, _, unmatched = rule.read(text)
     value.original = text
     if out is None:
-        value.v, value.t, value.issue = None, "blank", None
+        value.v, value.t, value.issue = None, "blank", UNMATCHED if unmatched else None
     elif isinstance(out, tuple):
         value.v, value.t, value.issue = out, "list", None
     else:
@@ -525,6 +777,8 @@ def _category(av: Any):
     return lambda ch: found.match(ch) is not None
 
 
-__all__ = ["CLEAN_KEYS", "Clean", "ON", "SHOWN_TYPES", "CleanedWarning", "EXTRACT_WINDOW", "LABEL_WINDOW", "MAX_CHOICES",
-           "MAX_LOOSE_REPEATS", "MAX_PATTERN", "MAX_SEPARATOR", "RuleError", "clean_value",
-           "compile_pattern", "looks", "parse_clean", "shown"]
+__all__ = ["CLEAN_KEYS", "Clean", "ON", "SHOWN_TYPES", "UNMATCHED", "CleanedWarning",
+           "EXTRACT_REACH", "EXTRACT_WINDOW", "LABEL_WINDOW", "Labels", "MAX_CHOICES", "MAX_LABEL", "MAX_LABELS",
+           "MAX_LOOSE_REPEATS", "MAX_PATTERN", "MAX_SEPARATOR", "MIN_LABEL", "RuleError",
+           "clean_value", "compile_pattern", "looks", "parse_clean", "pattern_label", "shown",
+           "unmatched_warning"]

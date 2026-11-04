@@ -37,6 +37,7 @@ from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, bo
                               obj, string, tool)
 
 from ..address import TableAddress, parse_address
+from ..clean import UNMATCHED, unmatched_warning
 from ..query import OPS, dataset_matches, matches, read_rows, select
 from .docformat import handler
 from .read import (_CUT_ROOM, _FIRST, _MARGIN, CURSOR, READ_ROWS, TEXT_SHOWN, _Annotations,
@@ -126,15 +127,20 @@ def xlsx_query(call: Any, table: str, doc: str | None = None, columns: list[str]
         - len(_summary(label, 1, total, total, region.rows, True))
     annotate = _Annotations(workbook, [], comments=False, hyperlinks=False)
     cleaned: list[str] = []
+    unmatched: list[str] = []
     shown, cut_text, stop, full = _page(read_rows(workbook, region, names, page, kept=found.values), start_row,
                                         start_column, budget, annotate, False, TEXT_SHOWN,
-                                        cleaned)
+                                        cleaned, unmatched)
     if stop is None and start_row + len(page) < total:
         stop = (start_row + len(page), 0)
 
     data["rows"] = shown
     if cleaned:
         data["cleaned"] = cleaned_count(cleaned)
+    warnings = []
+    if unmatched:
+        data[UNMATCHED] = cleaned_count(unmatched)
+        warnings.append(unmatched_warning(len(unmatched), unmatched[0]))
     cut: dict[str, Any] = {}
     next_cursor = None
     if stop is not None:
@@ -152,7 +158,8 @@ def xlsx_query(call: Any, table: str, doc: str | None = None, columns: list[str]
         data["cut"] = cut
     summary = _summary(label, start_row + 1, start_row + len(shown), total, region.rows,
                        next_cursor is not None)
-    return Result(summary=summary, data=data, total=total, next_cursor=next_cursor)
+    return Result(summary=summary, data=data, total=total, next_cursor=next_cursor,
+                  warnings=warnings)
 
 
 def _query_dataset(call: Any, target: str, columns: list[str] | None, where: list, sort: list,

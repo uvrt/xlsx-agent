@@ -196,9 +196,14 @@ A field may also clean its column's text -- `"clean": {"strip": "^Lead:[^;]*;\\s
 "collapse_space": true, "split": ";"}`: a leading label stripped, white space collapsed, a
 cell split into a list (`"t": "list"`) -- applied where the table is read, never to the
 key column. `"extract": "Status:\\s*(\\S.*)$"` gives a column the text one capture group
-finds near the end of each cell (searched for in its last 256 characters; not found:
-blank): a status line at the end of a narrative becomes a column of its own, with its cell
-as its source. Clean rules are the application's, never a model's. A value a rule changed says `"cleaned": true`; `xlsx_read` and `xlsx_query`
+finds near the end of each cell (searched for in its last 256 characters, and once more
+where the label it begins with last occurs; not found: blank): a status line at the end of
+a narrative becomes a column of its own, with its cell as its source. `"after": ["Review
+state", "Next step"]` beside an `extract` reads the value after the labels' last
+occurrence anywhere in the cell (a plain search, case aside). A cell holding the label but
+no value the pattern finds reads blank, `extract_unmatched`: counted, with its first cell,
+in `describe`, `xlsx_profile`, `xlsx_derive`, `xlsx_read` and `xlsx_query`, with a
+warning. Clean rules are the application's, never a model's. A value a rule changed says `"cleaned": true`; `xlsx_read` and `xlsx_query`
 pages count them (`cleaned`: count and first addresses), `xlsx_profile` and `describe`
 flag them, `xlsx_derive` counts them per column, and a slide's or document's table from
 `t:` gets a list as one cell with a line per item and a warning saying how many values

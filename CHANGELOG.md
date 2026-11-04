@@ -5,6 +5,39 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## 0.1.14 (unreleased) -- a value after its label, anywhere in the cell
+
+Production round 32, R9. No tool definition changed.
+
+- **A declared extract finds its label anywhere.** Before, an `extract` match had to start
+  in a cell's last 256 characters (`EXTRACT_WINDOW`), so a status line followed by a
+  justification of 260-350 characters read blank. Now a pattern that begins with a label
+  -- literal text of 3 characters or more, or a choice of such texts
+  (`(?i)(?:Review state|Next step)\s*:\s*(...)`; `clean.pattern_label`) -- is tried once
+  more where that label last occurs, when nothing matched in the window. A cell that
+  matched in the window reads as before; one that read blank may now have its value. A
+  pattern anchored at the text's start (`^` without `(?m)`, `\A`) is not.
+- **`after`**, a new `clean` rule: the label a value follows, literal text or a list of up
+  to 16 (`{"after": ["Review state", "Next step"], "extract": "^\\s*:\\s*(\\S[^,.;\\n]*)"}`).
+  The labels' last occurrence is found by a plain, case-insensitive string search, never a
+  pattern, and `extract` is applied to the text after it as if the cell began there (`^`
+  the label's end); where that finds nothing, to the text from the label on, so a pattern
+  written for the whole cell works with it too. A match starts within 256 characters of
+  the label and is read within 512 (`EXTRACT_REACH`), a match reaching that far tried once
+  on the whole text. Refused without an `extract`, with the form that works.
+- **A label without a value is counted.** A cell holding the label (`after`'s, or a
+  pattern's own) where the pattern found nothing reads blank with
+  `issue: "extract_unmatched"`: per column in `xlsx_profile` and `describe` (its count and
+  first cell), `Derived.unmatched` and `xlsx_derive`'s `extract_unmatched`, an
+  `xlsx_read`/`xlsx_query` page's `extract_unmatched`, and a deck's or document's table
+  from `t:` (the dataset's `detail`), each with a warning naming the first cell and that
+  `xlsx_read` with `cells_only` shows its text.
+- **Bounded**: a label is found by a string search from the end (`str.rfind` on the
+  case-folded text); a cell of 100,000 characters costs at most about 15 ms (the worst
+  pattern taken, `([^;]*);`, after a label at its start), a label pattern's about 0.2 ms;
+  a 5,000-row table of three extract columns reads as fast as before (measured on an Intel
+  Core i7-6567U, Python 3.12).
+
 ## 0.1.13 (unreleased) -- keys like 4.1: found, addressed, followed in text
 
 Production round 31, R7b. No tool definition changed.

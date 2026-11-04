@@ -26,7 +26,8 @@ counted -- and a value by key then names one), and per
 column a summary of its profile (:mod:`xlsx_agent.profile`): type, fill,
 min, max and mean, the values when there are :data:`~xlsx_agent.profile.FEW_VALUES` or fewer
 (else how many distinct), text lengths, formula share, the types mixed in, allowed
-values, and flags by count.  Up to :data:`SAMPLE_ROWS` sample rows per region.  The blocks
+values, and flags by count (``extract_unmatched``, cells holding a declared extract's label
+whose value the pattern did not find, with its first address too: :mod:`xlsx_agent.clean`).  Up to :data:`SAMPLE_ROWS` sample rows per region.  The blocks
 whose header is not detected (``header_unclear``, with the reason: declare them), the
 defined names that are not ranges (with the reason, never evaluated), and the problems the
 workbook has (by code, address and count).
@@ -76,6 +77,7 @@ from typing import TYPE_CHECKING, Any
 from ooxml_edit.sheets import Area, Cell
 
 from .address import RangeAddress, format_sheet
+from .clean import UNMATCHED
 from .profile import ColumnStats, profile
 from .read.regions import Region, RegionError, UnclearRegion, capacity_rows
 from .read.types import Value
@@ -513,7 +515,11 @@ def _column(stats: ColumnStats) -> dict:
         out["also"] = others
     if stats.validation:
         out["allowed"] = [_allowed(a) for a in stats.validation]
-    flags = {code: c.count for code, c in stats.flags.items() if code != "mixed_types"}
+    flags: dict[str, Any] = {code: c.count for code, c in stats.flags.items()
+                             if code != "mixed_types"}
+    if UNMATCHED in flags:   # a value missed where it is written: where to look
+        flags[UNMATCHED] = {"count": flags[UNMATCHED],
+                            "first": stats.flags[UNMATCHED].first[0]}
     if flags:
         out["flags"] = flags
     return out

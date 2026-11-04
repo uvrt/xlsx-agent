@@ -264,7 +264,13 @@ wb.column("t:tasks[owners]").stats().flags
   with one capture group, searched for -- anchored only as written -- in the cell's last
   256 characters; the value is what the group captured, or `blank` when it is not found:
   `{"extract": r"Status:\s*(\S.*)$"}` reads a narrative ending `Status: Partly done` as
-  `Partly done`), `split` (a literal separator; each
+  `Partly done`; a pattern that begins with a label, as that one does, is tried once more
+  where the label last occurs when nothing matched there, so a status line followed by a
+  long justification is found too), `after` (the label a value follows, literal text or a
+  list: `{"after": ["Review state", "Next step"], "extract": r"^\s*:\s*(\S[^,.;\n]*)"}`
+  finds the labels' last occurrence anywhere, case aside, and applies `extract` to the text
+  after it as if the cell began there -- or from the label on, for a pattern written with
+  it), `split` (a literal separator; each
   item trimmed, empty ones dropped; the value a `list` -- a tuple in Python, a list in
   JSON -- even of one item), `collapse_space` (runs of white space become one space, none
   at the ends; on each item of a split). Text cleaned to nothing is `blank`; cleaned text
@@ -274,7 +280,10 @@ wb.column("t:tasks[owners]").stats().flags
   are counted with their first addresses in an `xlsx_read` or `xlsx_query` page
   (`cleaned`), as a `cleaned` flag in `xlsx_profile` and `describe`, per column in
   `xlsx_derive` (`Derived.cleaned`), and as a `CleanedWarning` when the table goes into a
-  deck or document (the tool's result lists it among its warnings).
+  deck or document (the tool's result lists it among its warnings). A cell that holds the
+  extract's label but no value the pattern finds reads blank with
+  `issue: "extract_unmatched"`, counted the same ways (`Derived.unmatched`; in `describe`
+  with its first cell), each tool's result warning about it.
 - **Bounded**: a pattern is compiled when declared, and refused (`bad_pattern`) when its
   backtracking could grow past the square of the 256 characters it sees -- a repeat in a
   repeat (`(a+)+`), an alternation in a repeat (`(a|ab)*`), a backreference, or more than
