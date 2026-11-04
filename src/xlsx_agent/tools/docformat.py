@@ -89,7 +89,8 @@ cut says what a large workbook's catalogue left out, next which tool gives it.
 xlsx_query gives a region's or dataset's rows that meet filters, sorted, with the count of all matches; \
 xlsx_derive computes figures (counts, sums, means, shares, groups, pivots) and keeps them as \
 a dataset, d:<id>, each value with its source cells; xlsx_compare compares two open \
-workbooks by row key; xlsx_validate_data checks one against a schema, problems by address.
+workbooks by row key; xlsx_validate_data checks one against a schema, problems by address. \
+Several reads (records, cells, regions, traces) go in one read_batch, not a call each.
 - Addresses: Stock!F2 a cell; Stock!A1:H40 a range; Stock! a whole sheet; 'Q3 sales'!B2 a \
 quoted sheet; #3!F2 the sheet whose id is 3 (it survives a rename). t:Products a table, defined name or \
 declared region; t:Stock!Prices a name local to a sheet; t:Stock!A1 a region detected at \

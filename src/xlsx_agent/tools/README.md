@@ -32,7 +32,7 @@ on Azure OpenAI's Responses API.
 
 | Group | Tools |
 | --- | --- |
-| `core` (always loaded) | `open_document`, `undo`, `batch`, `describe`, `find_text`, `save_document`, `xlsx_read`, `xlsx_profile`, `xlsx_query`, `xlsx_derive`, `xlsx_compare`, `xlsx_validate_data` |
+| `core` (always loaded) | `open_document`, `undo`, `batch`, `read_batch`, `describe`, `find_text`, `save_document`, `xlsx_read`, `xlsx_profile`, `xlsx_query`, `xlsx_derive`, `xlsx_compare`, `xlsx_validate_data` |
 | `shared_misc` | `close_document`, `read_blob` |
 | `xlsx_edit` (E3) | `xlsx_set_cells` |
 | `xlsx_trace` (round 31) | `xlsx_trace`: rows of a table or dataset, each with the rows it rests on and why (`source`, `names` by key, `lists` its key), every value in full, within a size budget, what did not fit listed |
@@ -42,6 +42,13 @@ definition for decks, documents and workbooks alike. `describe` of any document 
 lists the session's datasets (ooxml-edit 0.30.0): id, columns, types, row count and
 `from` -- `d1/t:Sales` for a derive from a workbook, `d:by_rep` for one from a dataset --
 never their values.
+
+`read_batch` (ooxml-edit 0.78.0, round 32) reads many things in one call: records by key,
+cells, regions, queries, traces, `describe`, each op answered as the call alone, within its
+own `max_result_chars`, the reply within 96,000 characters; what does not fit is listed in
+`not_returned`, with `resend`, the call that asks for it. It changes nothing, so a reader
+(`roles=["review"]`) has it; a builder reading record after record uses it too, rather
+than a call per record. A change among its ops is refused, pointing at `batch`.
 
 `save_document`, `undo` and `batch` are the shared ones too (E1). A workbook's undo step is
 one call (or one `batch`), and its version is the workbook history's: undoing every step
@@ -131,7 +138,7 @@ toolbox with the deck or Word tools a reviewer keeps every reading workbook tool
 
 | Role | Workbook tools |
 | --- | --- |
-| `review` | `describe`, `find_text`, `xlsx_read`, `xlsx_profile`, `xlsx_query`, `xlsx_derive`, `xlsx_compare`, `xlsx_validate_data` |
+| `review` | `describe`, `find_text`, `xlsx_read`, `xlsx_profile`, `xlsx_query`, `xlsx_derive`, `xlsx_compare`, `xlsx_validate_data`, `xlsx_trace`, `read_batch` |
 | `edit` | `undo`, `xlsx_set_cells` |
 | any | `open_document`, `close_document`, `read_blob`, `batch`, `save_document` |
 Agents sharing one session (ooxml-edit 0.46.0) each work through a view of it,

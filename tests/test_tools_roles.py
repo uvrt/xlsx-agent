@@ -120,3 +120,45 @@ def test_two_agents_views_of_one_session_share_its_workbook_and_datasets(box):
                                                           {"agent": "writer-1"}]
     with pytest.raises(ValueError, match="never widens"):
         writer.view(roles=["review"])
+
+
+def test_a_reviewer_reads_many_records_in_one_read_batch(box):
+    """ooxml-edit 0.78.0 (round 32, R15): ``read_batch`` is a reader's, in the core: records
+    by key, a query and the catalogue in one call, each answered as alone; a change in it
+    is refused with the way out, the others answered."""
+    assert "read_batch" in {d["name"] for d in box.definitions("anthropic", groups="core",
+                                                               roles=["review"])}
+    assert "read_batch makes many reads" in box.system_prompt(roles=["review"])
+    session = box.session()
+    session.open(_book(), "stock.xlsx")
+    reader = session.view(roles=["review"], context={"agent": "reader-1"})
+    alone = box.dispatch(reader, "xlsx_read", {"doc": "d1", "target": "t:Lines/A-2",
+                                               "key": "SKU"})
+    result = box.dispatch(reader, "read_batch", {"ops": [
+        {"tool": "xlsx_read", "arguments": {"doc": "d1", "target": "t:Lines/A-1",
+                                            "key": "SKU"}},
+        {"tool": "xlsx_read", "arguments": {"doc": "d1", "target": "t:Lines/A-2",
+                                            "key": "SKU"}},
+        {"tool": "xlsx_query", "arguments": {"doc": "d1", "table": "t:Lines"}},
+        {"tool": "describe", "arguments": {"doc": "d1"}},
+        {"tool": "xlsx_set_cells", "arguments": {"doc": "d1",
+                                                 "cells": [{"address": "Stock!B2", "number": 5}]}}]})
+    assert result.ok
+    answers = result.data["ops"]
+    assert [answer.get("error") is None for answer in answers] == [True] * 4 + [False]
+    assert answers[1]["data"] == alone.data
+    assert answers[4]["error"]["details"]["role"] == "edit"
+    assert session.entry("d1").version == 0
+
+
+def test_a_builder_s_change_in_a_read_batch_is_sent_to_batch(box):
+    session = box.session()
+    session.open(_book(), "stock.xlsx")
+    result = box.dispatch(session, "read_batch", {"ops": [
+        {"tool": "xlsx_set_cells", "arguments": {"doc": "d1",
+                                                 "cells": [{"address": "Stock!B2", "number": 5}]}},
+        {"tool": "xlsx_read", "arguments": {"doc": "d1", "target": "Stock!B2"}}]})
+    refused, read = result.data["ops"]
+    assert refused["error"]["code"] == "refused"
+    assert refused["error"]["valid_options"] == ["batch", "xlsx_set_cells"]
+    assert "error" not in read and session.entry("d1").version == 0
