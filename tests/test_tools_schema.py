@@ -102,6 +102,10 @@ Round 31, R7: ``xlsx_trace`` (rows traced to the rows they rest on) in a deferre
 its own, ``xlsx_trace`` (242 estimated with its group's line in the tool-search tool, about
 358 counted by the proxy): the core unchanged, 4,533; every definition 5,274 -> 5,505, the
 guard 5,275 -> 5,510.  It reads, so it is not strict: the strict set is unchanged.
+Round 32, R15: ooxml-edit's ``read_batch`` (many reads in one call, each with its own budget)
+in the core, where a builder reading record after record reaches for it, 184 estimated: the
+core 4,533 -> 4,717, every definition 5,505 -> 5,688; the guards 4,535 -> 4,720 and 5,510 ->
+5,690.  Its ops are free-form, so it is not strict: the strict set is unchanged.
 """
 
 from __future__ import annotations
@@ -121,8 +125,8 @@ CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
 #: The core's estimate, a regression guard (round 25: past the proxy's budget, by choice).
-CORE_GUARD = 4535
-ALL_GUARD = 5510
+CORE_GUARD = 4720
+ALL_GUARD = 5690
 
 
 @pytest.fixture(scope="module")
@@ -177,7 +181,8 @@ def test_the_groups_are_the_roadmaps():
     # deferred groups of their own: xlsx_edit from E3
     assert groups == {"core": {"open_document", "describe", "find_text", "xlsx_read",
                                "xlsx_profile", "xlsx_query", "xlsx_derive", "xlsx_compare",
-                               "xlsx_validate_data", "save_document", "undo", "batch"},
+                               "xlsx_validate_data", "save_document", "undo", "batch",
+                               "read_batch"},
                       "shared_misc": {"close_document", "read_blob"},
                       "xlsx_edit": {"xlsx_set_cells"},
                       "xlsx_trace": {"xlsx_trace"}}

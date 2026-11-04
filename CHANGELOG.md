@@ -5,6 +5,22 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## 0.1.15 (unreleased) -- many reads in one call
+
+Production round 32, R15.
+
+- **`read_batch`** (ooxml-edit 0.78.0) is a workbook tool, in the core: many reads --
+  records by key, cells, regions, queries, traces, `describe` -- in one call, each answered
+  as the call alone (its own `max_result_chars`), the reply within 96,000 characters, and
+  what does not fit listed with the call that asks for it. It changes nothing and is the
+  `review` role's, so a reader is given it; a change among its ops is refused with the way
+  out (`batch`). The prompt's line on the read tools says several reads go in one
+  `read_batch`, and ooxml-edit's shared fragment names it.
+- Definitions: +184 estimated tokens (`read_batch`), the core 4,533 -> 4,717, every
+  definition 5,505 -> 5,688 (guards 4,720 and 5,690); a reviewer's core 4,379 -> 4,563.
+  Not strict: the strict set is unchanged.
+- `ooxml-edit>=0.78.0` (was 0.72.0): the first with `shared.READ_BATCH`.
+
 ## 0.1.14 (unreleased) -- a value after its label, anywhere in the cell
 
 Production round 32, R9. No tool definition changed.
@@ -979,7 +995,8 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   the Markdown cells (X3b); 0.57.0 the format's `touched` hook, by which a result names
   the sheets a call changed (round 13, R2); 0.70.0 the shared tools sent with a workbook's
   parameters only (round 23, V3); 0.72.0 `define_dataset(also=...)`, by which a joined
-  dataset goes stale when the joined side changes (round 25, X1) -- the floor.
+  dataset goes stale when the joined side changes (round 25, X1); 0.78.0
+  `shared.READ_BATCH`, many reads in one call (round 32, R15) -- the floor.
 - `ooxml-common>=0.29.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
   widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, and from

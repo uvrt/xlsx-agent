@@ -227,5 +227,7 @@ def save_document(call: Any, doc: str, name: str, format: str) -> Result:  # noq
     return Result(summary=f"Saved {name} ({format}, {len(data):,} bytes)", data=described)
 
 
-TOOLS = [*[tool for tool in shared.SESSION_TOOLS if tool.name in SESSION_NAMES], describe,
-         find_text, save_document]
+#: ``read_batch`` (ooxml-edit 0.78.0; round 32, R15): many reads -- records, cells, regions,
+#: traces -- in one call, each with its own budget; a reader's tool, in the core.
+TOOLS = [*[tool for tool in shared.SESSION_TOOLS if tool.name in SESSION_NAMES],
+         shared.READ_BATCH, describe, find_text, save_document]
