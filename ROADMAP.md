@@ -1177,6 +1177,18 @@ index per workbook state (dictionary look-ups per word: 7,000 keys over 7,000 te
 0.05 s). On demand rather than core: a checking tool, not every run's, 242 estimated; the core unchanged,
 every definition 5,274 -> 5,505; not strict.
 
+*Keys like 4.1* (production feedback, round 31, R7b, 2026-11-04; 0.1.13). A column of
+dotted numbers (`4`, `4.1`, `4.1.2`, `A.5.1`; `regions.is_dotted_key`, one with a dot) is the
+key where several columns could be and every other one holds words (at least half its
+values with a space or no digit); beside codes, whole numbers or another dotted column the
+lookup is refused as before. Every tool taking `t:Name/<key>` gets it through the one key
+detection (`KeyFinder`). `xlsx_trace` looks for such a table's keys with a dot in text,
+whole only where the dotted number is (not inside a longer one), and, for keys of digits
+alone, not as a quantity (after a currency sign, a sign, a comparison; before a percent, a
+unit, a word of a quantity or a score, `trace.UNITS`). On 31 made-up prose texts (a clause
+table of 145 keys) every reference was found and no quantity was. Key refusals name the data rows and the addresses by position; a
+bare `#4` says it names no table. No definition changed.
+
 ### 0.2 — edit
 
 | # | Item | Effort | Done when |

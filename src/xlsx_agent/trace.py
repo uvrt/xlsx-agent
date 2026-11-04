@@ -34,6 +34,20 @@ Only keys holding a letter and a digit are looked for in text (``I-1``, ``R2``, 
 a key that is a number, or a word, would be found in prose and figures everywhere.  A
 declared split column's items are each such a text.  A row never links to itself.
 
+**Dotted numbers.**  A table keyed by dotted numbers -- its key column, declared or the
+one found, every key a dotted number (``4``, ``4.1``, ``4.1.2``, ``A.5.1``:
+:func:`~xlsx_agent.read.regions.is_dotted_key`) and one with a dot -- has its keys with a
+dot looked for too (``see 4.2``); its whole numbers (``4``) never are, nor is ``4.1`` of
+any other table.  A key with a dot is whole only where the dotted number is: not inside
+a longer one (``4.1`` is not in ``4.1.2``, ``1.4.1``, ``12.05.2026``; it is in ``4.1.``
+ending a sentence, and in ``4.1-4.3``).  One made of digits alone is a number too, so it
+is not found where the text shows a quantity: after a currency sign, a sign
+(``-4.5``, not ``4.1-4.3``) or a comparison (``= 4.5``, ``< 4.5``), or before a percent, a
+unit or a word of a quantity (``4.5 kg``, ``4.5%``, ``4.5 GB``, ``4.5 days``, ``4.5
+million``: :data:`UNITS`) or a score (``4.5/5``, ``4.5 out of 5``) -- ``4.5 kg`` is a weight,
+not clause 4.5.  Elsewhere such a key in prose is taken as named (``version 4.1`` names
+clause 4.1 when the workbook has one): that is the price of following ``see 4.2``.
+
 **Bounded.**  ``depth`` (0 to :data:`MAX_DEPTH`, :data:`DEPTH` unless given) is how far
 names are followed; at most :data:`MAX_LINKS` links per traced row, the rest counted in
 :attr:`Trace.more`.  Values are every value in full (blank cells left out), each row's
@@ -59,7 +73,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
 from .address import (DatasetAddress, RangeAddress, TableAddress, format_address,
                       parse_address)
-from .read.regions import Region, RegionError
+from .read.regions import Region, RegionError, is_dotted_key
 
 if TYPE_CHECKING:
     from .dataset import DatasetTable
@@ -92,6 +106,35 @@ _WORD = re.compile(r"\w+")
 _WORD_CHAR = re.compile(r"\w")
 _LETTER = re.compile(r"[^\W\d_]")
 _DIGIT = re.compile(r"\d")
+
+#: The units after which a dotted key of digits alone is a quantity, not a key (``4.5 kg``,
+#: ``3.5 days``): matched whole, case counting, after at most one space, and not before a
+#: letter, a digit or an apostrophe (``4.1 s'applique`` names 4.1).
+UNITS = ("%", "‰", "kg", "g", "mg", "t", "km", "m", "cm", "mm", "µm", "nm", "l", "L",
+         "ml", "mL", "cl", "dl", "h", "min", "s", "ms", "°", "°C", "°F", "Hz", "kHz", "MHz",
+         "GHz", "W", "kW", "MW", "Wh", "kWh", "MWh", "V", "kV", "mA", "kB", "KB", "MB", "GB",
+         "TB", "px", "pt", "ft", "lb", "lbs", "oz", "mi", "mph", "x", "×", "€", "$", "£",
+         "EUR", "USD", "GBP", "CHF", "am", "pm",
+         # words of a quantity, English and French (case counting: as written in prose)
+         "second", "seconds", "minute", "minutes", "hour", "hours", "day", "days", "week",
+         "weeks", "month", "months", "year", "years", "secondes", "heure", "heures", "jour",
+         "jours", "semaine", "semaines", "mois", "ans", "année", "années", "times",
+         "fois", "thousand", "million", "millions", "billion", "billions", "milliard",
+         "milliards", "percent", "per cent", "pour cent", "points", "pts", "euro", "euros",
+         "dollar", "dollars", "litre", "litres", "liter", "liters", "metre", "metres",
+         "meter", "meters", "mètre", "mètres", "kilo", "kilos")
+
+#: A score after a dotted key of digits alone (``4.5/5``, ``4.5 out of 5``, ``4,5 sur 5``;
+#: not ``4.1/4.2``, two keys, nor ``4.2 sur la base``).
+_SCORE_AFTER = re.compile(r"(?:\s?/\s?|\s(?:out of|sur)\s)\d+(?![.\d])")
+
+#: What before a dotted key of digits alone makes it a quantity: a currency sign, a sign
+#: not after a word or a dot (``-4.5``, not ``4.1-4.3``), a comparison; at most one space
+#: between.
+_QUANTITY_BEFORE = re.compile(r"(?:[$€£¥]|(?:^|[^\w.])[-+±−]|[=<>≤≥≈~])\s?$")
+_QUANTITY_AFTER = re.compile(
+    r"\s?(?:%|‰|(?:" + "|".join(re.escape(u) for u in sorted(UNITS, key=len, reverse=True)
+                               if u not in ("%", "‰")) + r")(?![\w'’]))")
 
 
 @dataclass(frozen=True)
@@ -173,13 +216,15 @@ class TraceIndex:
         #: key -> the rows holding it, and the rows (with the column) whose text names it.
         self.holding: dict[str, list[_Row]] = {}
         self.listing: dict[str, list[tuple[_Row, str]]] = {}
+        #: The keys with a dot of the tables keyed by dotted numbers (looked for in text).
+        self.dotted: set[str] = set()
         self.keys_cut = 0
         regions = workbook.regions
         tables = [regions.with_key(r) for r in [*workbook.tables, *regions.declared]]
         read: list[tuple[Region, list[_Row]]] = []
         for region in tables:
             read.append((region, self._read(region)))
-        looked = [k for k in self.holding if _findable(k)]
+        looked = [k for k in self.holding if _findable(k) or k in self.dotted]
         if len(looked) > MAX_KEYS:
             self.keys_cut = len(looked) - MAX_KEYS
             looked = looked[:MAX_KEYS]
@@ -207,6 +252,8 @@ class TraceIndex:
         out: list[_Row] = []
         if region.data is None:
             return out
+        if named and index is not None:
+            self.dotted.update(_dotted_keys(index.keys))
         columns = list(region.columns)
         for position, cells in enumerate(self.workbook.read(whole), 1):
             key = index.keys[position - 1] if index is not None and position <= len(
@@ -246,6 +293,28 @@ def _findable(key: str) -> bool:
     return len(key) >= 2 and bool(_LETTER.search(key)) and bool(_DIGIT.search(key))
 
 
+def _dotted_keys(keys: Sequence[str | None]) -> list[str]:
+    """A key column's keys with a dot, when every key is a dotted number and one has a dot
+    (see the module's notes); else none."""
+    held = [k for k in keys if k is not None]
+    if not held or not all(is_dotted_key(k) for k in held):
+        return []
+    return [k for k in held if "." in k]
+
+
+def _whole_dotted(text: str, start: int, end: int, digits: bool) -> bool:
+    """Whether the dotted key at ``text[start:end]`` is whole there: not inside a longer
+    dotted number, and (``digits``: a key of digits alone) not a quantity."""
+    if end + 1 < len(text) and text[end] == "." and _WORD_CHAR.match(text, end + 1):
+        return False
+    if start >= 2 and text[start - 1] == "." and _WORD_CHAR.match(text, start - 2):
+        return False
+    if digits and (_QUANTITY_BEFORE.search(text, max(0, start - 3), start)
+                   or _QUANTITY_AFTER.match(text, end) or _SCORE_AFTER.match(text, end)):
+        return False
+    return True
+
+
 class _Finder:
     """Finds keys in text, whole (neither end touching a letter, digit or ``_``).  A key
     that starts with a word character is looked up by the word it starts with and its
@@ -257,6 +326,9 @@ class _Finder:
     def __init__(self, keys: Sequence[str]) -> None:
         #: first word -> (lengths, longest first; the keys)
         self.by_word: dict[str, tuple[list[int], set[str]]] = {}
+        #: Keys with a dot that are dotted numbers -> whether made of digits alone.
+        self.dotted: dict[str, bool] = {k: _LETTER.search(k) is None for k in keys
+                                        if "." in k and is_dotted_key(k)}
         other: list[str] = []
         for key in set(keys):
             first = _WORD.match(key)
@@ -289,8 +361,12 @@ class _Finder:
                 end = start + length
                 if end > size or (end < size and _WORD_CHAR.match(text, end)):
                     continue
-                if text[start:end] in held[1]:
-                    found.append((start, text[start:end]))
+                key = text[start:end]
+                if key in held[1]:
+                    digits = self.dotted.get(key)
+                    if digits is not None and not _whole_dotted(text, start, end, digits):
+                        continue
+                    found.append((start, key))
                     break
         if self.other is not None:
             found += [(m.start(), m.group(0)) for m in self.other.finditer(text)]

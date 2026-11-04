@@ -240,6 +240,8 @@ MAX_NAME = 255
 _CELLS = re.compile(r"\$?([A-Za-z]{1,3})\$?([0-9]{1,7})(?::\$?([A-Za-z]{1,3})\$?([0-9]{1,7}))?")
 _COLUMNS = re.compile(r"\$?([A-Za-z]{1,3}):\$?([A-Za-z]{1,3})")
 _ROWS = re.compile(r"\$?([0-9]{1,7}):\$?([0-9]{1,7})")
+#: A row by position, or a row range, written without its table: ``#4``, ``#1:#8``.
+_POSITIONS = re.compile(r"#[0-9]{1,7}(?::#[0-9]{1,7})?")
 _POSITION = re.compile(r"#([1-9][0-9]{0,6})")
 _ROW_RANGE = re.compile(r"#([1-9][0-9]{0,6}):(?:#?([1-9][0-9]{0,6}))?")
 
@@ -1004,6 +1006,11 @@ class _Parser:
                 and not rest.startswith("#"):
             self.fail("not an address; a table is written t:Name, a dataset d:name",
                       options=[TABLE_PREFIX + rest, DATASET_PREFIX + rest])
+        if at == 0 and _POSITIONS.fullmatch(rest):
+            self.fail("a row by position names its table or dataset: t:Name/#4, "
+                      "t:Name/#1:#8, d:name/#4",
+                      options=[FORMS["row by position"], FORMS["row range"],
+                               DATASET_PREFIX + "by_category/#2"])
         self.fail("not an address: a cell or range is Sheet!A1, a table t:Name, "
                   "a dataset d:name, a ref $name", at)
 
