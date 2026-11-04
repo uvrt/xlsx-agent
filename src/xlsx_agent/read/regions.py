@@ -34,8 +34,14 @@ table and sheet names may (ROADMAP.md, "Addresses"); keys are cell content and n
 key column is the one the caller names (``key=``, or the declared region's ``key``), or
 else the only column :meth:`Regions.key_columns` finds (unique, never blank, text or
 whole numbers); with none, or more than one, the lookup is refused (``no_key_column``)
-with those columns as ``valid_options``.  A key is matched exactly (case counts) against
-the cell's text, or a whole number's digits (``42`` matches 42 and 42.0).  A key two rows
+with those columns as ``valid_options``.  Of several, a column of dotted numbers (``4.1``,
+``4.1.2``, ``A.5.1``: :func:`is_dotted_key`, at least one with a dot) is the key when it is
+the only one and every other column found holds words (a value with a space, or no digit):
+a table of clauses keyed by number beside their titles; beside another column of codes or
+whole numbers (at least half its values not words) it is not chosen, and the lookup is
+refused.  A key is matched exactly (case
+counts) against the cell's text, or a whole number's digits (``42`` matches 42 and 42.0).
+A key two rows
 share is refused (``duplicate_key``) with the rows' positions (``t:Products/#3``) as
 ``valid_options``; never the first of them.
 
@@ -89,6 +95,7 @@ one address by key per cell (or per row).
 from __future__ import annotations
 
 import difflib
+import re
 from contextlib import contextmanager
 from copy import copy
 from dataclasses import dataclass, field, replace
@@ -127,6 +134,8 @@ KEY_VALUE_ROWS = 200
 
 #: Why a header is not detected (:attr:`RegionError.reason` of ``header_unclear``).
 UNCLEAR_REASONS = ("merged_header", "rows_above", "multi_row_header", "header_not_text")
+
+_DIGIT = re.compile(r"\d")
 
 
 class RegionError(ValueError):
@@ -1700,7 +1709,10 @@ s for s in self.workbook._every_sheet if s.name == part.sheet)
         why = "no column is" if not candidates else f"{len(candidates)} columns are"
         raise RegionError("no_key_column", f"{region.address.text} has no key column named, "
                           f"and {why} unique, never blank, text or whole numbers; name one "
-                          "with key=", address=region.address.text, valid_options=candidates)
+                          "with key= where the tool takes it, or the application declares "
+                          "the table's key (a declared table's key, Workbook.declare_key)"
+                          f"{_shape(region.address, region.rows)}",
+                          address=region.address.text, valid_options=candidates)
 
     def key_columns(self, region: Region) -> list[str]:
         """The columns of ``region`` that can be its key: every data cell holds text or a
@@ -1786,7 +1798,8 @@ class KeyIndex:
             hint = (f"; {like} a key like it (case, spaces or a character apart): "
                     "valid_options, by position" if near else "")
             raise NameNotFound(f"no row of {whole.text} has {which} in column "
-                               f"{self.column!r}{hint}", what="key", name=wanted,
+                               f"{self.column!r}{hint}{_shape(whole, len(self.keys))}",
+                               what="key", name=wanted,
                                valid_options=[replace(whole, position=p).text for p in near])
         return self._first[wanted]
 
@@ -1809,16 +1822,32 @@ class KeyIndex:
         return sorted(out[:limit])
 
 
+#: A dotted number, as a key (:func:`is_dotted_key`): ``4``, ``4.1``, ``4.1.2``, ``A.5.1``.
+_DOTTED = re.compile(r"(?:[A-Za-z]{1,2}\.)?\d{1,9}(?:\.\d{1,9})*")
+
+
+def is_dotted_key(key: str) -> bool:
+    """Whether ``key`` is a dotted number -- digits in parts joined by dots, after at most
+    a letter or two and a dot (``4.1``, ``4.1.2``, ``A.5.1``) -- or whole digits (``4``,
+    the top of a column of clause numbers)."""
+    return _DOTTED.fullmatch(key) is not None
+
+
 class KeyFinder:
     """The columns of a region that can be its key (:meth:`Regions.key_columns`), from its
     data rows, each given whole and in order to :meth:`add`: a column is dropped at its
-    first cell that is not a key, or a key met before."""
+    first cell that is not a key, or a key met before.  Of several, a column of dotted
+    numbers alone where the others hold words (see the module's notes)."""
 
     def __init__(self, region: Region) -> None:
         self.columns = region.columns
         data = region.data
         width = 0 if data is None else data.last.column - data.first.column + 1
         self._seen: list[set[str] | None] = [set() for _ in range(width)]
+        #: Per column: every key a dotted number (and one with a dot); how many are words.
+        self._dotted = [True] * width
+        self._dot = [False] * width
+        self._wordy = [0] * width
 
     def add(self, row: Sequence[Value]) -> None:
         seen = self._seen
@@ -1829,11 +1858,36 @@ class KeyFinder:
             text = key_text(value)
             if text is None or text in keys:
                 seen[index] = None
-            else:
-                keys.add(text)
+                continue
+            keys.add(text)
+            if self._dotted[index]:
+                if is_dotted_key(text):
+                    self._dot[index] = self._dot[index] or "." in text
+                else:
+                    self._dotted[index] = False
+            if _DIGIT.search(text) is None or any(ch.isspace() for ch in text):
+                self._wordy[index] += 1
 
     def keys(self) -> list[str]:
-        return [self.columns[i] for i, keys in enumerate(self._seen) if keys is not None]
+        found = [i for i, keys in enumerate(self._seen) if keys is not None]
+        if len(found) > 1:
+            dotted = [i for i in found if self._dotted[i] and self._dot[i]]
+            if len(dotted) == 1 and all(2 * self._wordy[i] >= len(self._seen[i] or ())
+                                        for i in found if i != dotted[0]):
+                found = dotted
+        return [self.columns[i] for i in found]
+
+
+def _shape(whole: TableAddress, rows: int) -> str:
+    """A refusal's way out by position: how many data rows ``whole`` has, and the
+    addresses that name them (``t:Std/#1`` to ``t:Std/#12``, ``t:Std/#1:#12``)."""
+    if rows == 0:
+        return f"; {whole.text} has no data rows"
+    if rows == 1:
+        return f"; {whole.text} has 1 data row: {replace(whole, position=1).text}"
+    return (f"; {whole.text} has {rows} data rows, by position "
+            f"{replace(whole, position=1).text} to {replace(whole, position=rows).text} "
+            f"({replace(whole, row_range=(1, rows)).text})")
 
 
 def _key_cache(region: Region) -> tuple:

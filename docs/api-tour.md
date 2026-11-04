@@ -342,6 +342,8 @@ as text are flagged `date_as_text`, counted, and their own range is `date_text`.
 ```python
 wb.key_columns("t:Stock")    # ['SKU', 'Item', 'Qty']: unique, never blank, text or whole
                              # numbers; with more than one, a value by key names its key=
+wb.key_columns("t:Std")      # ['Clause']: a column of dotted numbers (4.1, 4.1.2) beside
+                             # columns of words is the key
 ```
 
 ## Find
@@ -487,7 +489,8 @@ found.values("t:Parts/P-1")                      # every value in full, blanks l
 ```
 
 A row's `names` are the rows whose key its text holds (whole, case counting; only keys
-with a letter and a digit), followed `depth` steps; its `lists` the rows whose text holds
+with a letter and a digit, or, in a table keyed by dotted numbers, its keys with a dot:
+`see 4.2`, never `4.2 kg`), followed `depth` steps; its `lists` the rows whose text holds
 its key. The tool `xlsx_trace` also traces a dataset's rows to their source rows, within a
 size budget, listing what did not fit (`xlsx_agent.tools.trace`).
 

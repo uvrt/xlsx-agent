@@ -5,7 +5,43 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
-## 0.1.12 (unreleased) -- rows traced to the rows they rest on
+## 0.1.13 (unreleased) -- keys like 4.1: found, addressed, followed in text
+
+Production round 31, R7b. No tool definition changed.
+
+- **A column of dotted numbers is the key** where several columns could be and the others
+  hold words: a table of clauses numbered `4`, `4.1`, `4.1.2`, `A.5.1` beside their titles
+  is keyed by the numbers (`xlsx_agent.read.regions.is_dotted_key`: digits joined by dots,
+  after at most two letters and a dot; at least one key with a dot). So `t:Std/4.1`,
+  `t:Std/{4.1,4.2}` and `t:Std/4.1/Title` address its rows in every tool taking an address
+  by key (`xlsx_read`, `xlsx_trace`, `find_text`'s `range`, `xlsx_compare`'s pairing,
+  `describe`'s key; a write by key still needs the key declared). Beside another column of
+  codes or whole numbers (at least half its values without a space and with a digit), or
+  another dotted column, nothing is chosen and the lookup is refused, as before. Before,
+  `t:Std/4.1` was refused (`no_key_column`, 2 columns unique). A clause number typed as a
+  number (4.1, a fraction) is no key, as before: 4.10 would be the same number.
+- **`xlsx_trace` follows dotted keys in text** (`see 4.2`) of a table keyed by them
+  (declared, or found), never its whole numbers (`4`) nor another table's dotted values.
+  Whole only where the dotted number is: not in `4.1.2`, `1.4.1`, `12.05.2026` or `4.10`;
+  yes in `4.1.` ending a sentence, `4.1-4.3`, `(4.1)`. A key of digits alone is not found
+  as a quantity: after a currency sign, a sign or a comparison (`$4.2`, `-4.2`, `= 4.2`),
+  or before a percent, a unit, a word of a quantity or a score (`4.2 kg`, `4.2%`, `4.2 GB`,
+  `4.2 days`, `4.2 heures`, `4.2 million`, `4.2/5`, `4.2 out of 5`:
+  `xlsx_agent.trace.UNITS`; `4.2 sur la base` still names 4.2).
+  Elsewhere it counts as named (`version 4.1` names clause 4.1 when the workbook has
+  one). A dotted key with a letter (`A.5.1`) was found before; now it too is whole only
+  where the dotted number is (`A.5.1` is not in `A.5.1.2`).
+- **Refusals carry the way out** (tool-design rule 2): a key no row has, and a table with
+  no one key column, now say the table's data rows and the addresses by position that name
+  them (`t:Std has 6 data rows, by position t:Std/#1 to t:Std/#6 (t:Std/#1:#6)`); the
+  latter also how a key is named or declared (`key=`, a declared table's key,
+  `Workbook.declare_key`). Never the key itself, as before. A row by position written
+  without its table (`#4`, `#1:#8`) is still refused -- it names no table -- now saying so,
+  with `t:Products/#5`, `t:Products/#9:#16` and `d:by_category/#2` as the forms.
+- Dataset rows by position (`d:x/#4`, `d:x/#1:#8`) read and trace as before; now tested.
+- Tokens: no definition changed (the core 4,533 estimated, every definition 5,505).
+
+## 0.1.12 (2026-11-04) -- rows traced to the rows they rest on
 
 Production round 31, R7, and the workbook side of R5e. One tool added, on demand.
 
