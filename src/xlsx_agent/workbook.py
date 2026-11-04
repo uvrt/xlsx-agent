@@ -105,6 +105,7 @@ from .redact import Redaction
 from .xml import iterparse_xml
 
 if TYPE_CHECKING:
+    from .trace import TraceResult
     from .edit import Editor, EditReport, SaveReport
     from .edit.cells import Written
     from .edit.policy import Allowed, WritePolicy
@@ -197,6 +198,8 @@ class Workbook:
         #: ``find_text``'s last few counts (total and kinds), by search: its next page
         #: stops once it is full.
         self._finds: OrderedDict = OrderedDict()
+        #: The trace index (:mod:`xlsx_agent.trace`) of this state, with its stamp.
+        self._traces: Any = None
         #: A sheet's problems without the cells declared tables hide, by sheet and areas.
         self._withheld_problems: dict = {}
         #: The history and the cell writer (:attr:`editor`), made when first needed.
@@ -333,6 +336,7 @@ class Workbook:
         self._catalogue = None
         self._queries.clear()
         self._finds.clear()
+        self._traces = None
         self.regions.forget_cells()
 
     def to_bytes(self, kind: str | None = None) -> bytes:
@@ -511,6 +515,7 @@ class Workbook:
         self._catalogue = None
         self._queries.clear()
         self._finds.clear()
+        self._traces = None
         self._withheld_problems.clear()
         self._forgotten += 1
         self.regions.forget_package()
@@ -591,6 +596,7 @@ class Workbook:
         self._catalogue = None
         self._queries.clear()
         self._finds.clear()
+        self._traces = None
         self._withheld_problems.clear()
         self.regions = Regions(self)
         self._sheets = self._read_sheets()
@@ -628,6 +634,7 @@ class Workbook:
         self._catalogue = None
         self._queries.clear()
         self._finds.clear()
+        self._traces = None
         self._withheld_problems.clear()
         self.regions.forget_withheld()
 
@@ -901,6 +908,18 @@ class Workbook:
         numbers."""
         region = address if isinstance(address, Region) else self.regions.region(address)
         return self.regions.key_columns(region)
+
+    def trace(self, rows: "str | Sequence[str]", *, depth: int | None = None) -> "TraceResult":
+        """The table rows ``rows`` names (``t:issues/Q-1``, ``t:Items/{I-1,I-3}``,
+        ``t:Items/#2:#5``, a table, or a sheet's cells in one table), each with the rows it
+        rests on and why -- the rows its text names by key, those they name (``depth``
+        steps, 2 unless given), and the rows whose text names its key -- and every row's
+        values in full (:mod:`xlsx_agent.trace`).  A dataset row's sources are the tool's
+        (``xlsx_trace``), where the dataset is."""
+        from .trace import DEPTH, trace
+
+        return trace(self, [rows] if isinstance(rows, str) else list(rows),
+                     depth=DEPTH if depth is None else depth)
 
     def rows_holding(self, address: "str | RangeAddress") -> "TableAddress | None":
         """The table rows that hold a sheet's cells -- what a citation such as

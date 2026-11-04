@@ -249,7 +249,8 @@ def test_regex_and_range_through_a_toolbox(box):
 
 @pytest.mark.parametrize("arguments,code,field", [
     ({"text": "Bolt", "slides": [1]}, "invalid_arguments", "slides"),
-    ({"text": "Bolt", "stories": "all"}, "invalid_arguments", "stories"),
+    # (round 31: stories all or body asks nothing of a workbook, ignored with a warning)
+    ({"text": "Bolt", "stories": "layouts"}, "invalid_arguments", "stories"),
     ({"text": "(?P<Bolt", "regex": True}, "invalid_arguments", "text"),
     ({"text": ""}, "invalid_arguments", "text"),
     ({"text": "Bolt", "range": "Nowhere!"}, "not_found", None),

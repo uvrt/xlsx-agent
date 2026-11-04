@@ -67,7 +67,9 @@ typed and guarded, in one step (the ``edit`` role's).  Where the model may write
 application's (X4): ``policy(session, {"cells": [...], "tables": [...]})`` before the
 session opens a workbook (:mod:`xlsx_agent.edit.policy`; ``{"cells": []}`` lets nothing be
 written), ``narrow(session, ...)`` to narrow it later; ``describe`` shows it
-(``writable``).  Without one, the session writes as its ``edit`` role allows; a protected
+(``writable``).  From 0.1.12 the deferred ``xlsx_trace`` group holds ``xlsx_trace``
+(:mod:`.trace`): rows of a table or dataset, each with the rows it rests on and why.
+Without a policy, the session writes as its ``edit`` role allows; a protected
 sheet is never written.  Every formula value read carries
 its cache status (``cache``: ``cached_unverified``, ``invalidated`` once the workbook was
 written, ``absent``).  The library's address and query errors become tool errors with
@@ -88,14 +90,17 @@ from .edit import TOOLS as EDIT_TOOLS
 from .query import TOOLS as QUERY_TOOLS
 from .read import TOOLS as READ_TOOLS
 from .shared import TOOLS as SHARED_TOOLS
+from .trace import TOOLS as TRACE_TOOLS
 from .validate import TOOLS as VALIDATE_TOOLS
 
 GROUPS = [*_shared.GROUPS,
-          ToolGroup("xlsx_edit", "Excel: write cells (text, numbers, dates, formulas, blanks).")]
+          ToolGroup("xlsx_edit", "Excel: write cells (text, numbers, dates, formulas, blanks)."),
+          ToolGroup("xlsx_trace", "Excel: trace rows to the rows they rest on (sources, keys "
+                    "their text names, rows listing them).")]
 
 #: Every tool a workbook has, the shared ones included, in the order they are offered.
 TOOLS = [*SHARED_TOOLS, *READ_TOOLS, *QUERY_TOOLS, *DERIVE_TOOLS, *COMPARE_TOOLS,
-         *VALIDATE_TOOLS, *EDIT_TOOLS]
+         *VALIDATE_TOOLS, *EDIT_TOOLS, *TRACE_TOOLS]
 
 CORE_TOOLS = [t.name for t in TOOLS if t.group == CORE]
 

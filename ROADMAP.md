@@ -1164,6 +1164,19 @@ column `(blank)`; the blank cells keep that name in any clash (a text `"(blank)"
 named by its place (`pivot_values[2]`). Budget: the core 4,525 -> 4,533 estimated; every
 definition 5,266 -> 5,274; the strict set unchanged.
 
+*Rows traced to the rows they rest on* (production feedback, round 31, R7, 2026-11-04;
+0.1.12). `xlsx_trace` (deferred group `xlsx_trace`; `Workbook.trace`, `xlsx_agent.trace`):
+rows of a table or dataset, each with its links -- `source` (a dataset row's sources as
+rows: key sets by key, ranges by the table rows holding them, else cells), `names` (keys
+its text names, followed `depth` steps, 2 unless given, at most 4) and `lists` (rows whose
+text names its key or a source row's) -- each with `by`, `column`, `columns`, `depth`;
+every value in full once in `rows`; within `max_chars`, what did not fit listed as
+`left_out` (key sets to read) and `untraced` (rows to pass back). Keys found whole, case
+counting, only those with a letter and a digit, in the Excel and declared tables' text; one
+index per workbook state (dictionary look-ups per word: 7,000 keys over 7,000 texts in
+0.05 s). On demand rather than core: a checking tool, not every run's, 242 estimated; the core unchanged,
+every definition 5,274 -> 5,505; not strict.
+
 ### 0.2 — edit
 
 | # | Item | Effort | Done when |
