@@ -80,7 +80,7 @@ def test_beside_codes_or_whole_numbers_it_is_refused_with_the_way_out():
     assert error.valid_options == ["Clause", "Ref", "Title"]
     # the way out: how to name the key, the rows there are, addresses by position
     assert "key=" in error.message and "Workbook.declare_key" in error.message
-    assert "2 data rows, by position t:Clauses/#1 to t:Clauses/#2 (t:Clauses/#1:#2)" \
+    assert "2 data rows: t:Clauses/#1 to t:Clauses/#2 (t:Clauses/#1:#2)" \
         in error.message
     assert opened.resolve("t:Clauses/4.1", key="Clause").row == 1
     numbered = [["No", "Clause", "Title"], [1, "4.1", "Context"], [2, "4.2", "Parties"]]
@@ -107,7 +107,7 @@ def test_a_key_not_found_says_the_key_column_and_the_rows_by_position(wb):
         wb.resolve("t:Clauses/9.9")
     message = missing.value.message
     assert "column 'Clause'" in message
-    assert "6 data rows, by position t:Clauses/#1 to t:Clauses/#6" in message
+    assert "6 data rows: t:Clauses/#1 to t:Clauses/#6" in message
     assert "9.9" not in message          # a key is cell content: never in a message
 
 

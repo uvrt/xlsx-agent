@@ -275,7 +275,8 @@ def test_a_key_not_found_says_where_it_is_or_which_rows_are_like_it(box):
     assert near.error.code == "not_found" and near.error.valid_options == ["t:Kit/#3"]
     assert near.error.message == ("no row of t:Kit has that key in column 'Part'; 1 row has "
                                   "a key like it (case, spaces or a character apart): "
-                                  "valid_options, by position")
+                                  "valid_options, by position; t:Kit has 3 data rows: "
+                                  "t:Kit/#1 to t:Kit/#3 (t:Kit/#1:#3)")
     several = _read(box, session, target="t:Kit/P-1")
     assert several.error.valid_options == ["t:Kit/#1", "t:Kit/#2"]
     none = _read(box, session, target="t:Kit/W-77")

@@ -1885,7 +1885,7 @@ def _shape(whole: TableAddress, rows: int) -> str:
         return f"; {whole.text} has no data rows"
     if rows == 1:
         return f"; {whole.text} has 1 data row: {replace(whole, position=1).text}"
-    return (f"; {whole.text} has {rows} data rows, by position "
+    return (f"; {whole.text} has {rows} data rows: "
             f"{replace(whole, position=1).text} to {replace(whole, position=rows).text} "
             f"({replace(whole, row_range=(1, rows)).text})")
 

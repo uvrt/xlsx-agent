@@ -33,7 +33,7 @@ Production round 31, R7b. No tool definition changed.
   where the dotted number is (`A.5.1` is not in `A.5.1.2`).
 - **Refusals carry the way out** (tool-design rule 2): a key no row has, and a table with
   no one key column, now say the table's data rows and the addresses by position that name
-  them (`t:Std has 6 data rows, by position t:Std/#1 to t:Std/#6 (t:Std/#1:#6)`); the
+  them (`t:Std has 6 data rows: t:Std/#1 to t:Std/#6 (t:Std/#1:#6)`); the
   latter also how a key is named or declared (`key=`, a declared table's key,
   `Workbook.declare_key`). Never the key itself, as before. A row by position written
   without its table (`#4`, `#1:#8`) is still refused -- it names no table -- now saying so,
