@@ -83,9 +83,10 @@ from .read import (Comment, DefinedName, Hyperlink, Locale, NumberFormat, Proble
                    RegionError, Selection, SheetScan, UnclearRegion, Value)
 from .integrity import CellEdit, CellsDiff
 from .validations import ValidationRule
+from .trace import Link, Trace, TraceResult
 from .workbook import Sheet, Workbook
 
-__version__ = "0.1.11"
+__version__ = "0.1.12"
 
 __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellChange",
            "CellEdit", "CellsDiff", "ValidationRule",
@@ -98,6 +99,7 @@ __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellC
            "Found", "Hyperlink", "Joined", "KindMismatchWarning", "Locale", "NameNotFound", "NumberFormat",
            "OpenError", "Problem", "QueryError", "QueryResult", "RangeAddress", "RefAddress",
            "Provenance", "RedactError", "Redaction", "Region", "RegionError", "Selection", "Sheet", "SheetRef", "SheetScan",
-           "TableAddress", "Total", "UnclearRegion", "Value", "Workbook", "__version__",
+           "TableAddress", "Total", "Link", "Trace", "TraceResult", "UnclearRegion", "Value",
+           "Workbook", "__version__",
            "as_dataset", "canonical_address", "format_address", "is_name", "merge_sources", "needs_quotes",
            "parse_address", "quote_sheet", "table_dataset"]

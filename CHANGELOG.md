@@ -5,6 +5,42 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## 0.1.12 (unreleased) -- rows traced to the rows they rest on
+
+Production round 31, R7, and the workbook side of R5e. One tool added, on demand.
+
+- **`xlsx_trace`** (R7), in a deferred group of its own, `xlsx_trace`: rows of a table or
+  dataset -- `t:Items/I-4`, a key set, a row range, a whole table, a sheet's cell inside a
+  table, `d:by_owner/#2`, a whole dataset -- each with the rows it rests on and why:
+  `source` (a dataset row's values came from it: the sources the derive kept, a key set's
+  keys each a row, a range the table rows holding it, else the cells), `names` (its text
+  names the row's key -- the traced row's, a source row's, or, `depth` steps deep (2
+  unless given, at most 4), a named row's; `by` and `column` say whose text and where) and
+  `lists` (the row's text names the traced row's key, or a source row's). Every row's
+  values in full, once, in `rows` (a declared split's items as a list; blanks left out).
+  A reply holds at most `max_chars` (by default and at most 24,000): rows are traced in
+  order while their links fit, then the named rows' values in link order; what did not fit
+  is listed, never cut -- `left_out` as key sets `xlsx_read` reads, `untraced` as rows to
+  pass back (key sets, row ranges) -- and `next` says so. At most 50 rows a call, 200
+  links a row (the rest counted). The rows linked are the Excel tables' and the declared
+  tables', by key where the table's key is known; a key is found in text whole, case
+  counting, and only a key holding a letter and a digit is looked for (numbers and words
+  would be found everywhere). `Workbook.trace(rows, depth=...)` in Python
+  (`xlsx_agent.trace`: `Link`, `Trace`, `TraceResult`); the index of what each row's text
+  names is built once per workbook state. A dataset is traced in its own workbook only
+  (`doc`), else refused naming it. Measured on a made-up workbook of 7,000 rows: about
+  3.4 s for the first trace of a workbook just opened, 1.2 s after `describe`, then about
+  0.2 ms a row.
+- **Budget.** `xlsx_trace` is 242 estimated (about 358 counted by the proxy), deferred: the
+  core is unchanged (4,533 estimated); every definition 5,274 -> 5,505, the guard 5,275 ->
+  5,510. It reads, so it is not strict: the strict set is unchanged (`xlsx_set_cells`).
+- **`find_text` on a workbook with a document's `stories` at its default** (R5e,
+  ooxml-edit 0.77.0): a toolbox that also serves documents is sent `find_text` with
+  `stories`, and a strict decoder writes it; `"body"` and `"all"` (and another kind's empty
+  `slides`) are now ignored with a warning instead of refused; `layouts` or `masters` are
+  still refused, naming `range`. No change here but a test (skipped on an older
+  ooxml-edit); the floor stays 0.72.0.
+
 ## 0.1.11 (2026-11-03) -- a dataset's columns picked, the blank cells listed
 
 Production round 28, X7 and X8. Two descriptions changed; no parameter added.

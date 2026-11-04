@@ -348,7 +348,9 @@ def test_cleaning_changes_no_tool_definition():
     # this repository's own tools, character for character as main had them before X6
     # (X10's, T19's, L8's, X3b's and X5's additions aside); the read tools
     # only (E3's xlsx_set_cells is new)
-    own = [d for d in plain if d["name"].startswith("xlsx_") and d["name"] != "xlsx_set_cells"]
+    # (round 31's xlsx_trace, a group of its own, aside too)
+    own = [d for d in plain if d["name"].startswith("xlsx_")
+           and d["name"] not in ("xlsx_set_cells", "xlsx_trace")]
     assert len(json.dumps(own, separators=(",", ":"), ensure_ascii=False)) == XLSX_CHARS
 
 

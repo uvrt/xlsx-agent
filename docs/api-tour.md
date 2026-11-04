@@ -477,6 +477,20 @@ left table has is renamed `Status (issues)`. Each joined value's sources are the
 rows' cells. The order: join, `where`, `group_by`/`bins`/`pivot`, measures, `sort`, `top`,
 `round` (refused for the rows themselves: they are cells as stored).
 
+## Trace: the rows a row rests on
+
+```python
+found = wb.trace(["t:tickets/T-1"], depth=2)   # t: rows; a dataset's rows: xlsx_trace
+for link in found.traces[0].links:
+    print(link.row, link.why, link.by, link.column)   # names / lists, and source for d:
+found.values("t:Parts/P-1")                      # every value in full, blanks left out
+```
+
+A row's `names` are the rows whose key its text holds (whole, case counting; only keys
+with a letter and a digit), followed `depth` steps; its `lists` the rows whose text holds
+its key. The tool `xlsx_trace` also traces a dataset's rows to their source rows, within a
+size budget, listing what did not fit (`xlsx_agent.tools.trace`).
+
 ## Workbook tables into slides and documents
 
 A table's rows as an ooxml-edit `Dataset` -- what a deck or document tool places when given

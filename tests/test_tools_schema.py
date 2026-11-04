@@ -98,6 +98,10 @@ Round 28, X7 and X8: ``xlsx_read``'s ``columns`` names a ``d:`` target too, 688 
 4,525 -> 4,533 estimated (online 6,418 on 2026-11-03, about 6,430 at the same ratio; the
 main session counts it); every definition 5,266 -> 5,274; the guards 4,530 -> 4,535 and
 5,270 -> 5,275.  Neither tool is strict: the strict set is unchanged.
+Round 31, R7: ``xlsx_trace`` (rows traced to the rows they rest on) in a deferred group of
+its own, ``xlsx_trace`` (242 estimated with its group's line in the tool-search tool, about
+358 counted by the proxy): the core unchanged, 4,533; every definition 5,274 -> 5,505, the
+guard 5,275 -> 5,510.  It reads, so it is not strict: the strict set is unchanged.
 """
 
 from __future__ import annotations
@@ -118,7 +122,7 @@ COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6500
 #: The core's estimate, a regression guard (round 25: past the proxy's budget, by choice).
 CORE_GUARD = 4535
-ALL_GUARD = 5275
+ALL_GUARD = 5510
 
 
 @pytest.fixture(scope="module")
@@ -175,7 +179,8 @@ def test_the_groups_are_the_roadmaps():
                                "xlsx_profile", "xlsx_query", "xlsx_derive", "xlsx_compare",
                                "xlsx_validate_data", "save_document", "undo", "batch"},
                       "shared_misc": {"close_document", "read_blob"},
-                      "xlsx_edit": {"xlsx_set_cells"}}
+                      "xlsx_edit": {"xlsx_set_cells"},
+                      "xlsx_trace": {"xlsx_trace"}}
 
 
 def test_find_text_is_sent_without_a_decks_or_documents_parameters(box):
