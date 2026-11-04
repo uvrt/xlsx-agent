@@ -251,7 +251,7 @@ class Labels:
             folded = fold(text)
             if len(folded) == len(text):   # one character for one: the places are the text's
                 return _last(folded, [fold(label) for label in self._longest])
-        found = self._reversed.search(text[::-1])   # pragma: no cover - rare characters
+        found = self._reversed.search(text[::-1])   # a character folding to two (İ)
         if found is None:
             return None
         return len(text) - found.end(), len(text) - found.start()
@@ -444,8 +444,8 @@ def _labels(item: Any) -> tuple[str, ...]:
 
 
 def pattern_label(compiled: "re.Pattern[str]") -> "Labels | None":
-    """The label an extract pattern (``compiled``) begins with, when every match must begin with one
-    of a few literal texts of :data:`MIN_LABEL` characters or more (``Status:``,
+    """The label an extract pattern (``compiled``) begins with, when every match must begin
+    with one of a few literal texts of :data:`MIN_LABEL` characters or more (``Status:``,
     ``(?:Review state|Next step)``); ``None`` otherwise, or when the pattern is anchored at
     the text's start.  Case-insensitive when the pattern is."""
     try:
