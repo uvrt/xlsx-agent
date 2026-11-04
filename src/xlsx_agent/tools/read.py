@@ -95,6 +95,7 @@ from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, bo
 
 from ..address import (NameNotFound, RangeAddress, RefAddress, SheetRef, TableAddress,
                        format_sheet, parse_address)
+from ..clean import UNMATCHED, unmatched_warning
 from ..read.regions import RegionError
 from ..read.types import Value
 from ..workbook import _markdown_rows
@@ -269,8 +270,9 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     cap = None if single else TEXT_SHOWN
 
     cleaned: list[str] = []
+    unmatched: list[str] = []
     shown, cut_text, stop, full = _page(rows, start_row, start_column, budget, annotate,
-                                        formulas, cap, cleaned)
+                                        formulas, cap, cleaned, unmatched)
     if stop is None and more:
         stop = (start_row + (len(pages) if found.rows is not None
                              else bottom - top + 1), 0)
@@ -278,6 +280,9 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     data["rows"] = shown
     if cleaned:
         data["cleaned"] = cleaned_count(cleaned)
+    if unmatched:
+        data[UNMATCHED] = cleaned_count(unmatched)
+        notes.append(unmatched_warning(len(unmatched), unmatched[0]))
     # The rows given, each with one cell at least: from the page's first, one after another.
     given = max(len(shown), 1)
     if found.rows is not None:
@@ -335,14 +340,15 @@ def cleaned_count(addresses: list[str]) -> dict:
 
 def _page(rows: Iterable[Sequence[Value]], start_row: int, start_column: int, budget: int,
           annotate: "_Annotations", formulas: bool, cap: int | None,
-          cleaned: "list[str] | None" = None
+          cleaned: "list[str] | None" = None, unmatched: "list[str] | None" = None
           ) -> tuple[list[list[dict]], list[str], tuple[int, int] | None, bool]:
     """A page's rows, filled from ``rows`` (the first of them at ``start_row``, from its
     ``start_column``) within ``budget`` characters: the rows as cells, the addresses whose
     text was cut, where the next page starts when the budget ran out (row and column), and
     whether it did.  A first cell too big for the page by itself is cut to fit
     (:func:`_fit`); a row too wide for what is left is split.  ``cleaned`` collects the
-    addresses of the cells given whose value a declared rule changed."""
+    addresses of the cells given whose value a declared rule changed, ``unmatched`` those
+    holding a declared extract's label whose value it did not find."""
     shown: list[list[dict]] = []
     used = 0
     cut_text: list[str] = []
@@ -367,6 +373,8 @@ def _page(rows: Iterable[Sequence[Value]], start_row: int, start_column: int, bu
             cut_text.extend(texts)
             if cleaned is not None and value.cleaned:
                 cleaned.append(value.a)
+                if unmatched is not None and value.issue == UNMATCHED:
+                    unmatched.append(value.a)
         if out:
             shown.append(out)
         if stop is not None:

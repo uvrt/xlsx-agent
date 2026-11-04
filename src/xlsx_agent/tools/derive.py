@@ -62,6 +62,7 @@ from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, bo
                               obj, string, tool)
 
 from ..address import DatasetAddress, NameNotFound, parse_address
+from ..clean import UNMATCHED, unmatched_warning
 from ..dataset import DatasetSelection, DatasetTable, cut_sources, join_units, source_units
 from ..derive import COERCIONS, FUNCTIONS, MAX_DIGITS, MAX_ROWS, derive
 from .docformat import KIND, handler
@@ -242,6 +243,11 @@ def _derived_result(call: Any, name: str, derived: Any, table: DatasetTable) -> 
         value = getattr(derived, key)
         if value:
             data[key] = {k: c.as_dict() for k, c in value.items()}
+    warnings = []
+    if derived.unmatched:
+        data[UNMATCHED] = {k: c.as_dict() for k, c in derived.unmatched.items()}
+        warnings = [unmatched_warning(c.count, c.first[0], k)
+                    for k, c in derived.unmatched.items()]
     if derived.hidden.count:
         data["hidden"] = derived.hidden.as_dict()
     if derived.pivot_columns:
@@ -285,7 +291,7 @@ def _derived_result(call: Any, name: str, derived: Any, table: DatasetTable) -> 
     summary = f"Derived {name} from {derived.address}: {total} rows"
     if stop is not None:
         summary += f"; more with xlsx_read {name}"
-    return Result(summary=summary, data=data, total=total)
+    return Result(summary=summary, data=data, total=total, warnings=warnings)
 
 
 def _shown(sourced: dict[str, Any]) -> dict[str, Any]:

@@ -68,7 +68,7 @@ from ooxml_edit.tools import DATASET_PREFIX, Dataset
 from .address import (Address, AddressError, DatasetAddress, NameNotFound, RangeAddress,
                       SheetRef, TableAddress, format_address, nearest, parse_address)
 
-from .clean import CleanedWarning
+from .clean import UNMATCHED, CleanedWarning, unmatched_warning
 from .profile import FIRST_ADDRESSES, Count
 from .read.regions import RegionError, key_text
 from .read.types import _MS_PER_DAY, TYPES, Value, _clock, looks_like_date
@@ -454,7 +454,9 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
     one cell, a line per item; its type label ``text``).  When any value was cleaned, the
     dataset's ``detail`` is ``{"cleaned": Count}`` (how many, the first cells) and a
     :class:`~xlsx_agent.clean.CleanedWarning` says so -- in a tool session, among the
-    deck's or document's tool's warnings.
+    deck's or document's tool's warnings; cells that hold a declared extract's label whose
+    value it did not find (placed blank) are counted as ``extract_unmatched`` in ``detail``
+    too, with a warning of their own.
 
     Each value's source is its cell by key (``t:Products/SKU-0042/Price``) when the table
     has a key column -- declared, or the one found -- and every data row has a key no other
@@ -516,6 +518,8 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
     seen: list[set[str]] = [set() for _ in columns]
     cleaned: list[str] = []
     cleaned_count = 0
+    unmatched: list[str] = []
+    unmatched_count = 0
     cache: dict[str, int] = {}
     for position in positions:
         sheet_row = data.first.row + position - 1
@@ -532,6 +536,10 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
                 cleaned_count += 1
                 if len(cleaned) < FIRST_ADDRESSES:
                     cleaned.append(value.a)
+                if value.issue == UNMATCHED:
+                    unmatched_count += 1
+                    if len(unmatched) < FIRST_ADDRESSES:
+                        unmatched.append(value.a)
             if value is None or value.t == "blank":
                 values.append(None)
             elif value.t == "list":           # a declared split: one cell, a line per item
@@ -558,6 +566,11 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
             f"{whole.text}: {cleaned_count} values were cleaned by the table's declared "
             f"rules, the first at {', '.join(cleaned)}; a list is placed as its items, one "
             "line each"), stacklevel=2)
+    if unmatched_count:
+        assert detail is not None   # an unmatched value is a cleaned one
+        detail[UNMATCHED] = Count(unmatched_count, tuple(unmatched))
+        warnings.warn(CleanedWarning(f"{whole.text}: " + unmatched_warning(
+            unmatched_count, unmatched[0])), stacklevel=2)
     return Dataset(columns, tuple(rows), sources=tuple(sources), keys=1 if first_is_key else 0,
 
                    types=types, detail=detail, cache=cache or None)

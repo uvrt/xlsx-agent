@@ -97,7 +97,9 @@ holding several values belongs to no one group; ``where`` filters it with ``eq``
 and ``contains``, a row passing when any item does.  A list in a column of another type is
 left out of a measure, or of the groups, as ``wrong_type``.  The cells a declared rule
 changed, in every column read and every row, are counted per column with their first
-addresses (:attr:`Derived.cleaned`, ``cleaned`` in the tool's result).
+addresses (:attr:`Derived.cleaned`, ``cleaned`` in the tool's result); those that hold an
+``extract``'s label whose value its pattern did not find, read blank, likewise
+(:attr:`Derived.unmatched`, ``extract_unmatched`` in the tool's result, with a warning).
 
 **Why a date column is refused.**  A column whose dates are stored as text is a ``text``
 column: ``min`` and ``max`` refuse it.  The refusal says so: how many of its values are
@@ -255,6 +257,7 @@ from ooxml_edit.tools import CACHE_EXTERNAL, CACHE_STATUSES, Dataset
 from ooxml_edit.tools.schema import close_match
 
 from .address import DatasetAddress, RangeAddress, SheetRef, TableAddress, parse_address
+from .clean import UNMATCHED
 from .dataset import DatasetTable, as_dataset
 from .join import JOIN_KEYS, Joined, JoinedTable, joined_table
 from .profile import FIRST_ADDRESSES, Count, _add_partial, majority_type
@@ -494,7 +497,9 @@ class Derived:
     (and the bins, by their ``as``, and each ``group_by`` column, by its name), the cells
     read as numbers or dates by ``coerce``; ``cleaned``
     per column read, the cells a declared rule changed (:mod:`xlsx_agent.clean`), every
-    row's, filtered out or not; ``not_compared`` per filtered column, as
+    row's, filtered out or not; ``unmatched`` per column read alike, the cells holding a
+    declared extract's label whose value its pattern did not find (read blank, issue
+    ``extract_unmatched``); ``not_compared`` per filtered column, as
     :class:`~xlsx_agent.query.QueryResult` gives it; ``hidden`` the rows used that hold a
     hidden cell among the columns read; ``totals`` per ``share`` measure, its total;
     ``pivot_columns`` per pivoted column, its measure and pivot value; ``pivot_unlisted``
@@ -529,6 +534,7 @@ class Derived:
     coerced: dict[str, Count] = field(default_factory=dict)
     cleaned: dict[str, Count] = field(default_factory=dict)
     not_compared: dict[str, Count] = field(default_factory=dict)
+    unmatched: dict[str, Count] = field(default_factory=dict)
     hidden: Count = field(default_factory=lambda: Count(0))
     totals: dict[str, Total] = field(default_factory=dict)
     pivot_columns: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -587,7 +593,7 @@ class Derived:
             if value:
                 out[name] = {k: {r: c.as_dict() for r, c in v.items()}
                              for k, v in value.items()}
-        for name in ("coerced", "cleaned", "not_compared"):
+        for name in ("coerced", "cleaned", "not_compared", "unmatched"):
             value = getattr(self, name)
             if value:
                 out[name] = {k: c.as_dict() for k, c in value.items()}
@@ -675,6 +681,8 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
         for value in row:
             if value.cleaned:
                 state.cleaned.setdefault(value.column - 1, _Counter()).add(value)
+                if value.issue == UNMATCHED:
+                    state.unmatched.setdefault(value.column - 1, _Counter()).add(value)
             if value.cache is not None:
                 state.cache[value.cache] = state.cache.get(value.cache, 0) + 1
                 if value.external:
@@ -726,6 +734,7 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
         rounding={"rule": ROUNDING, "digits": {}}, matched=state.matched,
         used=state.matched, groups=groups,
         cleaned={columns[o]: c.done() for o, c in sorted(state.cleaned.items())},
+        unmatched={columns[o]: c.done() for o, c in sorted(state.unmatched.items())},
         not_compared={c: counter.done() for c, counter in state.not_compared.items()},
         hidden=state.hidden.done(), date1904=date1904,
         cache=_cache(state.cache, None), joined=table.joined)
@@ -1323,6 +1332,7 @@ class _State:
     coerced: dict = field(default_factory=dict)          # offset -> _Counter
     coerced_groups: dict = field(default_factory=dict)   # group offset -> _Counter
     cleaned: dict = field(default_factory=dict)          # offset -> _Counter
+    unmatched: dict = field(default_factory=dict)        # offset -> _Counter
     not_compared: dict = field(default_factory=dict)     # column -> _Counter
     hidden: _Counter = field(default_factory=_Counter)
     totals: dict = field(default_factory=dict)           # offset or None -> [partials, runs, count]
@@ -1393,6 +1403,8 @@ def _second_pass(plan: _Plan) -> _State:
             value = row[o - left]
             if value.cleaned:
                 state.cleaned.setdefault(o, _Counter()).add(value)
+                if value.issue == UNMATCHED:
+                    state.unmatched.setdefault(o, _Counter()).add(value)
             if value.cache is not None:
                 cache[value.cache] = cache.get(value.cache, 0) + 1
                 if value.external:
@@ -1844,16 +1856,18 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
                                    runs.bounds, n, via, keyed)
     left_out = {c: {r: counters[r].done() for r in REASONS if r in counters}
                 for c, counters in state.left_out.items()}
+    declared = isinstance(region, (Region, JoinedTable))
     cleaned = {region.columns[o]: state.cleaned[o].done()
-               for o in sorted(state.cleaned)} \
-        if isinstance(region, (Region, JoinedTable)) else {}
+               for o in sorted(state.cleaned)} if declared else {}
+    unmatched = {region.columns[o]: state.unmatched[o].done()
+                 for o in sorted(state.unmatched)} if declared else {}
     return Derived(
         address=region.address.text, id=plan.id, columns=tuple(columns),
         key_columns=len(keys), types=types, rows=rows, unrounded=unrounded,
         provenance=[where for _, _, where in built],
         rounding={"rule": ROUNDING, "digits": by_measure},
         matched=state.matched, used=state.used, groups=groups, left_out=left_out,
-        excluded=excluded, coerced=coerced, cleaned=cleaned,
+        excluded=excluded, coerced=coerced, cleaned=cleaned, unmatched=unmatched,
         not_compared={c: counter.done() for c, counter in state.not_compared.items()},
         hidden=state.hidden.done(), totals=totals, pivot_columns=pivot_columns,
         pivot_unlisted=[{"name": _label(v, t), "v": v, "t": t, "rows": n}
