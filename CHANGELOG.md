@@ -12,6 +12,43 @@ has the detail of every milestone. Why each dependency is needed at its version:
   took the core 6,431 -> 6,678 counted online (claude-sonnet-5-5). Tests only; no tool
   definition changed.
 
+## 0.1.16 (unreleased) -- a column's blanks filled from another
+
+Production round 35, R22.
+
+- **`xlsx_derive`'s `fill`** (`xlsx_agent.fill`; `Workbook.derive(fill=...)`):
+  `[{"column": "Limit", "from": "Default limit", "coerce": "number"}]` gives each blank
+  cell of `column` -- no value, or text of no characters (a formula's `""` counts as blank)
+  -- the same row's `from` value,
+  after the join and before `where`, the groups and the measures. A fill never overwrites;
+  several apply in order (a second fill of the same column fills what the first left
+  blank). From a looked-up table: join it, then fill from the joined column.
+- **`coerce`** (`number`, `date`; `number_as_text` and `date_as_text` taken for them) reads
+  text as the derive's `coerce` does (the reader's `number_as_text`/`date_as_text`, which a
+  declared column's cleaned text is flagged as too); a `from` value of another type fills
+  nothing. Without it a value is filled as it is.
+- **Provenance**: a filled value's sources are the `from` cells (by key when the table has
+  a unique key column), and it is marked with that column: `Provenance.filled`, and
+  `"filled": "<column>"` on the value in the tool's rows and in an `xlsx_read` of the
+  dataset (`DatasetValue.filled`). `Derived.filled` (`filled` in the result) gives per
+  fill the cells filled, those `coerced`, and those left blank by reason (`blank`,
+  `error`, `no_cached_value`, `wrong_type`), each with first addresses.
+- **Intent and refusals**: one fill object is taken as a list of one; a strict call's
+  placeholder entry (`column` and `from` empty) is dropped; a fill of a column from itself
+  does nothing and says so in its `note` (naming a joined column renamed beside it). A
+  fill of the wrong form, or naming no column, is refused (`bad_fill`, field `fill`) with
+  the form that works or the table's columns.
+- Without `group_by`, `measures`, `bins` or `pivot` the filled rows are the dataset (as a
+  join's); `round` is refused for them.
+- Definitions: `fill` about +109 estimated; the note that a join alone gives the rows moved
+  to the tool's description, now for a fill too. Counted online, the core went 6,678 ->
+  6,838, past the 6,800 budget, so `xlsx_derive`'s texts were shortened with their meaning
+  kept (`doc` worded as `xlsx_read`'s and `xlsx_query`'s; `join`'s, `pivot_values`', `id`'s,
+  `from`'s and `coerce`'s sentences tightened): `xlsx_derive` 1,116 -> 1,182 estimated, the
+  core 4,717 -> 4,783 (about 6,780 online), every definition 5,688 -> 5,754 (guards 4,720
+  -> 4,785 and 5,690 -> 5,755); a reviewer's core 4,563 -> 4,629. `xlsx_derive` is not
+  strict (13 optional parameters): the strict set is unchanged.
+
 ## 0.1.15 (unreleased) -- many reads in one call
 
 Production round 32, R15.

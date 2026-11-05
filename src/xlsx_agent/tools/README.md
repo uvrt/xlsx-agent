@@ -273,6 +273,17 @@ matched. Without `group_by`, `measures`, `bins` or `pivot` the joined rows are t
 -- the table an agent places, each joined value with the joined rows' cells as sources. It
 goes stale when either side's source changes, the joined one's too.
 
+**Fills** (round 35). `xlsx_derive`'s `fill` --
+`[{"column": "Limit", "from": "Default limit", "coerce": "number"}]` -- gives each blank
+cell of `column` (no value, or text of no characters: a formula's `""` counts as blank)
+the same row's `from` value, after the join (so `from` may be a joined
+column, looked up by key) and before `where`. It never overwrites; several fills apply in
+order. `coerce` (`number`, `date`) reads text as the derive's `coerce` does. Each filled
+value's sources are the `from` cells and it carries `"filled": "<from>"` in the rows (and
+in an `xlsx_read` of the dataset); `filled` in the result counts per fill the cells filled,
+`coerced` and left blank (`unfilled`, by reason), with first addresses. Without
+`group_by`, `measures`, `bins` or `pivot` the filled rows are the dataset.
+
 **Datasets (`d:`).** `xlsx_derive` keeps its figures in the session as a dataset,
 `d:<id>`: columns, rows, and beside every value the cells it came from. `xlsx_read` reads
 it back (`{"target": "d:by_region", "sources": true}`, no `doc` needed; `columns` picks
