@@ -5,6 +5,13 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## Unreleased
+
+- The loaded core's online budget is now 6,800 tokens as count-tokens counts them (raised
+  from 6,500 by the user on 2026-11-05, keeping `read_batch` in the core): round 32, R15
+  took the core 6,431 -> 6,678 counted online (claude-sonnet-5-5). Tests only; no tool
+  definition changed.
+
 ## 0.1.15 (unreleased) -- many reads in one call
 
 Production round 32, R15.
