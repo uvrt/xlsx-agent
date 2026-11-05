@@ -235,8 +235,9 @@ recalculates. Volatile functions (`NOW`, `TODAY`, `RAND`, `OFFSET`,
 
 Defined once each in ooxml-edit's provider-neutral schema, registered on a `Toolbox` with
 `formats=[xlsx_agent.tools.FORMAT]`. **Read tools are loaded (the core); edit tools are
-deferred** behind tool search. The loaded core is held under **6,500 tokens as Anthropic's
-count-tokens counts them** (the siblings' per-format budget), checked offline in CI by the
+deferred** behind tool search. The loaded core is held under **6,800 tokens as Anthropic's
+count-tokens counts them** (the siblings' per-format budget of 6,500, raised by the user for
+`read_batch` on 2026-11-05: 6,678 counted online), checked offline in CI by the
 siblings' proxy (compact JSON ÷ 3.5 × 1.48) and online by a `provider`-marked test.
 
 The proposal's `xlsx_describe` and `xlsx_find` are the shared `describe` and `find_text`

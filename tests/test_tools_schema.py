@@ -105,7 +105,9 @@ guard 5,275 -> 5,510.  It reads, so it is not strict: the strict set is unchange
 Round 32, R15: ooxml-edit's ``read_batch`` (many reads in one call, each with its own budget)
 in the core, where a builder reading record after record reaches for it, 184 estimated: the
 core 4,533 -> 4,717, every definition 5,505 -> 5,688; the guards 4,535 -> 4,720 and 5,510 ->
-5,690.  Its ops are free-form, so it is not strict: the strict set is unchanged.
+5,690.  Its ops are free-form, so it is not strict: the strict set is unchanged.  Counted
+online, 6,431 -> 6,678 (claude-sonnet-5-5, 2026-11-05); the user keeps it in the core and
+raises the online budget 6,500 -> 6,800 (``test_tools_online.py``).
 """
 
 from __future__ import annotations
@@ -123,7 +125,7 @@ from xlsx_agent.tools import CORE_TOOLS, FORMAT, GROUPS, TOOLS
 
 CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
-CORE_COUNTED_BUDGET = 6500
+CORE_COUNTED_BUDGET = 6800
 #: The core's estimate, a regression guard (round 25: past the proxy's budget, by choice).
 CORE_GUARD = 4720
 ALL_GUARD = 5690

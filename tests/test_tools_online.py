@@ -8,8 +8,8 @@ header.  Plain HTTPS, no SDK, as in ooxml-edit's and the siblings' online checks
 the key nor any header is printed.
 
 **The budget (ROADMAP.md, "Tools"):** what a request loads -- the core definitions, the
-hidden tool-use prompt included -- is at most 6,500 tokens as count-tokens counts them (the
-siblings' per-format budget).  The offline proxy and the all-definitions guard are in
+hidden tool-use prompt included -- is at most 6,800 tokens as count-tokens counts them (the
+siblings' per-format budget was 6,500; see below).  The offline proxy and the all-definitions guard are in
 ``test_tools_schema.py``.
 """
 
@@ -36,7 +36,9 @@ pytestmark = [
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-5")
 API = "https://api.anthropic.com/v1"
 #: Tokens the loaded core may add to a request, counted online.
-CORE_COUNTED_BUDGET = 6500
+#: Round 32, R15: ``read_batch`` in the core, +247 (6,431 -> 6,678 counted online,
+#: claude-sonnet-5-5, 2026-11-05); the user keeps it there and raises the budget 6,500 -> 6,800.
+CORE_COUNTED_BUDGET = 6800
 
 
 def _post(path: str, body: dict) -> dict:
