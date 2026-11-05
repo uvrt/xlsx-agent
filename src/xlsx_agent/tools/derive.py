@@ -22,6 +22,15 @@ joined with a table needs ``doc``.  The dataset goes stale when either side's so
 changes: ``from``'s, and the joined table's workbook or the joined dataset's source
 (ooxml-edit's ``define_dataset(also=...)``).
 
+**fill** (round 35, R22; :mod:`xlsx_agent.fill`): ``[{column, from, coerce}]`` gives each
+blank cell of ``column`` the same row's ``from`` value, after the join (``from`` may be a
+joined column) and before everything else; ``coerce`` (``number``, ``date``) reads text
+as the derive's ``coerce`` does.  Each filled value's sources are the ``from`` cells and
+it carries ``filled`` (the column it came from) in the result's rows and in a read of the
+dataset; the result's ``filled`` gives per fill the cells filled, ``coerced`` and those
+left blank (``unfilled``, by reason), each with first addresses.  Without ``group_by``,
+``measures``, ``bins`` or ``pivot`` the filled rows are the dataset.
+
 What the result gives: the dataset's id and source, its columns, types and key columns,
 the rounding, the counts (``matched``, ``used``, ``groups``), what was left out and why
 (``excluded`` per measure, ``left_out`` per column, by reason, with first addresses),
@@ -65,6 +74,7 @@ from ..address import DatasetAddress, NameNotFound, parse_address
 from ..clean import UNMATCHED, unmatched_warning
 from ..dataset import DatasetSelection, DatasetTable, cut_sources, join_units, source_units
 from ..derive import COERCIONS, FUNCTIONS, MAX_DIGITS, MAX_ROWS, derive
+from ..fill import FILL_TYPES
 from .docformat import KIND, handler
 from .query import WHERE
 from .read import _MARGIN, READ_ROWS, _Annotations, _cursor, _page, _read_cursor, _size
@@ -120,7 +130,8 @@ def _about(entry: Any) -> dict[str, Any]:
       "Figures computed here, never by you, from a table's or dataset's rows, joined, "
       "filtered, grouped, binned or pivoted. min/max of dates are dates; first/last by row order. Kept "
       "as dataset d:<id> (xlsx_read reads it, xlsx_derive derives from it); every value "
-      "lists its source cells; cells left out are counted by reason.",
+      "lists its source cells; cells left out are counted by reason. join or fill without "
+      "group_by, measures, bins, pivot: the rows (where, sort, top apply).",
       {"doc": string("Document id; not needed when from is a dataset.", optional=True),
        "from": string("A table or region (t:Products) or a dataset (d:by_region)."),
        "id": string("The dataset's id: by_region (letters, digits, _ . -)."),
@@ -155,9 +166,13 @@ def _about(entry: Any) -> dict[str, Any]:
                    "Before all else, add another table's columns to each row of from, by "
                    "key, e.g. {from: \"t:Issues\", on: [\"Ref\", \"Items\"], columns: "
                    "[\"Issue\"]}. Every row kept, blank when unmatched; if a row matches "
-                   "several, each added cell is a list. Without group_by, measures, bins or "
-                   "pivot the result is these rows (where, sort, top apply).",
-                   optional=True)},
+                   "several, each added cell is a list.",
+                   optional=True),
+       "fill": array(obj({"column": string(), "from": string(),
+                          "coerce": string(enum=FILL_TYPES, optional=True)}),
+                     "After join: column's blanks take from's value in the same row, e.g. "
+                     "{column: \"Limit\", from: \"Default\"}. Sources kept, marked filled.",
+                     optional=True)},
       group=CORE, datasets=("from",))
 @handler
 def xlsx_derive(call: Any, id: str, doc: str | None = None, **arguments: Any) -> Result:
@@ -202,7 +217,7 @@ def _options(arguments: dict[str, Any]) -> dict[str, Any]:
             else item
 
     out: dict[str, Any] = {}
-    for name in ("where", "measures", "sort"):
+    for name in ("where", "measures", "sort", "fill"):
         if arguments.get(name) is not None:
             out[name] = [clean(item) for item in arguments[name]]
     if arguments.get("bins") is not None:
@@ -260,6 +275,8 @@ def _derived_result(call: Any, name: str, derived: Any, table: DatasetTable) -> 
         data["cache"] = dict(derived.cache)
     if derived.joined is not None:
         data["joined"] = derived.joined.as_dict()
+    if derived.filled:
+        data["filled"] = [f.as_dict() for f in derived.filled]
     total = len(derived.rows)
     cut: dict[str, Any] = {}
     chars = call.limits.max_result_chars

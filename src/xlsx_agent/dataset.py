@@ -86,12 +86,15 @@ class DatasetValue(Value):
     ``row`` its position (from 1), ``column`` its column's (from 1), ``name`` the column's
     name, ``dataset`` the dataset's id; :attr:`a` its address, ``d:by_region/#2/total``.
     ``sources``, when asked for, the first of the cells it came from, and ``more`` how many
-    others there are (in units: a range, or one key of a key set; :func:`cut_sources`)."""
+    others there are (in units: a range, or one key of a key set; :func:`cut_sources`).
+    ``filled`` the column a derive's ``fill`` gave it from, when it did
+    (:mod:`xlsx_agent.fill`)."""
 
     dataset: str = UNNAMED
     name: str = ""
     sources: tuple[str, ...] | None = None
     more: int = 0
+    filled: str | None = None
 
     @property
     def a(self) -> str:
@@ -106,6 +109,8 @@ class DatasetValue(Value):
             out["sources"] = list(self.sources)
             if self.more:
                 out["more"] = self.more
+        if self.filled is not None:
+            out["filled"] = self.filled
         return out
 
 
@@ -191,6 +196,15 @@ class DatasetTable:
             measured = tuple(tuple(row.get(c) for c in self.columns)
                              for row in derived.unrounded)
         self.measured = measured
+        #: The values a fill gave, by position and offset: the column each came from.
+        self.filled_from: dict[tuple[int, int], str] = {}
+        if derived is not None and derived.filled \
+                and len(derived.provenance) == len(dataset.rows):
+            for p, where in enumerate(derived.provenance, 1):
+                for o, c in enumerate(self.columns):
+                    origin = where[c].filled if c in where else None
+                    if origin is not None:
+                        self.filled_from[(p, o)] = origin
 
     @property
     def rows(self) -> int:
@@ -226,7 +240,8 @@ class DatasetTable:
             held = self.measured[position - 1][offset]   # a list, read as one (placed as lines)
         v, t, issue = _typed(held, self.labels[offset], self.derived)
         out = DatasetValue(sheet="", row=position, column=offset + 1, v=v, t=t,
-                           issue=issue, dataset=self.id, name=self.columns[offset])
+                           issue=issue, dataset=self.id, name=self.columns[offset],
+                           filled=self.filled_from.get((position, offset)))
         if sources is not None:
             out.sources, out.more = cut_sources(self.cell_sources(position, offset), sources)
         return out

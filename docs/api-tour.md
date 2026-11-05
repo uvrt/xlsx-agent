@@ -488,6 +488,28 @@ left table has is renamed `Status (issues)`. Each joined value's sources are the
 rows' cells. The order: join, `where`, `group_by`/`bins`/`pivot`, measures, `sort`, `top`,
 `round` (refused for the rows themselves: they are cells as stored).
 
+**Fills** (round 35, R22; `xlsx_agent.fill`).  `fill` gives a column's blank cells the
+value of another column of the same row, after the join and before `where`:
+
+```python
+ds = wb.derive("t:Parts", fill=[{"column": "Limit", "from": "Default limit",
+                                 "coerce": "number"}], id="limits")
+ds.rows[1]["Limit"]                          # 40: the row's Default limit
+ds.provenance[1]["Limit"].filled             # 'Default limit': marked
+[str(s) for s in ds.provenance[1]["Limit"].sources]   # ['t:Parts/P-2/Default limit']
+ds.filled[0].as_dict()   # {'column': 'Limit', 'from': 'Default limit', 'coerce': 'number',
+                         #  'filled': {'count': 2, ...}, 'coerced': {...},
+                         #  'unfilled': {'blank': {...}, 'wrong_type': {...}}}
+wb.derive("t:Parts", join={"from": "t:Groups", "on": ["Group", "Group"]},
+          fill=[{"column": "Limit", "from": "Group limit"}])   # looked up by key
+```
+
+A cell is blank when it holds nothing or text of no characters; every other cell keeps its
+value. A `from` cell that is blank, an error or a formula without a cached value fills
+nothing, and is counted by that reason; with `coerce` (`number`, `date`) text is read as a
+derive's `coerce` reads it, and a value of another type is `wrong_type`. Several fills apply
+in order, so a second one fills what the first left blank.
+
 ## Trace: the rows a row rests on
 
 ```python

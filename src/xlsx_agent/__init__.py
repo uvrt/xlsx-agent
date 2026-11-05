@@ -14,7 +14,8 @@ are queried (:mod:`xlsx_agent.query`); text is found (:mod:`xlsx_agent.find`); f
 are derived, each with its cells (:mod:`xlsx_agent.derive`), and kept as datasets that
 are read by address and derived from again (:mod:`xlsx_agent.dataset`); two workbooks
 are compared by key (:mod:`xlsx_agent.compare`); a table's rows are joined with
-another's by key (:mod:`xlsx_agent.join`); a workbook is checked against a declared
+another's by key (:mod:`xlsx_agent.join`), their blanks filled from another column
+(:mod:`xlsx_agent.fill`); a workbook is checked against a declared
 schema (:mod:`xlsx_agent.schema`); the caller's own tables are declared from its
 configuration (:mod:`xlsx_agent.declare`), their text cleaned by its rules on request
 (:mod:`xlsx_agent.clean`); ``xlsx_read``, ``xlsx_profile``, ``xlsx_query``,
@@ -69,6 +70,7 @@ from .declare import DeclarationError
 from .dataset import (DatasetSelection, DatasetTable, DatasetValue, as_dataset,
                       merge_sources, table_dataset)
 from .derive import Derived, DeriveError, Provenance, Total
+from .fill import Filled
 from .join import Joined
 from .edit import EditError, EditReport, SaveReport
 from .edit.policy import PolicyError, WritePolicy
@@ -86,7 +88,7 @@ from .validations import ValidationRule
 from .trace import Link, Trace, TraceResult
 from .workbook import Sheet, Workbook
 
-__version__ = "0.1.15"
+__version__ = "0.1.16"
 
 __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellChange",
            "CellEdit", "CellsDiff", "ValidationRule",
@@ -96,7 +98,7 @@ __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellC
            "DatasetTable", "DatasetValue", "DeclarationError", "DefinedName", "DeriveError",
            "Derived", "Distinct", "EditError", "EditReport", "PolicyError", "SaveReport",
            "WritePolicy", "Written",
-           "Found", "Hyperlink", "Joined", "KindMismatchWarning", "Locale", "NameNotFound", "NumberFormat",
+           "Filled", "Found", "Hyperlink", "Joined", "KindMismatchWarning", "Locale", "NameNotFound", "NumberFormat",
            "OpenError", "Problem", "QueryError", "QueryResult", "RangeAddress", "RefAddress",
            "Provenance", "RedactError", "Redaction", "Region", "RegionError", "Selection", "Sheet", "SheetRef", "SheetScan",
            "TableAddress", "Total", "Link", "Trace", "TraceResult", "UnclearRegion", "Value",

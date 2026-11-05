@@ -36,6 +36,14 @@ the pipeline then reads the joined rows, in this order: ``where``, ``group_by`` 
 ``group_by``, ``measures``, ``bins`` or ``pivot`` the result is the joined rows
 themselves.
 
+**Fills** (round 35, R22: :mod:`xlsx_agent.fill`).  ``fill=[{"column": "Limit", "from":
+"Default limit", "coerce": "number"}]`` gives each blank cell of a column the value of
+another column of the same row, after the join (so ``from`` may be a joined column: a
+value looked up in another table) and before ``where``; each filled value's sources are
+the cells it came from, and it is marked with that column (:attr:`Provenance.filled`);
+:attr:`Derived.filled` counts the cells filled and those left blank, by reason.  Without
+``group_by``, ``measures``, ``bins`` or ``pivot`` the result is the filled rows.
+
 **Groups.**  ``group_by`` names columns; a row's group is its cells in them, by type and
 value (``1`` and ``"1"`` are two groups; ``3`` and ``3.0`` one; text exactly, case
 counting, as ``eq`` matches; a date by its day, a datetime by its millisecond; a blank
@@ -259,6 +267,7 @@ from ooxml_edit.tools.schema import close_match
 from .address import DatasetAddress, RangeAddress, SheetRef, TableAddress, parse_address
 from .clean import UNMATCHED
 from .dataset import DatasetTable, as_dataset
+from .fill import Filled, FilledTable, filled_table
 from .join import JOIN_KEYS, Joined, JoinedTable, joined_table
 from .profile import FIRST_ADDRESSES, Count, _add_partial, majority_type
 from .query import QueryError, _Bad, _iso_key, _key, _operand, _tests
@@ -326,7 +335,7 @@ _KEY_TEXT = 64
 class DeriveError(QueryError):
     """A derive the library refuses: ``code`` says why (``wrong_type``, ``bad_source``,
     ``bad_measure``, ``bad_group``, ``bad_bins``, ``bad_pivot``, ``bad_sort``, ``bad_top``,
-    ``bad_round``, ``bad_coerce``, ``bad_join``, ``duplicate_name``, and the limits: ``too_many_groups``,
+    ``bad_round``, ``bad_coerce``, ``bad_join``, ``bad_fill``, ``duplicate_name``, and the limits: ``too_many_groups``,
     ``too_many_columns``, ``too_many_rows``, ``too_many_cells``, ``too_many_sources``,
     ``too_many_values``); ``field`` the argument at fault.  A :class:`QueryError`, as a
     ``where`` refusal is: the message names columns, functions and types, never a value.
@@ -442,7 +451,8 @@ class Provenance(_Sourced):
     are its own, and each run is given as each sheet's cells); ``keyed``
     the table's keys, when they name its rows; ``via`` the dataset it was derived from, if
     any (then ``column`` is the dataset's, from 0, ``runs`` its positions, and ``count``
-    how many of its values were used)."""
+    how many of its values were used).  ``filled`` the column a ``fill`` gave this value
+    from, when it did (:mod:`xlsx_agent.fill`; its sources are that column's cells)."""
 
     sheet: "SheetRef | Span | None"
     column: int
@@ -451,11 +461,14 @@ class Provenance(_Sourced):
     excluded: dict[str, int] = field(default_factory=dict)
     via: "DatasetTable | None" = field(default=None, repr=False, compare=False)
     keyed: "_Keyed | None" = field(default=None, repr=False, compare=False)
+    filled: str | None = None
 
     def as_dict(self) -> dict:
         out: dict = {"sources": [str(s) for s in self.sources], "count": self.count}
         if self.excluded:
             out["excluded"] = dict(self.excluded)
+        if self.filled is not None:
+            out["filled"] = self.filled
         return out
 
 
@@ -511,7 +524,9 @@ class Derived:
     (those referring to another workbook) -- a dataset's own counts when derived from one
     -- so that a result computed from invalidated caches says so, and its dataset is
     stale (ooxml-edit's ``Dataset.cache``); ``joined`` what a ``join`` did
-    (:class:`~xlsx_agent.join.Joined`), ``None`` without one.
+    (:class:`~xlsx_agent.join.Joined`), ``None`` without one; ``filled`` what each ``fill``
+    did (:class:`~xlsx_agent.fill.Filled`: the cells filled, those left blank by reason),
+    in order.
 
     :meth:`dataset` gives it as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`, what a
     tool session keeps under ``d:<id>`` (:mod:`xlsx_agent.dataset`); ``wb.derive(ds, ...)``
@@ -543,6 +558,7 @@ class Derived:
     source_key: str | None = None
     cache: dict[str, int] = field(default_factory=dict)
     joined: "Joined | None" = None
+    filled: "tuple[Filled, ...]" = ()
 
     def dataset(self) -> "Dataset":
         """This result as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`: the rows as
@@ -609,6 +625,8 @@ class Derived:
             out["cache"] = dict(self.cache)
         if self.joined is not None:
             out["joined"] = self.joined.as_dict()
+        if self.filled:
+            out["filled"] = [f.as_dict() for f in self.filled]
         return out
 
 
@@ -621,15 +639,17 @@ def derive(workbook: "Workbook | None",
            round: "int | Mapping[str, int] | None" = None,
            coerce: "Sequence[str] | None" = None, id: str | None = None,
            join: "Mapping[str, Any] | None" = None,
-           pivot_values: "Sequence[Any] | None" = None) -> Derived:
+           pivot_values: "Sequence[Any] | None" = None,
+           fill: "Sequence[Mapping[str, Any]] | Mapping[str, Any] | None" = None) -> Derived:
     """Figures from a table, name or region, or from a dataset (``workbook`` may then be
     ``None``); see the module's notes.  ``join`` adds another table's or dataset's columns
-    to each row first (:mod:`xlsx_agent.join`); ``pivot_values`` lists the pivot's columns,
-    in order."""
-    if join is not None:
+    to each row first (:mod:`xlsx_agent.join`); ``fill`` then gives blank cells another
+    column's value of the same row (:mod:`xlsx_agent.fill`); ``pivot_values`` lists the
+    pivot's columns, in order."""
+    if join is not None or fill is not None:
         return _join(workbook, from_, join, where=where, group_by=group_by,
                      measures=measures, bins=bins, pivot=pivot, sort=sort, top=top,
-                     round=round, coerce=coerce, id=id, pivot_values=pivot_values)
+                     round=round, coerce=coerce, id=id, pivot_values=pivot_values, fill=fill)
     region = _region(workbook, from_)
     plan = _Plan(workbook, region, where=where, group_by=group_by, measures=measures,
                  bins=bins, pivot=pivot, coerce=coerce, id=id, pivot_values=pivot_values)
@@ -645,29 +665,40 @@ def derive(workbook: "Workbook | None",
 
 def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, group_by: Any,
           measures: Any, bins: Any, pivot: Any, sort: Any, top: Any, round: Any, coerce: Any,
-          id: str | None, pivot_values: Any = None) -> Derived:
+          id: str | None, pivot_values: Any = None, fill: Any = None) -> Derived:
     """A derive of ``from_``'s rows joined with ``join["from"]``'s (see
-    :mod:`xlsx_agent.join`): the pipeline on the joined rows, or the rows themselves."""
-    if not isinstance(join, Mapping) or set(join) - set(JOIN_KEYS) \
-            or "from" not in join or "on" not in join:
-        raise DeriveError("bad_join", "join is {from: the table or dataset to join, on: "
-                          "[this table's key column, the joined one's], columns: the joined "
-                          "columns to add}", field="join")
+    :mod:`xlsx_agent.join`) and their blanks filled (:mod:`xlsx_agent.fill`): the pipeline
+    on those rows, or the rows themselves."""
     left = _region(workbook, from_)
-    try:
-        right = _region(workbook, join["from"])
-    except DeriveError as error:
-        raise DeriveError("bad_join", f"join's {error.message}", field="join") from None
-    table = joined_table(workbook, left, right, join)
+    table: "Region | DatasetTable" = left
+    if join is not None:
+        if not isinstance(join, Mapping) or set(join) - set(JOIN_KEYS) \
+                or "from" not in join or "on" not in join:
+            raise DeriveError("bad_join", "join is {from: the table or dataset to join, on: "
+                              "[this table's key column, the joined one's], columns: the "
+                              "joined columns to add}", field="join")
+        try:
+            right = _region(workbook, join["from"])
+        except DeriveError as error:
+            raise DeriveError("bad_join", f"join's {error.message}", field="join") from None
+        table = joined_table(workbook, left, right, join)
+    table = filled_table(workbook, table, fill)
+    if not isinstance(table, JoinedTable):          # no fill after all, and no join
+        return derive(workbook, table, where=where, group_by=group_by, measures=measures,
+                      bins=bins, pivot=pivot, sort=sort, top=top, round=round,
+                      coerce=coerce, id=id, pivot_values=pivot_values)
+    filled = tuple(table.filled) if isinstance(table, FilledTable) else ()
     if group_by is not None or measures is not None or bins is not None or pivot is not None \
             or pivot_values is not None:
         derived = derive(workbook, table, where=where, group_by=group_by, measures=measures,
                          bins=bins, pivot=pivot, sort=sort, top=top, round=round,
                          coerce=coerce, id=id, pivot_values=pivot_values)
-        return replace(derived, joined=table.joined)
+        return replace(derived, joined=table.joined, filled=filled)
     if round is not None:
-        raise DeriveError("bad_round", "round rounds measures; a join without group_by or "
+        what = "a join" if join is not None else "a fill"
+        raise DeriveError("bad_round", f"round rounds measures; {what} without group_by or "
                           "measures gives its rows' cells as stored", field="round")
+    marks = table.marks if isinstance(table, FilledTable) else {}
     plan = _Plan(workbook, table, where=where, group_by=None, measures=None, bins=None,
                  pivot=None, coerce=coerce, id=id)
     every = list(range(len(table.columns)))
@@ -708,7 +739,8 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
             values[name] = value.v
             keys[name] = _row_sort_key(value, date1904)
             where_[name] = Provenance(None, offset, array("l", [position, position]),
-                                      0 if value.t == "blank" else 1, via=table)
+                                      0 if value.t == "blank" else 1, via=table,
+                                      filled=marks.get((position, offset)))
         built.append((values, keys, where_))
     columns = list(table.columns)
     groups = len(built)
@@ -719,7 +751,7 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
                               field="top")
         built = built[:top]
     if len(built) > MAX_ROWS:
-        raise DeriveError("too_many_rows", f"{len(built)} joined rows, more than {MAX_ROWS}; "
+        raise DeriveError("too_many_rows", f"{len(built)} rows, more than {MAX_ROWS}; "
                           "give top or filter the rows (where)", field="top")
     if len(built) * len(columns) > MAX_CELLS:
         raise DeriveError("too_many_cells", f"{len(built) * len(columns)} values, more than "
@@ -737,7 +769,7 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
         unmatched={columns[o]: c.done() for o, c in sorted(state.unmatched.items())},
         not_compared={c: counter.done() for c, counter in state.not_compared.items()},
         hidden=state.hidden.done(), date1904=date1904,
-        cache=_cache(state.cache, None), joined=table.joined)
+        cache=_cache(state.cache, None), joined=table.joined, filled=filled)
 
 
 def _row_sort_key(value: Value, date1904: bool) -> Any:
