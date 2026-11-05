@@ -111,9 +111,12 @@ raises the online budget 6,500 -> 6,800 (``test_tools_online.py``).
 Round 35, R22: ``xlsx_derive``'s ``fill`` (a column's blanks given another column's value of
 the same row, after the join), the note that a join alone gives the rows moved to the tool's
 description (now for a fill too): ``xlsx_derive`` 1,116 -> 1,224, the core 4,717 -> 4,824
-estimated (about 6,678 -> 6,838 online at the same ratio: past the 6,800 budget; the main
-session counts it), every definition 5,688 -> 5,796; the guards 4,720 -> 4,825 and 5,690 ->
-5,800.  ``xlsx_derive`` is not strict (13 optional parameters): the strict set is unchanged.
+estimated, counted online 6,838 (claude-sonnet-5-5, 2026-11-05), past the 6,800 budget; so
+xlsx_derive's texts were shortened, meaning kept (``doc`` worded as xlsx_read's and
+xlsx_query's, ``join``'s and ``pivot_values``' sentences tightened): 1,224 -> 1,182, the
+core 4,824 -> 4,783 (about 6,780 online at the counted ratio, 1.4175; the main session
+counts it), every definition 5,688 -> 5,754; the guards 4,720 -> 4,785 and 5,690 -> 5,755.
+``xlsx_derive`` is not strict (13 optional parameters): the strict set is unchanged.
 """
 
 from __future__ import annotations
@@ -133,8 +136,8 @@ CHARS_PER_TOKEN = 3.5
 COUNTED_PER_ESTIMATED = 1.48
 CORE_COUNTED_BUDGET = 6800
 #: The core's estimate, a regression guard (round 25: past the proxy's budget, by choice).
-CORE_GUARD = 4825
-ALL_GUARD = 5800
+CORE_GUARD = 4785
+ALL_GUARD = 5755
 
 
 @pytest.fixture(scope="module")

@@ -275,7 +275,8 @@ goes stale when either side's source changes, the joined one's too.
 
 **Fills** (round 35). `xlsx_derive`'s `fill` --
 `[{"column": "Limit", "from": "Default limit", "coerce": "number"}]` -- gives each blank
-cell of `column` the same row's `from` value, after the join (so `from` may be a joined
+cell of `column` (no value, or text of no characters: a formula's `""` counts as blank)
+the same row's `from` value, after the join (so `from` may be a joined
 column, looked up by key) and before `where`. It never overwrites; several fills apply in
 order. `coerce` (`number`, `date`) reads text as the derive's `coerce` does. Each filled
 value's sources are the `from` cells and it carries `"filled": "<from>"` in the rows (and

@@ -18,7 +18,8 @@ Production round 35, R22.
 
 - **`xlsx_derive`'s `fill`** (`xlsx_agent.fill`; `Workbook.derive(fill=...)`):
   `[{"column": "Limit", "from": "Default limit", "coerce": "number"}]` gives each blank
-  cell of `column` -- no value, or text of no characters -- the same row's `from` value,
+  cell of `column` -- no value, or text of no characters (a formula's `""` counts as blank)
+  -- the same row's `from` value,
   after the join and before `where`, the groups and the measures. A fill never overwrites;
   several apply in order (a second fill of the same column fills what the first left
   blank). From a looked-up table: join it, then fill from the joined column.
@@ -39,12 +40,14 @@ Production round 35, R22.
   the form that works or the table's columns.
 - Without `group_by`, `measures`, `bins` or `pivot` the filled rows are the dataset (as a
   join's); `round` is refused for them.
-- Definitions: `xlsx_derive` 1,116 -> 1,224 estimated (`fill`, about +109; the note that a
-  join alone gives the rows moved to the tool's description, now for a fill too, about
-  -1): the core
-  4,717 -> 4,824, every definition 5,688 -> 5,796 (guards 4,720 -> 4,825 and 5,690 ->
-  5,800); a reviewer's core 4,563 -> 4,670. `xlsx_derive` is not strict (13 optional
-  parameters): the strict set is unchanged.
+- Definitions: `fill` about +109 estimated; the note that a join alone gives the rows moved
+  to the tool's description, now for a fill too. Counted online, the core went 6,678 ->
+  6,838, past the 6,800 budget, so `xlsx_derive`'s texts were shortened with their meaning
+  kept (`doc` worded as `xlsx_read`'s and `xlsx_query`'s; `join`'s, `pivot_values`', `id`'s,
+  `from`'s and `coerce`'s sentences tightened): `xlsx_derive` 1,116 -> 1,182 estimated, the
+  core 4,717 -> 4,783 (about 6,780 online), every definition 5,688 -> 5,754 (guards 4,720
+  -> 4,785 and 5,690 -> 5,755); a reviewer's core 4,563 -> 4,629. `xlsx_derive` is not
+  strict (13 optional parameters): the strict set is unchanged.
 
 ## 0.1.15 (unreleased) -- many reads in one call
 

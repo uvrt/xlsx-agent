@@ -1220,8 +1220,9 @@ dataset); `Derived.filled` (`filled` in the result) counts per fill the cells fi
 `wrong_type`), each with first addresses. A fill of a column from itself (names match
 case aside; a joined name renamed beside it) does nothing and says so. Without
 `group_by`, `measures`, `bins` or `pivot` the filled rows are the dataset. Definitions:
-`xlsx_derive` 1,116 -> 1,224 estimated (`fill`, with the rows-alone note moved from `join`
-to the tool's description), the core 4,717 -> 4,824, every definition 5,688 -> 5,796; not strict.
+`xlsx_derive` 1,116 -> 1,182 estimated (`fill`, with the rows-alone note moved from `join`
+to the tool's description, and its other texts shortened to keep the core within the 6,800
+online budget), the core 4,717 -> 4,783, every definition 5,688 -> 5,754; not strict.
 
 ### 0.2 — edit
 

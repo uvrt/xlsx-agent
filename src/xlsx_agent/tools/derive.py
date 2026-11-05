@@ -129,12 +129,12 @@ def _about(entry: Any) -> dict[str, Any]:
 @tool("xlsx_derive",
       "Figures computed here, never by you, from a table's or dataset's rows, joined, "
       "filtered, grouped, binned or pivoted. min/max of dates are dates; first/last by row order. Kept "
-      "as dataset d:<id> (xlsx_read reads it, xlsx_derive derives from it); every value "
-      "lists its source cells; cells left out are counted by reason. join or fill without "
+      "as dataset d:<id> (xlsx_read reads it; derive from it again); every value "
+      "lists its source cells; cells left out are counted by reason. join/fill without "
       "group_by, measures, bins, pivot: the rows (where, sort, top apply).",
-      {"doc": string("Document id; not needed when from is a dataset.", optional=True),
-       "from": string("A table or region (t:Products) or a dataset (d:by_region)."),
-       "id": string("The dataset's id: by_region (letters, digits, _ . -)."),
+      {"doc": string("Document id; not needed for a dataset (d:).", optional=True),
+       "from": string("Table or region (t:Products), or dataset (d:by_region)."),
+       "id": string("Dataset id: by_region (letters, digits, _ . -)."),
        "where": WHERE,
        "group_by": array(string(), "Columns to group by.", optional=True),
        "measures": array(obj({"fn": string(enum=FUNCTIONS),
@@ -147,30 +147,28 @@ def _about(entry: Any) -> dict[str, Any]:
                    "Group by ranges of a number or date column: [a, b), the last [a, b].",
                    optional=True),
        "pivot": string("A column whose values become columns.", optional=True),
-       "pivot_values": array(string(), "pivot's columns, in this order, rows or none (count "
-                             "0, others blank); as filter values are written, \"\" the blank "
-                             "cells. Other values: rows left out, named in pivot_unlisted.", optional=True),
+       "pivot_values": array(string(), "pivot's columns in order, rows or none (count 0, "
+                             "others blank), as filter values; \"\" the blank cells. Others: "
+                             "rows left out, named in pivot_unlisted.", optional=True),
        "sort": SORT,
        "top": integer("Keep the first rows after sorting.", minimum=1, maximum=MAX_ROWS,
                       optional=True),
        "round": integer("Decimals, half away from zero; reported values only.",
                         minimum=-MAX_DIGITS, maximum=MAX_DIGITS, optional=True),
-       "coerce": array(string(enum=COERCIONS), "Opt in: read numbers or dates stored as text.",
+       "coerce": array(string(enum=COERCIONS), "Read numbers or dates stored as text.",
                        optional=True),
-       "join": obj({"from": string("The table (t:Issues) or dataset (d:) to join."),
-                    "on": array(string(), "Two names: [key column of the outer from, key "
-                                "column of this table]. A list cell (a split column) "
-                                "matches by any of its items."),
-                    "columns": array(string(), "This table's columns to add. Default: all "
-                                     "but its key.", optional=True)},
-                   "Before all else, add another table's columns to each row of from, by "
-                   "key, e.g. {from: \"t:Issues\", on: [\"Ref\", \"Items\"], columns: "
-                   "[\"Issue\"]}. Every row kept, blank when unmatched; if a row matches "
-                   "several, each added cell is a list.",
+       "join": obj({"from": string("Table (t:) or dataset (d:)."),
+                    "on": array(string(), "[key column of from, key column of this "
+                                "table]. A list cell (split column) matches by any item."),
+                    "columns": array(string(), "Columns to add. Default: all but its key.",
+                                     optional=True)},
+                   "First, add another table's columns to each row of from, by key, e.g. {from: \"t:Issues\", on: [\"Ref\", \"Items\"], columns: "
+                   "[\"Issue\"]}. Every row kept (blank if unmatched); several matches: each "
+                   "added cell a list.",
                    optional=True),
        "fill": array(obj({"column": string(), "from": string(),
                           "coerce": string(enum=FILL_TYPES, optional=True)}),
-                     "After join: column's blanks take from's value in the same row, e.g. "
+                     "After join: column's blanks take from's value (same row), e.g. "
                      "{column: \"Limit\", from: \"Default\"}. Sources kept, marked filled.",
                      optional=True)},
       group=CORE, datasets=("from",))

@@ -504,7 +504,8 @@ wb.derive("t:Parts", join={"from": "t:Groups", "on": ["Group", "Group"]},
           fill=[{"column": "Limit", "from": "Group limit"}])   # looked up by key
 ```
 
-A cell is blank when it holds nothing or text of no characters; every other cell keeps its
+A cell is blank when it holds nothing or text of no characters (a formula's `""` is filled
+too, as a person sees it blank); every other cell keeps its
 value. A `from` cell that is blank, an error or a formula without a cached value fills
 nothing, and is counted by that reason; with `coerce` (`number`, `date`) text is read as a
 derive's `coerce` reads it, and a value of another type is `wrong_type`. Several fills apply
