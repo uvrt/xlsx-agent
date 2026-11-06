@@ -17,10 +17,14 @@ has the detail of every milestone. Why each dependency is needed at its version:
   and the second of this join's table, `join.from` that it is the table to join;
   `pivot_values` reads as sentences again (a listed value without rows still gets its
   column; rows of a value not listed are left out and named in `pivot_unlisted`); `coerce`
-  says "Opt in:" again. Descriptions, tests and docs only; no behaviour changed, so no
-  version bump (`tools/check_version.py` asks for none). `xlsx_derive` 1,182 -> 1,228
-  estimated, the core 4,783 -> 4,829 (about 6,845 online), every definition 5,754 -> 5,800
-  (guards 4,785 -> 4,830 and 5,755 -> 5,800); a reviewer's core 4,629 -> 4,675.
+  says "Opt in:" again. Also made clear: `fill`'s `from` is the fill's own column, read in
+  the same row; `join` adds to each row of the outer `from`; `join.columns` are this join's
+  table's; `xlsx_compare`'s and `xlsx_validate_data`'s `cursor` is passed back with "the
+  same call" (neither has a target). Descriptions, tests and docs only; no behaviour
+  changed, so no version bump (`tools/check_version.py` asks for none). `xlsx_derive`
+  1,182 -> 1,245 estimated, the core 4,783 -> 4,844 (about 6,866 online), every definition
+  5,754 -> 5,816 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
+  4,690.
 
 ## 0.1.16 (unreleased) -- a column's blanks filled from another
 

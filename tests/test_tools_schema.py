@@ -122,7 +122,12 @@ join.on / pivot_values / coerce wording restored (``join.on`` names the outer ``
 ``join.from`` says it is the table to join, ``pivot_values`` reads as sentences again,
 ``coerce`` says "Opt in:"): ``xlsx_derive`` 1,182 -> 1,228, the core 4,783 -> 4,829
 estimated (about 6,845 online at the counted ratio, 1.4175; the main session counts it),
-every definition 5,754 -> 5,800; the guards 4,785 -> 4,830 and 5,755 -> 5,800.
+every definition 5,754 -> 5,800; the guards 4,785 -> 4,830 and 5,755 -> 5,800.  Then
+``fill`` says its ``from`` is the fill's own column of the same row, ``join`` names "the
+outer from", ``join.columns`` says they are this join's table's, and ``xlsx_compare``'s and
+``xlsx_validate_data``'s ``cursor`` says "the same call" (neither has a target):
+``xlsx_derive`` 1,228 -> 1,245, the core 4,829 -> 4,844 (about 6,866 online), every
+definition 5,800 -> 5,816; the guards 4,830 -> 4,845 and 5,800 -> 5,820.
 """
 
 from __future__ import annotations
@@ -144,9 +149,10 @@ COUNTED_PER_ESTIMATED = 1.48
 #: join.on / pivot_values / coerce wording restored.
 CORE_COUNTED_BUDGET = 7000
 #: The core's estimate, a regression guard (round 25: past the proxy's budget, by choice).
-#: Round 35: the restored wording, 4,783 -> 4,829 and 5,754 -> 5,800.
-CORE_GUARD = 4830
-ALL_GUARD = 5800
+#: Round 35: the restored wording, 4,783 -> 4,829 and 5,754 -> 5,800; then fill's, join's,
+#: join.columns' and two cursors' wording, -> 4,844 and 5,816.
+CORE_GUARD = 4845
+ALL_GUARD = 5820
 
 
 @pytest.fixture(scope="module")

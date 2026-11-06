@@ -65,7 +65,7 @@ from ..compare import Diff, compare
 from ..read.types import Value
 from .docformat import KIND, handler
 from .query import KEPT
-from .read import _MARGIN, CURSOR, TEXT_SHOWN, _cursor, _read_cursor, _size
+from .read import _MARGIN, CALL_CURSOR, TEXT_SHOWN, _cursor, _read_cursor, _size
 
 #: The most row positions a ``duplicate_key`` difference lists per workbook.
 POSITIONS_SHOWN = 8
@@ -91,7 +91,7 @@ KEYS_SHOWN = 10
                         "match; names, validations, merges, conditional formats; changes "
                         "outside the write policy.", optional=True),
        "formula_text": boolean("With cells: formulas' text.", optional=True),
-       "cursor": CURSOR},
+       "cursor": CALL_CURSOR},
       group=CORE, kind=KIND, documents=("a", "b"))
 @handler
 def xlsx_compare(call: Any, a: str, b: str, tables: list[str] | None = None,

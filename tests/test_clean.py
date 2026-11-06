@@ -367,8 +367,10 @@ def test_cleaning_changes_no_tool_definition():
 #: pick a dataset's (X7) and said pivot_values' "" is the blank cells (X8) (+28), and since
 #: round 35 gave xlsx_derive its fill and shortened its other texts (R22, +231), and since
 #: round 35's clarity pass restored join.on's, join.from's, pivot_values' and coerce's
-#: wording (the user, 2026-11-06: the budget is guidance, clear tools first; +161).
-XLSX_CHARS = 12_741
+#: wording (the user, 2026-11-06: the budget is guidance, clear tools first; +161), and
+#: fill's from, join's outer from, join.columns' table and xlsx_compare's and
+#: xlsx_validate_data's cursor ("the same call") made clear (+55).
+XLSX_CHARS = 12_796
 
 
 def test_a_deck_table_from_a_cleaned_table_warns_in_the_tools_result():

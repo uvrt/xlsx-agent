@@ -163,16 +163,18 @@ def _about(entry: Any) -> dict[str, Any]:
                     "on": array(string(), "Two names: [key column of the outer from (the "
                                 "rows joined to), key column of this join's table]. A list "
                                 "cell (a split column) matches by any of its items."),
-                    "columns": array(string(), "Columns to add. Default: all but its key.",
+                    "columns": array(string(), "This join's table's columns to add. Default: all but "
+                                     "its key.",
                                      optional=True)},
-                   "First, add another table's columns to each row of from, by key, e.g. {from: \"t:Issues\", on: [\"Ref\", \"Items\"], columns: "
+                   "First, add another table's columns to each row of the outer from, by key, e.g. {from: \"t:Issues\", on: [\"Ref\", \"Items\"], columns: "
                    "[\"Issue\"]}. Every row kept (blank if unmatched); several matches: each "
                    "added cell a list.",
                    optional=True),
        "fill": array(obj({"column": string(), "from": string(),
                           "coerce": string(enum=FILL_TYPES, optional=True)}),
-                     "After join: column's blanks take from's value (same row), e.g. "
-                     "{column: \"Limit\", from: \"Default\"}. Sources kept, marked filled.",
+                     "After join: each blank of column takes the same row's value of "
+                     "the fill's from column, e.g. {column: \"Limit\", from: \"Default\"}. "
+                     "Sources kept, marked filled.",
                      optional=True)},
       group=CORE, datasets=("from",))
 @handler
