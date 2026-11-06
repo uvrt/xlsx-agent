@@ -365,8 +365,13 @@ def test_cleaning_changes_no_tool_definition():
 #: (+1,184; X2's extract is a declared rule, and changes no definition), and since round 27
 #: gave xlsx_derive its pivot_values (X6, +228), and since round 28 let xlsx_read's columns
 #: pick a dataset's (X7) and said pivot_values' "" is the blank cells (X8) (+28), and since
-#: round 35 gave xlsx_derive its fill and shortened its other texts (R22, +231).
-XLSX_CHARS = 12_580
+#: round 35 gave xlsx_derive its fill and shortened its other texts (R22, +231), and since
+#: round 35's clarity pass restored join.on's, join.from's, pivot_values' and coerce's
+#: wording (the user, 2026-11-06: the budget is guidance, clear tools first; +161), and
+#: fill's from, join's outer from, join.columns' table and xlsx_compare's and
+#: xlsx_validate_data's cursor ("the same call") made clear (+55), and xlsx_query's cursor
+#: too (its parameter is table, not target; -2).
+XLSX_CHARS = 12_794
 
 
 def test_a_deck_table_from_a_cleaned_table_warns_in_the_tools_result():

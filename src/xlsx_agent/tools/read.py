@@ -128,6 +128,8 @@ DOC = string("Document id.")
 #: L8) and ``row`` (a row by key is a target: ``t:Parts/BX-17``).
 ALIASES = {"key_column": "key", "row": "target"}
 CURSOR = string("next_cursor of the previous page, with the same target.", optional=True)
+#: For a tool without a ``target`` (xlsx_compare, xlsx_validate_data, xlsx_query).
+CALL_CURSOR = string("next_cursor of the previous page, with the same call.", optional=True)
 
 
 # -- xlsx_read ---------------------------------------------------------------------------------

@@ -43,7 +43,7 @@ from ooxml_edit.tools import (CORE, Result, array, boolean, integer, number, obj
 from ..schema import CASES, COLUMN_TYPES, ValidationReport, validate
 from .docformat import KIND, handler
 from .query import KEPT
-from .read import _MARGIN, CURSOR, DOC, _cursor, _read_cursor, _size
+from .read import _MARGIN, CALL_CURSOR, DOC, _cursor, _read_cursor, _size
 
 _COLUMN = obj({"name": string(),
                "type": string(enum=COLUMN_TYPES, optional=True),
@@ -81,7 +81,7 @@ _TABLE = obj({"table": string("t:Products; or declare one: range, name, header_r
        "schema": obj({"sheets": array(string(), "Required sheets.", optional=True),
                       "tables": array(_TABLE, optional=True)},
                      "What the workbook must hold."),
-       "cursor": CURSOR},
+       "cursor": CALL_CURSOR},
       group=CORE, kind=KIND)
 @handler
 def xlsx_validate_data(call: Any, doc: str, schema: dict,
