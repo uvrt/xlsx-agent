@@ -26,6 +26,22 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.17 (unreleased) -- a workbook's values for a check of numbers
+
+- **Numbers in text no value holds** (production round 36, R28; ooxml-edit 0.84.0): the
+  xlsx format lists every Excel table and every declared table as a value source
+  (`DocumentFormat.value_sources`, `xlsx_agent.tools.docformat.value_sources`), so a
+  deck's or document's `check` with `include: ["numbers"]` compares its text with the
+  values of every open workbook's tables, read as `from: "t:..."` reads them.
+- A table's dataset says each column's number format (`Dataset.formats`, from the cells
+  read: the one code a column's numbers and percentages are shown in, `None` for General
+  or several), so `2.649` shown `0.00` matches a text's `2.65` and `2.6`. A derived
+  dataset says it for the columns that come straight from a source's cells: a `group_by`
+  column, a `min`, `max`, `first` or `last` (a pivot's too), a join's or a fill's rows
+  (each side's own); computed ones (`sum`, `mean`, `share`...) have none
+  (`Derived.formats`, `dataset.column_formats`).
+- No tool definition changed: offline tokens and the strict set as before.
+
 ## 0.1.16 (unreleased) -- a column's blanks filled from another
 
 Production round 35, R22.
@@ -1054,15 +1070,18 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   the sheets a call changed (round 13, R2); 0.70.0 the shared tools sent with a workbook's
   parameters only (round 23, V3); 0.72.0 `define_dataset(also=...)`, by which a joined
   dataset goes stale when the joined side changes (round 25, X1); 0.78.0
-  `shared.READ_BATCH`, many reads in one call (round 32, R15) -- the floor.
+  `shared.READ_BATCH`, many reads in one call (round 32, R15); 0.84.0 a check of numbers
+  in a deck's or document's text against the open workbooks (`value_sources`,
+  `Dataset.formats`; round 36, R28) -- the floor.
 - `ooxml-common>=0.29.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
   widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, and from
   0.29.0 the shared reading of a number format code (`numfmt`) -- the floor.
 - `lxml>=4.9`: the XML tree every part is read and written in.
 - `pptx-agent` and `pptx2svg>=0.2.0` (`test` extra only): a deck filled from a workbook's
-  table in one session (`tests/test_sources_deck.py`); 0.2.0 is pptx2svg's first tagged
-  version.
+  table in one session (`tests/test_sources_deck.py`), and a deck's text checked against a
+  workbook's values (`tests/test_numbers_deck.py`, pptx-agent 0.1.17); 0.2.0 is pptx2svg's
+  first tagged version.
 - `ruff==0.17.2` and `mypy==2.4.0` (`dev` extra only, with the `test` requirements):
   pinned, as CI's `build` job installs them, so a new release changes nothing until both
   are raised together.

@@ -143,9 +143,11 @@ def as_dataset(derived: Any) -> Dataset:
                     for where in derived.provenance)
     types = tuple("text" if derived.types.get(c) == "list" else derived.types.get(c)
                   for c in columns)
+    shown = getattr(derived, "formats", None) or {}
     return Dataset(columns, rows, sources=sources, keys=derived.key_columns,
                    types=types, detail=derived,
-                   cache=getattr(derived, "cache", None) or None)
+                   cache=getattr(derived, "cache", None) or None,
+                   formats=tuple(shown.get(c) for c in columns) if shown else None)
 
 
 def _placed(value: Any) -> Any:
@@ -517,7 +519,7 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
                           "smaller dataset", address=selection.address)
     found: dict[int, dict[int, Value]] = {}
     if positions:
-        for row in workbook.read(address):
+        for row in workbook.read(address, formats=True):
             for value in row:
                 found.setdefault(value.row, {})[value.column] = value
     keys, index = None, None
@@ -531,6 +533,7 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
     rows: list[tuple[Any, ...]] = []
     sources: list[tuple[tuple[str, ...], ...]] = []
     seen: list[set[str]] = [set() for _ in columns]
+    shown: list[dict[str | None, None]] = [{} for _ in columns]
     cleaned: list[str] = []
     cleaned_count = 0
     unmatched: list[str] = []
@@ -563,6 +566,8 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
             else:
                 values.append(value.v)
                 seen[n].add(value.t)
+                if value.t in NUMBER_TYPES:
+                    shown[n].setdefault(format_code(value.format), None)
             if keys is not None:
                 where.append((replace(whole, key=keys[position - 1], column=name).text,))
             elif value is not None:
@@ -587,8 +592,61 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
         warnings.warn(CleanedWarning(f"{whole.text}: " + unmatched_warning(
             unmatched_count, unmatched[0])), stacklevel=2)
     return Dataset(columns, tuple(rows), sources=tuple(sources), keys=1 if first_is_key else 0,
+                   types=types, detail=detail, cache=cache or None,
+                   formats=tuple(one_format(codes) for codes in shown))
 
-                   types=types, detail=detail, cache=cache or None)
+
+#: The types whose values a number format shows (round 36): what ``Dataset.formats`` says.
+NUMBER_TYPES = ("number", "percent")
+
+
+def format_code(code: str | None) -> str | None:
+    """A cell's number format code as a dataset gives it: ``None`` for General."""
+    if code is None or code.strip().casefold() == "general":
+        return None
+    return code
+
+
+def one_format(codes: Iterable[str | None]) -> str | None:
+    """A column's number format (round 36, ``Dataset.formats``): the one code all its
+    numbers are shown in, ``None`` when they are shown in several (or in General) -- a
+    check of numbers then compares each value as stored, within the text's rounding."""
+    found = list(dict.fromkeys(codes))
+    return found[0] if len(found) == 1 else None
+
+
+def column_formats(workbook: Any, side: Any, names: Iterable[str]) -> dict[str, str | None]:
+    """The number format each of ``names`` -- columns of a table, name or region, or of a
+    dataset -- shows its numbers in (:func:`one_format`; round 36): a table's read from its
+    cells, a dataset's as it says (``Dataset.formats``, a join's own).  A column it cannot
+    say is ``None``."""
+    names = list(dict.fromkeys(names))
+    out: dict[str, str | None] = {name: None for name in names}
+    if not names:
+        return out
+    own = getattr(side, "column_formats", None)
+    if isinstance(own, dict):
+        return {name: own.get(name) for name in names}
+    dataset = getattr(side, "dataset", None)
+    if dataset is not None and not hasattr(side, "data"):        # a dataset, not a region
+        formats = getattr(dataset, "formats", None) or ()
+        for name in names:
+            if name in dataset.columns and dataset.columns.index(name) < len(formats):
+                out[name] = formats[dataset.columns.index(name)]
+        return out
+    data = getattr(side, "data", None)
+    if workbook is None or data is None:
+        return out
+    left = side.area.first.column
+    offsets = {name: side.column_index(name) for name in names}
+    codes: dict[str, dict[str | None, None]] = {name: {} for name in names}
+    for name, offset in offsets.items():
+        area = Area(Cell(data.first.row, left + offset), Cell(data.last.row, left + offset))
+        for row in workbook._read(RangeAddress(side.sheet_ref, area), formats=True):
+            for value in row:
+                if value.t in NUMBER_TYPES:
+                    codes[name].setdefault(format_code(value.format), None)
+    return {name: one_format(found) for name, found in codes.items()}
 
 
 def _typed(v: Any, label: str | None, derived: bool = False

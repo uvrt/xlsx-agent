@@ -286,8 +286,13 @@ def filled_table(workbook: "Workbook | None", table: "Region | DatasetTable",
     else:
         key = _keyed(workbook, table)
         keys, joined = (1 if key is not None and table.columns[0] == key else 0), None
-    return FilledTable(list(table.columns), values, where, table.address, keys,
+    out = FilledTable(list(table.columns), values, where, table.address, keys,
                        _date1904(workbook, table), joined, done, marks)
+    # Round 36: a filled column keeps its own number format (each cell its column's).
+    from .dataset import column_formats
+
+    out.column_formats = column_formats(workbook, table, table.columns)
+    return out
 
 
 def _taken(value: Value, coerce: str | None, locale: Any, grouping: bool,

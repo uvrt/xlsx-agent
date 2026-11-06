@@ -429,6 +429,15 @@ def resolve_table(workbook: Workbook, address: str) -> Any:
         raise tool_error(error) from None
 
 
+def value_sources(workbook: Workbook) -> list[str]:
+    """The format's ``value_sources`` (ooxml-edit 0.83.0, round 36): the tables whose
+    values a deck's or document's text may quote, as ``t:`` addresses -- every Excel table
+    and every declared one (one a declared table replaces once, as the declared one), in
+    the workbook's order -- which a check of numbers reads with :func:`resolve_table`, each
+    column's number format with it (``Dataset.formats``)."""
+    return [region.address.text for region in [*workbook.tables, *workbook.regions.configured]]
+
+
 def workbook_format(*, grouping: bool = True, local_dates: bool = False,
                     tables: Any = None) -> DocumentFormat:
     """The xlsx format, its workbooks opened with the reader settings ``grouping`` and
@@ -451,7 +460,7 @@ def workbook_format(*, grouping: bool = True, local_dates: bool = False,
         errors=dict(ERRORS), summary=summary, strict_first=STRICT_FIRST,
         datasets={"t:": resolve_table}, merge_sources=merge_sources, tool_hints=TOOL_HINTS,
         undo_scope=undo_scope, undo_shared=undo_shared, restored=_restored,
-        touched=touched)
+        touched=touched, value_sources=value_sources)
 
 
 def touched(workbook: Workbook, change: Any) -> list[dict[str, Any]]:
