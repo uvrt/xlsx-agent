@@ -526,7 +526,10 @@ class Derived:
     stale (ooxml-edit's ``Dataset.cache``); ``joined`` what a ``join`` did
     (:class:`~xlsx_agent.join.Joined`), ``None`` without one; ``filled`` what each ``fill``
     did (:class:`~xlsx_agent.fill.Filled`: the cells filled, those left blank by reason),
-    in order.
+    in order; ``formats`` (round 36) per column whose values come straight from its
+    source's cells -- a ``group_by`` column, a ``min``, ``max``, ``first`` or ``last``, a
+    join's or fill's rows -- the number format they are shown in there (``None``: General,
+    or several), what ooxml-edit's ``Dataset.formats`` says of the dataset.
 
     :meth:`dataset` gives it as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`, what a
     tool session keeps under ``d:<id>`` (:mod:`xlsx_agent.dataset`); ``wb.derive(ds, ...)``
@@ -559,6 +562,7 @@ class Derived:
     cache: dict[str, int] = field(default_factory=dict)
     joined: "Joined | None" = None
     filled: "tuple[Filled, ...]" = ()
+    formats: dict[str, "str | None"] = field(default_factory=dict)
 
     def dataset(self) -> "Dataset":
         """This result as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`: the rows as
@@ -655,7 +659,34 @@ def derive(workbook: "Workbook | None",
                  bins=bins, pivot=pivot, coerce=coerce, id=id, pivot_values=pivot_values)
     plan.check_types(*_type_pass(workbook, region, plan.typed_offsets, plan.coerce))
     state = plan.run()
-    return plan.finish(state, sort=sort, top=top, round=round)
+    derived = plan.finish(state, sort=sort, top=top, round=round)
+    return replace(derived, formats=_formats(workbook, region, plan, derived))
+
+
+#: The measures whose value is one of its cells' (round 36): shown as that column shows it.
+STRAIGHT = ("min", "max", "first", "last")
+
+
+def _formats(workbook: "Workbook | None", region: "Region | DatasetTable", plan: "_Plan",
+             derived: Derived) -> dict[str, "str | None"]:
+    """Each output column that comes straight from a source column, and that column's
+    number format (:func:`~xlsx_agent.dataset.column_formats`)."""
+    from .dataset import column_formats
+
+    by_name = {m.name: m for m in plan.measures}
+    straight: dict[str, str] = {name: name for name in plan.group}
+    for name in derived.columns:
+        pivot = derived.pivot_columns.get(name)
+        m = by_name.get(pivot["measure"]) if pivot else by_name.get(name)
+        if m is not None and m.fn in STRAIGHT and m.column is not None:
+            straight[name] = m.column
+    if not straight:
+        return {}
+    try:
+        shown = column_formats(workbook, region, straight.values())
+    except Exception:  # noqa: BLE001 -- a format is a reading aid: none rather than a failed derive
+        return {}
+    return {name: shown.get(column) for name, column in straight.items()}
 
 
 # ------------------------------------------------------------------------------------------
@@ -769,7 +800,8 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
         unmatched={columns[o]: c.done() for o, c in sorted(state.unmatched.items())},
         not_compared={c: counter.done() for c, counter in state.not_compared.items()},
         hidden=state.hidden.done(), date1904=date1904,
-        cache=_cache(state.cache, None), joined=table.joined, filled=filled)
+        cache=_cache(state.cache, None), joined=table.joined, filled=filled,
+        formats={c: table.column_formats.get(c) for c in columns})
 
 
 def _row_sort_key(value: Value, date1904: bool) -> Any:

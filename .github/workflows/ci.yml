@@ -56,7 +56,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@main"
-          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@main"
+          # TEMPORARY (r36): ooxml-edit 0.84.0 (numbers for documents) is on its r36-numbers2
+          # branch until uvrt/ooxml-edit#100 is merged; point this line back at @main then.
+          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@r36-numbers2"
           # Test only: a deck filled from a workbook's table (tests/test_sources_deck.py).
           python -m pip install "pptx2svg @ git+https://github.com/uvrt/pptx2svg@main"
           python -m pip install "pptx-agent @ git+https://github.com/uvrt/pptx-agent@main"
@@ -94,7 +96,9 @@ jobs:
       - name: Type check (mypy)
         run: |
           python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@main"
-          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@main"
+          # TEMPORARY (r36): ooxml-edit 0.84.0 (numbers for documents) is on its r36-numbers2
+          # branch until uvrt/ooxml-edit#100 is merged; point this line back at @main then.
+          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@r36-numbers2"
           python -m pip install "mypy==2.4.0"
           mypy
 

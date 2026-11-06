@@ -133,6 +133,8 @@ class JoinedTable(DatasetTable):
         self.cells = values
         self.left_keys = keys
         self.joined = joined
+        #: Each column's number format (round 36): its side's, set by :func:`joined_table`.
+        self.column_formats: dict[str, str | None] = {}
 
     def value(self, position: int, offset: int, *, measured: bool = False,
               sources: int | None = None) -> Any:
@@ -221,8 +223,16 @@ def joined_table(workbook: "Workbook | None", left: "Region | DatasetTable",
                     sum(1 for m in matches if m), sum(1 for m in matches if not m), lists)
     keys = 1 if isinstance(left, Region) and _keyed(workbook, left) is not None \
         and left.columns[0] == _keyed(workbook, left) else 0
-    return JoinedTable([*left.columns, *names], values, sources, left.address, keys,
-                       date1904, joined)
+    table = JoinedTable([*left.columns, *names], values, sources, left.address, keys,
+                        date1904, joined)
+    # Round 36: each column's number format, from its own side (Dataset.formats).
+    from .dataset import column_formats
+
+    shown = column_formats(workbook, left, left.columns)
+    theirs = column_formats(workbook, right, picked)
+    shown.update({name: theirs.get(column) for name, column in names.items()})
+    table.column_formats = shown
+    return table
 
 
 def _name(side: "Region | DatasetTable") -> str:
