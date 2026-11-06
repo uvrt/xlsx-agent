@@ -1228,9 +1228,9 @@ online budget), the core 4,717 -> 4,783, every definition 5,688 -> 5,754; not st
 Then, the budget raised to 7,000 (the user, 2026-11-06: guidance, clear tools first), the
 wording of `join.on` (which `from`), `join.from`, `pivot_values` and `coerce` ("Opt in:")
 restored, and `fill` (its `from` is the fill's own column of the same row), `join` ("the
-outer from"), `join.columns` (this join's table's) and `xlsx_compare`'s and
-`xlsx_validate_data`'s `cursor` ("the same call") made clear: `xlsx_derive` 1,182 ->
-1,245, the core 4,783 -> 4,844 (about 6,866 online), every definition 5,754 -> 5,816.
+outer from"), `join.columns` (this join's table's) and `xlsx_compare`'s,
+`xlsx_validate_data`'s and `xlsx_query`'s `cursor` ("the same call") made clear: `xlsx_derive` 1,182 ->
+1,245, the core 4,783 -> 4,844 (about 6,866 online), every definition 5,754 -> 5,815.
 
 ### 0.2 — edit
 

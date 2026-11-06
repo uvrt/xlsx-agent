@@ -127,7 +127,9 @@ every definition 5,754 -> 5,800; the guards 4,785 -> 4,830 and 5,755 -> 5,800.  
 outer from", ``join.columns`` says they are this join's table's, and ``xlsx_compare``'s and
 ``xlsx_validate_data``'s ``cursor`` says "the same call" (neither has a target):
 ``xlsx_derive`` 1,228 -> 1,245, the core 4,829 -> 4,844 (about 6,866 online), every
-definition 5,800 -> 5,816; the guards 4,830 -> 4,845 and 5,800 -> 5,820.
+definition 5,800 -> 5,816; the guards 4,830 -> 4,845 and 5,800 -> 5,820.  ``xlsx_query``'s
+``cursor`` says "the same call" too (its parameter is ``table``): every definition 5,816 ->
+5,815, the core unchanged.
 """
 
 from __future__ import annotations

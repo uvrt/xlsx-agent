@@ -40,7 +40,7 @@ from ..address import TableAddress, parse_address
 from ..clean import UNMATCHED, unmatched_warning
 from ..query import OPS, dataset_matches, matches, read_rows, select
 from .docformat import handler
-from .read import (_CUT_ROOM, _FIRST, _MARGIN, CURSOR, READ_ROWS, TEXT_SHOWN, _Annotations,
+from .read import (_CUT_ROOM, _FIRST, _MARGIN, CALL_CURSOR, READ_ROWS, TEXT_SHOWN, _Annotations,
                    _cursor, _forms, _page, _read_cursor, _sheet, _size, cleaned_count)
 
 #: How many queries' matches a workbook keeps for their next pages, the latest.
@@ -74,7 +74,7 @@ SORT = array(obj({"column": string(), "desc": boolean(optional=True)}),
        "sort": SORT,
        "limit": integer(f"Rows per page. Default 50, at most {READ_ROWS}.", minimum=1,
                         maximum=READ_ROWS, optional=True),
-       "cursor": CURSOR},
+       "cursor": CALL_CURSOR},
       group=CORE, datasets=("table",))
 @handler
 def xlsx_query(call: Any, table: str, doc: str | None = None, columns: list[str] | None = None,
