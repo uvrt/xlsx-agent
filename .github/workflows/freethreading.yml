@@ -53,9 +53,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --pre "lxml>=7.0.0b1"
           python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@main"
-          # TEMPORARY (r36): ooxml-edit 0.84.0 (numbers for documents) is on its r36-numbers2
-          # branch until uvrt/ooxml-edit#100 is merged; point this line back at @main then.
-          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@r36-numbers2"
+          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@main"
           python -m pip install "pptx2svg @ git+https://github.com/uvrt/pptx2svg@main"
           python -m pip install "pptx-agent @ git+https://github.com/uvrt/pptx-agent@main"
           python -m pip install -e .[test]
