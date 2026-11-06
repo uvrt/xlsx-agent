@@ -235,9 +235,11 @@ recalculates. Volatile functions (`NOW`, `TODAY`, `RAND`, `OFFSET`,
 
 Defined once each in ooxml-edit's provider-neutral schema, registered on a `Toolbox` with
 `formats=[xlsx_agent.tools.FORMAT]`. **Read tools are loaded (the core); edit tools are
-deferred** behind tool search. The loaded core is held under **6,800 tokens as Anthropic's
+deferred** behind tool search. The loaded core is held under **7,000 tokens as Anthropic's
 count-tokens counts them** (the siblings' per-format budget of 6,500, raised by the user for
-`read_batch` on 2026-11-05: 6,678 counted online), checked offline in CI by the
+`read_batch` on 2026-11-05: 6,678 counted online; raised again 6,800 -> 7,000 on 2026-11-06:
+the budget is guidance, clear tools first, so `xlsx_derive`'s `join.on`, `pivot_values` and
+`coerce` wording was restored after round 35's trim), checked offline in CI by the
 siblings' proxy (compact JSON ÷ 3.5 × 1.48) and online by a `provider`-marked test.
 
 The proposal's `xlsx_describe` and `xlsx_find` are the shared `describe` and `find_text`
@@ -1223,6 +1225,10 @@ case aside; a joined name renamed beside it) does nothing and says so. Without
 `xlsx_derive` 1,116 -> 1,182 estimated (`fill`, with the rows-alone note moved from `join`
 to the tool's description, and its other texts shortened to keep the core within the 6,800
 online budget), the core 4,717 -> 4,783, every definition 5,688 -> 5,754; not strict.
+Then, the budget raised to 7,000 (the user, 2026-11-06: guidance, clear tools first), the
+wording of `join.on` (which `from`), `join.from`, `pivot_values` and `coerce` ("Opt in:")
+restored: `xlsx_derive` 1,182 -> 1,228, the core 4,783 -> 4,829 (about 6,845 online),
+every definition 5,754 -> 5,800.
 
 ### 0.2 — edit
 

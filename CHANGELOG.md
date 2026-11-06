@@ -11,6 +11,16 @@ has the detail of every milestone. Why each dependency is needed at its version:
   from 6,500 by the user on 2026-11-05, keeping `read_batch` in the core): round 32, R15
   took the core 6,431 -> 6,678 counted online (claude-sonnet-5-5). Tests only; no tool
   definition changed.
+- The online budget is now 7,000 (the user, 2026-11-06: the budget is guidance, clear tools
+  first), and `xlsx_derive`'s descriptions that 0.1.16's trim left unclear are restored:
+  `join.on` says its first name is the key column of the outer `from` (the rows joined to)
+  and the second of this join's table, `join.from` that it is the table to join;
+  `pivot_values` reads as sentences again (a listed value without rows still gets its
+  column; rows of a value not listed are left out and named in `pivot_unlisted`); `coerce`
+  says "Opt in:" again. Descriptions, tests and docs only; no behaviour changed, so no
+  version bump (`tools/check_version.py` asks for none). `xlsx_derive` 1,182 -> 1,228
+  estimated, the core 4,783 -> 4,829 (about 6,845 online), every definition 5,754 -> 5,800
+  (guards 4,785 -> 4,830 and 5,755 -> 5,800); a reviewer's core 4,629 -> 4,675.
 
 ## 0.1.16 (unreleased) -- a column's blanks filled from another
 

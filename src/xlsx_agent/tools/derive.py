@@ -147,19 +147,22 @@ def _about(entry: Any) -> dict[str, Any]:
                    "Group by ranges of a number or date column: [a, b), the last [a, b].",
                    optional=True),
        "pivot": string("A column whose values become columns.", optional=True),
-       "pivot_values": array(string(), "pivot's columns in order, rows or none (count 0, "
-                             "others blank), as filter values; \"\" the blank cells. Others: "
-                             "rows left out, named in pivot_unlisted.", optional=True),
+       "pivot_values": array(string(), "The pivot's columns, in this order, written as "
+                             "filter values (\"\" for the blank cells); a value without rows "
+                             "still gets its column (count 0, other measures blank). Rows of "
+                             "a value not listed are left out and named in pivot_unlisted.",
+                             optional=True),
        "sort": SORT,
        "top": integer("Keep the first rows after sorting.", minimum=1, maximum=MAX_ROWS,
                       optional=True),
        "round": integer("Decimals, half away from zero; reported values only.",
                         minimum=-MAX_DIGITS, maximum=MAX_DIGITS, optional=True),
-       "coerce": array(string(enum=COERCIONS), "Read numbers or dates stored as text.",
+       "coerce": array(string(enum=COERCIONS), "Opt in: read numbers or dates stored as text.",
                        optional=True),
-       "join": obj({"from": string("Table (t:) or dataset (d:)."),
-                    "on": array(string(), "[key column of from, key column of this "
-                                "table]. A list cell (split column) matches by any item."),
+       "join": obj({"from": string("The table (t:) or dataset (d:) to join."),
+                    "on": array(string(), "Two names: [key column of the outer from (the "
+                                "rows joined to), key column of this join's table]. A list "
+                                "cell (a split column) matches by any of its items."),
                     "columns": array(string(), "Columns to add. Default: all but its key.",
                                      optional=True)},
                    "First, add another table's columns to each row of from, by key, e.g. {from: \"t:Issues\", on: [\"Ref\", \"Items\"], columns: "
