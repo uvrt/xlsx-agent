@@ -270,7 +270,7 @@ from .dataset import DatasetTable, as_dataset
 from .fill import Filled, FilledTable, filled_table
 from .join import JOIN_KEYS, Joined, JoinedTable, joined_table
 from .profile import FIRST_ADDRESSES, Count, _add_partial, majority_type
-from .query import QueryError, _Bad, _iso_key, _key, _operand, _tests
+from .query import LOOSENED, QueryError, _Bad, _iso_key, _key, _operand, _tests
 from .read.regions import Region, RegionError, Span
 from .read.types import TYPES, Value, looks_like_date, serial_text, text_date, text_number
 
@@ -553,6 +553,11 @@ class Derived:
     cleaned: dict[str, Count] = field(default_factory=dict)
     not_compared: dict[str, Count] = field(default_factory=dict)
     unmatched: dict[str, Count] = field(default_factory=dict)
+    #: Per column with a ``loose`` filter that loosens, the rows matched only loosely
+    #: (:attr:`~xlsx_agent.query.Matches.loosened`).
+    loosened: dict[str, Count] = field(default_factory=dict)
+    #: What the filters were read as (:attr:`~xlsx_agent.query.Matches.notes`).
+    notes: tuple[str, ...] = ()
     hidden: Count = field(default_factory=lambda: Count(0))
     totals: dict[str, Total] = field(default_factory=dict)
     pivot_columns: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -613,7 +618,7 @@ class Derived:
             if value:
                 out[name] = {k: {r: c.as_dict() for r, c in v.items()}
                              for k, v in value.items()}
-        for name in ("coerced", "cleaned", "not_compared", "unmatched"):
+        for name in ("coerced", "cleaned", "not_compared", "unmatched", "loosened"):
             value = getattr(self, name)
             if value:
                 out[name] = {k: c.as_dict() for k, c in value.items()}
@@ -738,6 +743,7 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
     typed_tests = [(t, types[t.offset]) for t in plan.tests]
     date1904 = plan.date1904
     state = _State()
+    loose = _loosening(plan.tests, types, state)
     built = []
     for row in table.measured_rows():
         for value in row:
@@ -760,6 +766,8 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
         if not passed:
             continue
         state.matched += 1
+        if loose:
+            _count_loosened(state, loose, lambda o: row[o], date1904)
         if any(value.hidden for value in row):
             state.hidden.add(row[0])
         position = row[0].row
@@ -799,6 +807,8 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
         cleaned={columns[o]: c.done() for o, c in sorted(state.cleaned.items())},
         unmatched={columns[o]: c.done() for o, c in sorted(state.unmatched.items())},
         not_compared={c: counter.done() for c, counter in state.not_compared.items()},
+        loosened={c: counter.done() for c, counter in state.loosened.items()},
+        notes=_filter_notes(plan.tests, types),
         hidden=state.hidden.done(), date1904=date1904,
         cache=_cache(state.cache, None), joined=table.joined, filled=filled,
         formats={c: table.column_formats.get(c) for c in columns})
@@ -1318,6 +1328,30 @@ class _Counter:
         return Count(self.count, tuple(self.first))
 
 
+def _loosening(tests: list, types: dict[int, str], state: "_State") -> list:
+    """The ``loose`` filters that loosen (on a text or list column), each column's counter
+    made in ``state.loosened`` (a column loosened nowhere counts 0)."""
+    out = [t for t in tests if t.loose and t.op in LOOSENED and types[t.offset] in ("text", "list")]
+    for test in out:
+        state.loosened.setdefault(test.column, _Counter())
+    return out
+
+
+def _count_loosened(state: "_State", loose: list, cell: Any, date1904: bool) -> None:
+    """A matching row counted under each column whose loose filter it passed only loosely
+    (once per column)."""
+    seen = set()
+    for test in loose:
+        if test.column not in seen and not test.exactly(cell(test.offset), date1904):
+            seen.add(test.column)
+            state.loosened[test.column].add(cell(test.offset))
+
+
+def _filter_notes(tests: list, types: dict[int, str]) -> tuple[str, ...]:
+    """What the filters were read as (:meth:`~xlsx_agent.query._Test.notes`)."""
+    return tuple(dict.fromkeys(note for test in tests for note in test.notes(types[test.offset])))
+
+
 class _Runs:
     """Rows as runs: a flat array of (first, last) pairs."""
 
@@ -1398,6 +1432,7 @@ class _State:
     cleaned: dict = field(default_factory=dict)          # offset -> _Counter
     unmatched: dict = field(default_factory=dict)        # offset -> _Counter
     not_compared: dict = field(default_factory=dict)     # column -> _Counter
+    loosened: dict = field(default_factory=dict)         # column -> _Counter
     hidden: _Counter = field(default_factory=_Counter)
     totals: dict = field(default_factory=dict)           # offset or None -> [partials, runs, count]
     cache: dict = field(default_factory=dict)            # status or "external" -> count
@@ -1438,6 +1473,7 @@ def _second_pass(plan: _Plan) -> _State:
     rows, left = found
     types = plan.offset_types
     typed_tests = [(t, types[t.offset]) for t in plan.tests]
+    loose = _loosening(plan.tests, types, state)
     # a dataset's values are typed already: no text is read as a number there
     locale, grouping = (workbook.locale, workbook.grouping) if workbook is not None \
         else (None, True)
@@ -1485,6 +1521,8 @@ def _second_pass(plan: _Plan) -> _State:
         if not passed:
             continue
         state.matched += 1
+        if loose:
+            _count_loosened(state, loose, lambda o: row[o - left], date1904)
         number = row[0].row
         parts = []
         skip = False
@@ -1933,6 +1971,8 @@ def _finish(plan: _Plan, state: _State, sort: Any, top: Any, round_: Any) -> Der
         matched=state.matched, used=state.used, groups=groups, left_out=left_out,
         excluded=excluded, coerced=coerced, cleaned=cleaned, unmatched=unmatched,
         not_compared={c: counter.done() for c, counter in state.not_compared.items()},
+        loosened={c: counter.done() for c, counter in state.loosened.items()},
+        notes=_filter_notes(plan.tests, plan.offset_types),
         hidden=state.hidden.done(), totals=totals, pivot_columns=pivot_columns,
         pivot_unlisted=[{"name": _label(v, t), "v": v, "t": t, "rows": n}
                         for v, t, n in state.unlisted.values()],

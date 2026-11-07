@@ -88,7 +88,7 @@ from .validations import ValidationRule
 from .trace import Link, Trace, TraceResult
 from .workbook import Sheet, Workbook
 
-__version__ = "0.1.17"
+__version__ = "0.1.18"
 
 __all__ = ["FORMS", "REFUSALS", "Address", "AddressError", "AllowedList", "CellChange",
            "CellEdit", "CellsDiff", "ValidationRule",

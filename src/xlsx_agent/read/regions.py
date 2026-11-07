@@ -145,7 +145,7 @@ class RegionError(ValueError):
     ``scoped_name`` (``t:Name`` for a name local to a sheet), ``header_unclear`` (with
     ``reason``, one of :data:`UNCLEAR_REASONS`), ``no_header`` (no header at the cell),
     ``no_key_column``, ``duplicate_key``, ``no_key`` (a row whose key cell is no key,
-    :meth:`Regions.expand`), ``no_key_set`` (a key set of a dataset's rows,
+    :meth:`Regions.expand`), ``no_key_set`` (before round 40: a key set of a dataset's rows,
     :mod:`xlsx_agent.dataset`), ``position_out_of_range``, ``bad_table``,
     ``name_taken``, ``bad_name``, ``headers_required``, ``bad_headers``, ``declared`` (a
     detected region or declared range in a table declared from configuration), and as a source of
@@ -1756,9 +1756,11 @@ class KeyIndex:
     ``duplicates`` the keys two or more rows share, with their positions; ``formulas`` the
     positions of the rows whose key cell holds a formula (its key is the cached value: a
     write by key refuses such a column, :mod:`xlsx_agent.edit.keys`).  :meth:`find`
-    looks a key up as an address by key does."""
+    looks a key up as an address by key does.  ``region`` may be anything with a ``t:`` or
+    ``d:`` ``address`` (a dataset's keys, :meth:`~xlsx_agent.dataset.DatasetTable.key_index`):
+    a refusal names its rows by position there."""
 
-    def __init__(self, region: Region, column: str, keys: list[str | None],
+    def __init__(self, region: "Region | Any", column: str, keys: list[str | None],
                  formulas: "Sequence[int]" = ()) -> None:
         self.region = region
         self.column = column
@@ -1878,7 +1880,7 @@ class KeyFinder:
         return [self.columns[i] for i in found]
 
 
-def _shape(whole: TableAddress, rows: int) -> str:
+def _shape(whole: "TableAddress | Any", rows: int) -> str:
     """A refusal's way out by position: how many data rows ``whole`` has, and the
     addresses that name them (``t:Std/#1`` to ``t:Std/#12``, ``t:Std/#1:#12``)."""
     if rows == 0:

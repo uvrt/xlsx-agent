@@ -64,8 +64,9 @@ dataset and count, errors name columns, functions and types.
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
-from typing import Any, Iterator
+from typing import Any, Iterator, Sequence
 
 from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, boolean, integer,
                               obj, string, tool)
@@ -73,6 +74,7 @@ from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, bo
 from ..address import DatasetAddress, NameNotFound, parse_address
 from ..clean import UNMATCHED, unmatched_warning
 from ..dataset import DatasetSelection, DatasetTable, cut_sources, join_units, source_units
+from ..read.regions import RegionError
 from ..derive import COERCIONS, FUNCTIONS, MAX_DIGITS, MAX_ROWS, derive
 from ..fill import FILL_TYPES
 from .docformat import KIND, handler
@@ -257,15 +259,15 @@ def _derived_result(call: Any, name: str, derived: Any, table: DatasetTable) -> 
         value = getattr(derived, key)
         if value:
             data[key] = {k: {r: c.as_dict() for r, c in v.items()} for k, v in value.items()}
-    for key in ("coerced", "cleaned", "not_compared"):
+    for key in ("coerced", "cleaned", "not_compared", "loosened"):
         value = getattr(derived, key)
         if value:
             data[key] = {k: c.as_dict() for k, c in value.items()}
-    warnings = []
+    warnings = list(derived.notes)
     if derived.unmatched:
         data[UNMATCHED] = {k: c.as_dict() for k, c in derived.unmatched.items()}
-        warnings = [unmatched_warning(c.count, c.first[0], k)
-                    for k, c in derived.unmatched.items()]
+        warnings += [unmatched_warning(c.count, c.first[0], k)
+                     for k, c in derived.unmatched.items()]
     if derived.hidden.count:
         data["hidden"] = derived.hidden.as_dict()
     if derived.pivot_columns:
@@ -291,7 +293,7 @@ def _derived_result(call: Any, name: str, derived: Any, table: DatasetTable) -> 
     rows_limit = min(call.limits.max_list_items, READ_ROWS)
     budget = chars - _MARGIN - _size({**data, "cut": {**cut, **_CUT_ROOM},
                                       "next": {"target": name, "cursor": "x" * 24}}) - 80
-    rows = _values(table, 1, min(total, rows_limit), _every(table), SOURCES_SHOWN)
+    rows = _values(table, range(1, min(total, rows_limit) + 1), _every(table), SOURCES_SHOWN)
     shown, cut_text, stop, full = _page(rows, 0, 0, budget, _NONE, False, _TEXT)
     if stop is None and total > len(shown):
         stop = (len(shown), 0)
@@ -328,12 +330,12 @@ def _every(table: DatasetTable) -> tuple[int, ...]:
     return tuple(range(len(table.columns)))
 
 
-def _values(table: DatasetTable, first: int, last: int, offsets: tuple[int, ...],
+def _values(table: DatasetTable, positions: Sequence[int], offsets: tuple[int, ...],
             sources: int | None) -> Iterator[list[Any]]:
-    """Rows ``first`` to ``last`` of ``table``, the columns at ``offsets``, as values
-    (each with its first ``sources`` ranges when given); :func:`~.read._page` starts a
-    page's first row at its own column."""
-    for position in range(first, last + 1):
+    """The rows at ``positions`` of ``table``, in that order, the columns at ``offsets``,
+    as values (each with its first ``sources`` ranges when given); :func:`~.read._page`
+    starts a page's first row at its own column."""
+    for position in positions:
         yield [table.value(position, o, sources=sources) for o in offsets]
 
 
@@ -349,13 +351,20 @@ _CUT_ROOM = {"rows": 1000, "cells": 10000, "chars": True, "text": 100000}
 
 def read_dataset(call: Any, target: str, *, sources: bool, limit: int | None,
                  max_chars: int | None, cursor: str | None,
-                 columns: list[str] | None = None) -> Result:
-    """``xlsx_read`` of a ``d:`` target (see the module's notes)."""
+                 columns: list[str] | None = None, key: str | None = None) -> Result:
+    """``xlsx_read`` of a ``d:`` target (see the module's notes); ``key`` the column
+    holding the keys of a row by key or a key set (:meth:`DatasetTable.select`)."""
     entry, address, table = _entry(call, target, "target")
-    selection = table.select(address)
-    token = selection.text
+    warnings: list[str] = []
+    if key is not None and address.key is None and address.keys is None:
+        warnings.append(f"key {key!r} not used: it names the column holding the keys of a "
+                        f"row by key or a key set ({DatasetAddress(address.id).text}/{{a,b}}), and "
+                        f"{address.text} names none")
+        key = None
+    selection = _selected(table, address, key)
+    token = selection.text if key is None else f"{selection.text}|key={key}"
     if columns:
-        selection = _picked(table, address, columns)
+        selection = _picked(table, address, columns, key)
         token = f"{selection.text}|{','.join(map(str, selection.offsets))}"
     chars = min(max_chars or call.limits.max_result_chars, call.limits.max_result_chars)
     rows_limit = min(limit or call.limits.max_list_items, READ_ROWS)
@@ -370,15 +379,14 @@ def read_dataset(call: Any, target: str, *, sources: bool, limit: int | None,
         data.pop("columns")
     data["rows"] = []
     budget = chars - _MARGIN - _size({**data, "cut": _CUT_ROOM}) - 80
-    first = selection.first + start_row
-    last = min(selection.last, first + rows_limit - 1)
-    values = _values(table, first, last, selection.offsets,
-                     SOURCES_SHOWN if sources else None)
+    order = selection.order
+    page = order[start_row:start_row + rows_limit]
+    values = _values(table, page, selection.offsets, SOURCES_SHOWN if sources else None)
     cap = None if selection.kind == "value" else _TEXT
     shown, cut_text, stop, full = _page(values, start_row, start_column, budget, _NONE,
                                         False, cap)
-    if stop is None and last < selection.last:
-        stop = (last - selection.first + 1, 0)
+    if stop is None and start_row + len(page) < len(order):
+        stop = (start_row + len(page), 0)
     data["rows"] = shown
     cut: dict[str, Any] = {}
     next_cursor = None
@@ -395,11 +403,34 @@ def read_dataset(call: Any, target: str, *, sources: bool, limit: int | None,
         data["cut"] = cut
     return Result(summary=_summary(selection.text, start_row + 1, start_row + len(shown),
                                    total, next_cursor is not None, entry.stale),
-                  data=data, total=total, next_cursor=next_cursor)
+                  data=data, total=total, next_cursor=next_cursor, warnings=warnings)
+
+
+def _selected(table: DatasetTable, address: DatasetAddress,
+              key: str | None) -> DatasetSelection:
+    """:meth:`DatasetTable.select`, a dataset without a key column refused with the call
+    that works: the same read, with ``key`` naming a column that can be the key (rule 2);
+    and ``key`` naming no column refused with the dataset's columns."""
+    try:
+        return table.select(address, key=key)
+    except NameNotFound as error:
+        if key is None or error.what != "column" or error.name != key:
+            raise
+        raise ToolError("not_found", f"{error.message}; key names the column holding the "
+                        "keys", field="key", valid_options=list(table.columns)[:50],
+                        details={"what": "column"}) from None
+    except RegionError as error:
+        if error.code != "no_key_column" or not error.valid_options:
+            raise
+        call = {"target": address.text, "key": error.valid_options[0]}
+        raise ToolError("refused", f"{error.message}. The call that works: xlsx_read "
+                        f"{json.dumps(call)}", field="target",
+                        valid_options=list(error.valid_options),
+                        details={"code": "no_key_column", "call": call}) from None
 
 
 def _picked(table: DatasetTable, address: DatasetAddress,
-            columns: list[str]) -> DatasetSelection:
+            columns: list[str], key: str | None = None) -> DatasetSelection:
     """The rows ``address`` names, of the ``columns`` asked for, in their order, as a
     table's are picked (round 28, X7): the address's own column first, each column once;
     ``not_found`` for a name the dataset has no column of, with its columns."""
@@ -410,7 +441,8 @@ def _picked(table: DatasetTable, address: DatasetAddress,
         raise ToolError("not_found", f"{error.message}; columns picks some of them",
                         field="columns", valid_options=list(table.columns)[:50],
                         details={"what": "column"}) from None
-    rows = table.select(replace(address, column=None, any_row=False, any_column=False))
+    rows = table.select(replace(address, column=None, any_row=False, any_column=False),
+                        key=key)
     return replace(rows, offsets=offsets)
 
 

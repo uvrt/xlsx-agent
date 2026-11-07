@@ -371,7 +371,8 @@ def test_cleaning_changes_no_tool_definition():
 #: fill's from, join's outer from, join.columns' table and xlsx_compare's and
 #: xlsx_validate_data's cursor ("the same call") made clear (+55), and xlsx_query's cursor
 #: too (its parameter is table, not target; -2).
-XLSX_CHARS = 12_794
+#: Round 40, R43: the filters' contains_any and loose, in xlsx_query and xlsx_derive (+282).
+XLSX_CHARS = 13_076
 
 
 def test_a_deck_table_from_a_cleaned_table_warns_in_the_tools_result():

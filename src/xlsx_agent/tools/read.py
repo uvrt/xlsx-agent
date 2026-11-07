@@ -184,7 +184,8 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
 
     if isinstance(target, str) and target.startswith(DATASET_PREFIX):
         return read_dataset(call, target, sources=bool(sources), limit=limit,
-                            max_chars=max_chars, cursor=cursor, columns=columns or None)
+                            max_chars=max_chars, cursor=cursor, columns=columns or None,
+                            key=key)
     if sources:
         raise ToolError("invalid_arguments", "sources works on a dataset (d:) only, where "
                         "each value lists the cells it came from; a t: or cell read gives "

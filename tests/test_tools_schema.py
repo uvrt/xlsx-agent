@@ -130,6 +130,12 @@ outer from", ``join.columns`` says they are this join's table's, and ``xlsx_comp
 definition 5,800 -> 5,816; the guards 4,830 -> 4,845 and 5,800 -> 5,820.  ``xlsx_query``'s
 ``cursor`` says "the same call" too (its parameter is ``table``): every definition 5,816 ->
 5,815, the core unchanged.
+Round 40, R43: the filters' ``contains_any`` (text holding any of ``values``) and ``loose``
+(text compared ignoring case and white space), in ``xlsx_query``'s and ``xlsx_derive``'s
+``where``: ``xlsx_query`` 473 -> 513, ``xlsx_derive`` 1,245 -> 1,286, the core 4,844 -> 4,924
+estimated (about 6,970 online at the counted ratio, 6,854 / 4,844; the main session counts it), every
+definition 5,815 -> 5,896; the guards 4,845 -> 4,925 and 5,820 -> 5,900.  Neither tool is
+strict: the strict set is unchanged.
 """
 
 from __future__ import annotations
@@ -153,8 +159,9 @@ CORE_COUNTED_BUDGET = 7000
 #: The core's estimate, a regression guard (round 25: past the proxy's budget, by choice).
 #: Round 35: the restored wording, 4,783 -> 4,829 and 5,754 -> 5,800; then fill's, join's,
 #: join.columns' and two cursors' wording, -> 4,844 and 5,816.
-CORE_GUARD = 4845
-ALL_GUARD = 5820
+#: Round 40, R43: contains_any and loose in the filters, -> 4,924 and 5,896.
+CORE_GUARD = 4925
+ALL_GUARD = 5900
 
 
 @pytest.fixture(scope="module")

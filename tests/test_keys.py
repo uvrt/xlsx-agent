@@ -309,14 +309,16 @@ def test_derive_takes_a_selector_of_the_whole_table_and_refuses_a_part(wb):
         assert caught.value.code == "bad_source"
 
 
-def test_a_dataset_takes_selectors_and_refuses_a_key_set(wb):
+def test_a_dataset_takes_selectors_and_key_sets(wb):
     table = DatasetTable(_area_means(wb))
     assert [[v.v for v in row] for row in table.read("d:by_area/*/mean")] == \
         [[v.v for v in row] for row in table.read("d:by_area[mean]")]
     assert table.select("d:by_area/#2/*").text == "d:by_area/#2/*"
-    with pytest.raises(RegionError) as caught:
-        table.select("d:by_area/{north,south}/mean")
-    assert caught.value.code == "no_key_set"
+    # round 40, R42: a key set, as a table's (its keys are the area column's, a derive's
+    # one group column)
+    keys = [row[0].v for row in table.read("d:by_area[area]")][:2]
+    selection = table.select(f"d:by_area/{{{keys[1]},{keys[0]}}}/mean")
+    assert selection.order == (2, 1) and selection.kind == "values"
 
 
 # -- stable across edits ---------------------------------------------------------------------
@@ -400,5 +402,8 @@ def test_xlsx_derive_shows_sources_by_key(box):
     whole = box.dispatch(session, "xlsx_derive", {"doc": "d1", "from": "t:checks/*",
                                                   "id": "all"})
     assert whole.ok, whole.error
-    refused = box.dispatch(session, "xlsx_read", {"target": "d:by_area/{north,east}/mean"})
-    assert refused.to_json()["error"]["code"] == "invalid_arguments"
+    # round 40, R42: a dataset's key set reads as a table's
+    keyed = box.dispatch(session, "xlsx_read", {"target": "d:by_area/{east,north}/mean"})
+    assert keyed.ok, keyed.error
+    assert [row[0]["a"] for row in keyed.data["rows"]] == ["d:by_area/#3/mean",
+                                                           "d:by_area/#1/mean"]
