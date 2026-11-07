@@ -148,7 +148,7 @@ def _wanted(call: Any, tracer: Tracer, doc: str, rows: list[str]) -> list[tuple[
                                 field="doc", valid_options=[entry.doc] if entry.doc else [])
             table = DatasetTable(entry.dataset, entry.id)
             selection = table.select(given)
-            for position in range(selection.first, selection.last + 1):
+            for position in selection.order:
                 address = DatasetAddress(table.id, position=position).text
                 out.append((address, lambda t=table, p=position: tracer.trace_dataset_row(t, p)))
             continue

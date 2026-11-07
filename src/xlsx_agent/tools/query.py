@@ -2,7 +2,8 @@
 with the columns asked for (ROADMAP.md, "Tools").  In the loaded core, beside ``xlsx_read``.
 
 What it does is :mod:`xlsx_agent.query`'s: the filters (``eq``, ``in``, ``gte``, ``lte``,
-``contains``, ``words_gt``, ``blank``, ``not_blank``, combined with *and*), each checked
+``contains``, ``contains_any``, ``words_gt``, ``blank``, ``not_blank``, combined with *and*;
+a filter's ``loose`` compares text ignoring case and white space), each checked
 against its column's type before any row is given -- a test the type does not take, or a value not of
 that type, is refused naming the type, with the tests it takes as ``valid_options`` -- and
 the sort.  A filter's ``value`` is text as JSON writes the value (``5``, ``2.5``, ``true``,
@@ -17,7 +18,9 @@ matching rows; ``cut.rows`` the matching rows not yet given; ``next_cursor``, pa
 with the same query, the next page (a cursor of another query is refused).  ``types``
 gives the type each filtered or sorted column was taken as; ``not_compared``, per filtered
 column, the cells of another type a comparing test never matches, counted with their first
-addresses.
+addresses; ``loosened``, per column a ``loose`` filter loosens, the matching rows that match
+only loosely (round 40, R43).  A query that matches no row, whose text filters would match
+some with ``loose``, says how many and which filters (a warning: the next call is that one).
 
 **A dataset** (``d:by_region``; round 10, O5) is queried as a table is, no ``doc``
 needed: its values as it reports them, each with its ``d:`` address
@@ -38,7 +41,7 @@ from ooxml_edit.tools import (CORE, DATASET_PREFIX, Result, ToolError, array, bo
 
 from ..address import TableAddress, parse_address
 from ..clean import UNMATCHED, unmatched_warning
-from ..query import OPS, dataset_matches, matches, read_rows, select
+from ..query import LOOSENED, OPS, Matches, dataset_matches, matches, read_rows, select
 from .docformat import handler
 from .read import (_CUT_ROOM, _FIRST, _MARGIN, CALL_CURSOR, READ_ROWS, TEXT_SHOWN, _Annotations,
                    _cursor, _forms, _page, _read_cursor, _sheet, _size, cleaned_count)
@@ -51,10 +54,13 @@ KEPT = 4
 WHERE = array(obj({"column": string(),
                    "op": string(enum=OPS),
                    "value": string(optional=True),
-                   "values": array(string(), "For in.", optional=True)}),
+                   "values": array(string(), "For in, contains_any.", optional=True),
+                   "loose": boolean("Text ignoring case and all white space.",
+                                    optional=True)}),
               "Filters, all met. value as JSON writes it: 12.5, true, dates ISO "
               "(2026-01-05), percent as the fraction. gte/lte: numbers, dates, "
-              "times. contains: text, case ignored; eq/in match exactly.",
+              "times. contains: text, case ignored; eq/in match exactly; "
+              "contains_any: any of values.",
               optional=True)
 
 #: The sort keys, as ``xlsx_query`` and ``xlsx_derive`` take them.
@@ -118,9 +124,13 @@ def xlsx_query(call: Any, table: str, doc: str | None = None, columns: list[str]
         data["types"] = found.types
     if found.not_compared:
         data["not_compared"] = {n: c.as_dict() for n, c in found.not_compared.items()}
+    if found.loosened:
+        data["loosened"] = {n: c.as_dict() for n, c in found.loosened.items()}
     data["rows"] = []
     if not total:
-        return Result(summary=_summary(label, 1, 0, 0, region.rows, False), data=data, total=0)
+        loosely = _loosely(where, lambda w: matches(workbook, region, where=w))
+        return Result(summary=_summary(label, 1, 0, 0, region.rows, False), data=data, total=0,
+                      warnings=list(found.notes) + loosely)
 
     page = found.rows[start_row:start_row + rows_limit]
     budget = chars - _MARGIN - _size({**data, "cut": _CUT_ROOM}) \
@@ -137,7 +147,7 @@ def xlsx_query(call: Any, table: str, doc: str | None = None, columns: list[str]
     data["rows"] = shown
     if cleaned:
         data["cleaned"] = cleaned_count(cleaned)
-    warnings = []
+    warnings = list(found.notes)
     if unmatched:
         data[UNMATCHED] = cleaned_count(unmatched)
         warnings.append(unmatched_warning(len(unmatched), unmatched[0]))
@@ -198,9 +208,13 @@ def _query_dataset(call: Any, target: str, columns: list[str] | None, where: lis
         data["types"] = found.types
     if found.not_compared:
         data["not_compared"] = {n: c.as_dict() for n, c in found.not_compared.items()}
+    if found.loosened:
+        data["loosened"] = {n: c.as_dict() for n, c in found.loosened.items()}
     data["rows"] = []
     if not total:
-        return Result(summary=_summary(label, 1, 0, 0, dataset.rows, False), data=data, total=0)
+        loosely = _loosely(where, lambda w: dataset_matches(dataset, where=w))
+        return Result(summary=_summary(label, 1, 0, 0, dataset.rows, False), data=data,
+                      total=0, warnings=list(found.notes) + loosely)
 
     page = found.rows[start_row:start_row + rows_limit]
     budget = chars - _MARGIN - _size({**data, "cut": _CUT_ROOM}) \
@@ -228,7 +242,33 @@ def _query_dataset(call: Any, target: str, columns: list[str] | None, where: lis
         data["cut"] = cut
     summary = _summary(label, start_row + 1, start_row + len(shown), total, dataset.rows,
                        next_cursor is not None)
-    return Result(summary=summary, data=data, total=total, next_cursor=next_cursor)
+    return Result(summary=summary, data=data, total=total, next_cursor=next_cursor,
+                  warnings=list(found.notes))
+
+
+def _loosely(where: list, match: Any) -> list[str]:
+    """For a query that matches no row: how many rows its text filters would match with
+    ``loose`` -- the filters that compare text (eq, in, contains, contains_any) and are not
+    loose already, made so -- as a warning naming those filters, so the next call can be
+    that one (rule 2); ``[]`` when there are none, or loose finds no more."""
+    loosen = [i for i, item in enumerate(where)
+              if item.get("op") in LOOSENED and not item.get("loose")]
+    if not loosen:
+        return []
+    found: Matches = match([{**item, "loose": True} if i in loosen else item
+                            for i, item in enumerate(where)])
+    changed = [column for column, count in found.loosened.items() if count.count]
+    if not found.rows or not changed:
+        return []
+    filters = ", ".join(f"where[{i}]" for i in loosen if where[i].get("column") is not None
+                        and _same_column(where[i]["column"], changed))
+    return [f"no row matches exactly; {len(found.rows)} would with loose: true on {filters} "
+            f"(text compared ignoring case and white space, on {', '.join(changed)})"]
+
+
+def _same_column(name: str, columns: list[str]) -> bool:
+    folded = name.casefold()
+    return any(column.casefold() == folded for column in columns)
 
 
 def _matches(workbook: Any, region: Any, key: str, where: list, sort: list,

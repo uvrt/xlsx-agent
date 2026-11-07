@@ -24,10 +24,14 @@ kept under ``d:<id>`` (:mod:`xlsx_agent.tools.derive`); in a script it is a valu
 
 **Reading one** (:class:`DatasetTable`).  ``d:by_region`` is its rows, ``[total]`` one
 column, ``/#2`` a row by position, ``/North`` a row by key and ``/North/total`` one value,
-as for tables (R2).  A row by key needs exactly one key column (a derive grouped by one
-column; ``keys`` is 1): the key matches the column's value as a table's key does (text
-exactly, a whole number by its digits); none is ``not_found``, two ``duplicate_key`` with
-their positions.  Each value comes back as a :class:`DatasetValue`, typed, whose address
+as for tables (R2); ``/{South,North}`` a key set, the rows of its keys in its order, as
+for tables too (round 40, R42).  A row by key needs a key column: the dataset's own when a
+derive grouped it by one column (``keys`` is 1), else the column ``key=`` names
+(:meth:`DatasetTable.key_index`); without either it is refused, ``no_key_column``, with the
+columns that could be the key.  The key matches the column's value as a table's key does
+(text exactly, a whole number by its digits), looked up as a table's are
+(:class:`~xlsx_agent.read.regions.KeyIndex`): none is ``not_found`` (with the rows whose
+key is like it, by position), two ``duplicate_key`` with their positions.  Each value comes back as a :class:`DatasetValue`, typed, whose address
 names it by position (``d:by_region/#2/total``): a row's position never changes, since a
 dataset never does.
 
@@ -70,7 +74,7 @@ from .address import (Address, AddressError, DatasetAddress, NameNotFound, Range
 
 from .clean import UNMATCHED, CleanedWarning, unmatched_warning
 from .profile import FIRST_ADDRESSES, Count
-from .read.regions import RegionError, key_text
+from .read.regions import KeyIndex, RegionError, _shape, key_text
 from .read.types import _MS_PER_DAY, TYPES, Value, _clock, looks_like_date
 
 #: What a dataset without an id (a script's :class:`Derived` made without ``id=``) is called
@@ -118,18 +122,29 @@ class DatasetValue(Value):
 class DatasetSelection:
     """What a ``d:`` address names in a dataset: ``text`` the address as given back,
     ``kind`` (``dataset``, ``column``, ``row`` or ``value``; ``rows`` or ``values`` for a
-    row range), ``first`` and ``last`` the
+    row range or a key set), ``first`` and ``last`` the
     rows (positions from 1; ``last`` 0 when there are none), ``offsets`` the columns (from
-    0)."""
+    0); ``positions`` a key set's rows, in its keys' order (``None``: ``first`` to
+    ``last``).  :attr:`order` is the rows either way."""
 
     text: str
     kind: str
     first: int
     last: int
     offsets: tuple[int, ...]
+    positions: tuple[int, ...] | None = None
+
+    @property
+    def order(self) -> tuple[int, ...]:
+        """The rows named, in order: a key set's as its keys are listed."""
+        if self.positions is not None:
+            return self.positions
+        return tuple(range(self.first, self.last + 1))
 
     @property
     def rows(self) -> int:
+        if self.positions is not None:
+            return len(self.positions)
         return max(self.last - self.first + 1, 0)
 
 
@@ -198,6 +213,8 @@ class DatasetTable:
             measured = tuple(tuple(row.get(c) for c in self.columns)
                              for row in derived.unrounded)
         self.measured = measured
+        #: The key indexes made (:meth:`key_index`), by column: a dataset never changes.
+        self._key_indexes: dict[str, KeyIndex] = {}
         #: The values a fill gave, by position and offset: the column each came from.
         self.filled_from: dict[tuple[int, int], str] = {}
         if derived is not None and derived.filled \
@@ -275,15 +292,18 @@ class DatasetTable:
 
     # -- addresses -------------------------------------------------------------------------
 
-    def select(self, address: "str | DatasetAddress") -> DatasetSelection:
+    def select(self, address: "str | DatasetAddress", *,
+               key: str | None = None) -> DatasetSelection:
         """What a ``d:`` address names here (see the module's notes):
         :class:`~xlsx_agent.address.NameNotFound` for an unknown column or key;
         :class:`~xlsx_agent.read.regions.RegionError` for a position (or a row range's
-        row) past the end (``position_out_of_range``), a key without one key column (``no_key_column``), a
-        key two rows share (``duplicate_key``) or a key set (``no_key_set``).  ``*`` is
-        every row (``d:by_region/*/total``, the column) or every column
-        (``d:by_region/#2/*``, the row); ``d:by_region/#2:#5`` rows 2 to 5, ``/#2:`` row 2
-        to the last."""
+        row) past the end (``position_out_of_range``), a key without a key column
+        (``no_key_column``, :meth:`key_index`) or a key two rows share
+        (``duplicate_key``).  ``*`` is every row (``d:by_region/*/total``, the column) or
+        every column (``d:by_region/#2/*``, the row); ``d:by_region/#2:#5`` rows 2 to 5,
+        ``/#2:`` row 2 to the last; a key set, ``d:by_region/{North,South}/total``, the
+        rows of its keys in its order, as for tables (round 40, R42).  ``key``: the column
+        holding the keys, where it is not the dataset's own key column."""
         if isinstance(address, str):
             parsed = parse_address(address)
             if not isinstance(parsed, DatasetAddress):
@@ -296,9 +316,12 @@ class DatasetTable:
         column = self.columns[offsets[0]] if address.column is not None else None
         whole = DatasetAddress(self.id)
         if address.keys is not None:
-            raise RegionError("no_key_set", f"a dataset's rows are named one by one, by key "
-                              f"or by position ({whole.text}/#1); a key set is for tables",
-                              address=whole.text, valid_options=[f"{whole.text}/#1"])
+            index = self.key_index(key)
+            positions = tuple(index.find(k, n) for n, k in enumerate(address.keys, 1))
+            text = DatasetAddress(self.id, column=column, keys=address.keys,
+                                  any_column=address.any_column).text
+            return DatasetSelection(text, address.kind, min(positions), max(positions),
+                                    offsets, positions)
         any_: dict[str, Any] = {"any_row": address.any_row, "any_column": address.any_column}
         if address.row_range is not None:
             first, last = address.row_range
@@ -324,35 +347,70 @@ class DatasetTable:
                                   "rows", address=whole.text)
         else:
             assert address.key is not None   # by key: the only form left
-            position = self._find_key(address.key)
+            position = self.key_index(key).find(address.key)
         text = DatasetAddress(self.id, column=column, position=position,
                               any_column=address.any_column).text
         return DatasetSelection(text, address.kind, position, position, offsets)
 
-    def _find_key(self, wanted: str) -> int:
-        whole = DatasetAddress(self.id).text
-        if self.keys != 1:
-            why = "no key column" if not self.keys else f"{self.keys} key columns"
-            raise RegionError("no_key_column", f"{whole} has {why}: name its rows by "
-                              f"position ({whole}/#1)", address=whole)
-        found = [p for p in range(1, self.rows + 1)
-                 if key_text(self.value(p, 0)) == wanted]
-        if not found:
-            raise NameNotFound(f"no row of {whole} has that key in column "
-                               f"{self.columns[0]!r}", what="key", name=wanted)
-        if len(found) > 1:
-            raise RegionError("duplicate_key", f"{len(found)} rows of {whole} have that key; "
-                              "name the row by its position", address=whole,
-                              valid_options=[f"{whole}/#{p}" for p in found[:50]])
-        return found[0]
+    def key_columns(self) -> list[str]:
+        """The columns whose values could name the rows, each alone: every value text or a
+        whole number, no two the same key (as a table's key column, :func:`key_text`)."""
+        found = []
+        for offset, name in enumerate(self.columns):
+            seen: set[str] = set()
+            for position in range(1, self.rows + 1):
+                text = key_text(self.value(position, offset))
+                if text is None or text in seen:
+                    break
+                seen.add(text)
+            else:
+                if self.rows:
+                    found.append(name)
+        return found
 
-    def read(self, address: "str | DatasetAddress", *, sources: int | None = None
-             ) -> list[list[DatasetValue]]:
+    def key_index(self, key: str | None = None) -> KeyIndex:
+        """The keys a row by key or a key set is looked up in, as a table's are
+        (:class:`~xlsx_agent.read.regions.KeyIndex`): those of column ``key`` when given,
+        else of the dataset's key column -- its first, when a derive grouped it by one
+        column (``keys`` 1).  Without either, :class:`RegionError` ``no_key_column`` with
+        the way out: the columns that could be the key as ``valid_options`` (``key`` names
+        one), the rows by position, or a derive grouped by the one column."""
+        whole = DatasetAddress(self.id)
+        if key is not None:
+            column = self.columns[self.column_index(key)]
+        elif self.keys == 1:
+            column = self.columns[0]
+        else:
+            candidates = self.key_columns()
+            why = "no key column" if not self.keys else \
+                f"its rows named by {self.keys} columns together, not one"
+            could = (f"; name the column holding the keys with key where the tool takes "
+                     f"it (key: \"{candidates[0]}\"; valid_options: the columns that can be)"
+                     if candidates else "; no column holds a key in every row, each once")
+            raise RegionError("no_key_column", f"{whole.text} has {why}{could}; or name its "
+                              f"rows by position{_shape(whole, self.rows)}",
+                              address=whole.text, valid_options=candidates)
+        offset = self.columns.index(column)
+        cache = self._key_indexes.get(column)
+        if cache is None:
+            keys = [key_text(self.value(p, offset)) for p in range(1, self.rows + 1)]
+            cache = self._key_indexes[column] = KeyIndex(_Keyed(whole), column, keys)
+        return cache
+
+    def read(self, address: "str | DatasetAddress", *, sources: int | None = None,
+             key: str | None = None) -> list[list[DatasetValue]]:
         """The values a ``d:`` address names, row by row, as reported; each with its first
-        ``sources`` cells when given."""
-        selection = self.select(address)
+        ``sources`` cells when given (``key``: :meth:`select`)."""
+        selection = self.select(address, key=key)
         return [[self.value(p, o, sources=sources) for o in selection.offsets]
-                for p in range(selection.first, selection.last + 1)]
+                for p in selection.order]
+
+
+@dataclass(frozen=True)
+class _Keyed:
+    """What a :class:`KeyIndex` asks of the table it indexes: its address."""
+
+    address: DatasetAddress
 
 
 def source_units(sources: Sequence[str]) -> list[tuple[Any, str]]:

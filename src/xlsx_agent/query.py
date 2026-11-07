@@ -9,10 +9,14 @@ columns asked for, each cell with its address (ROADMAP.md, "Tools": ``xlsx_query
     found.rows           # [(Value(a='Stock!A7', ...), Value(a='Stock!C7', ...)), ...]
 
 **Filters.**  ``where`` maps a column name to its tests, ``{"Price": {"gte": 5}}``, or is
-a list of ``{"column": ..., "op": ..., "value": ...}`` (``values`` for ``in``), as the tool
-gives it; a row matches when it passes every test (they combine with *and*).  The tests:
+a list of ``{"column": ..., "op": ..., "value": ...}`` (``values`` for ``in`` and
+``contains_any``), as the tool gives it; a row matches when it passes every test (they
+combine with *and*).  The tests:
 ``eq`` (equal to the value), ``in`` (equal to one of the values), ``gte`` and ``lte`` (at
-least, at most), ``contains`` (text holding the value), ``words_gt`` (text of more words
+least, at most), ``contains`` (text holding the value), ``contains_any`` (text holding any
+of the values; round 40, R43 -- ``in`` is taken by equality, and the name says both
+``contains``' test and ``in``'s list; ``contains`` given a list is read as it, said in
+:attr:`Matches.notes`), ``words_gt`` (text of more words
 than the value, a whole number: words are the runs of characters between white space, as
 :meth:`str.split` splits them; a test for text too long to place), ``blank`` and
 ``not_blank`` (the reader's ``blank``: no value, a formula without a cached value among
@@ -44,6 +48,13 @@ as text in its JSON form (``"5"``, ``"2.5e3"``, ``"true"``), as a tool call give
   (:meth:`str.casefold` on both sides), as a search does.  Neither is Excel's own
   comparison, which ignores case in both and whose collation is not measured here; text
   has no ``gte``/``lte`` for that reason.
+* **loose** (round 40, R43; ``"loose": true`` on a filter, or in a column's tests in the
+  mapping form): ``eq``, ``in``, ``contains`` and ``contains_any`` on a text or list column
+  compare both sides as :func:`loose_text` writes them -- every white space character
+  dropped, wherever it is, then Unicode's full case folding -- so ``AB. 12`` matches
+  ``ab.12``.  :attr:`Matches.loosened` counts, per column, the matching rows that match
+  only so, with their first addresses (``0``: loose changed nothing there); ``loose`` on
+  another test or column type changes nothing and says so (:attr:`Matches.notes`).
 * **bool**: ``True``/``False``; **error**: the code as the reader gives it (``#N/A``),
   exactly.
 * **list** (a declared column whose text is split, :mod:`xlsx_agent.clean`): ``eq``,
@@ -92,7 +103,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from .workbook import Workbook
 
 #: Every test a filter can make.
-OPS = ("eq", "in", "gte", "lte", "contains", "words_gt", "blank", "not_blank")
+OPS = ("eq", "in", "gte", "lte", "contains", "contains_any", "words_gt", "blank", "not_blank")
 
 _ORDERED = ("eq", "in", "gte", "lte", "blank", "not_blank")
 _ANY = ("eq", "in", "blank", "not_blank")
@@ -100,12 +111,36 @@ _ANY = ("eq", "in", "blank", "not_blank")
 #: The tests each column type takes.
 OPS_BY_TYPE: dict[str, tuple[str, ...]] = {
     "number": _ORDERED, "percent": _ORDERED, "date": _ORDERED, "time": _ORDERED,
-    "datetime": _ORDERED, "text": ("eq", "in", "contains", "words_gt", "blank", "not_blank"),
+    "datetime": _ORDERED,
+    "text": ("eq", "in", "contains", "contains_any", "words_gt", "blank", "not_blank"),
     "bool": _ANY, "error": _ANY, "blank": ("blank", "not_blank"),
-    "list": ("eq", "in", "contains", "blank", "not_blank")}
+    "list": ("eq", "in", "contains", "contains_any", "blank", "not_blank")}
 
-#: The most values an ``in`` test takes.
+#: The tests that take a list of values.
+_LISTED = ("in", "contains_any")
+
+#: The tests ``loose`` loosens: those comparing text (:func:`loose_text`).
+LOOSENED = ("eq", "in", "contains", "contains_any")
+
+#: The most values an ``in`` or ``contains_any`` test takes.
 MAX_IN = 1000
+
+#: What ``loose`` drops besides what :meth:`str.isspace` counts: the zero-width space and
+#: the zero-width no-break space (byte order mark), which text pasted from elsewhere carries
+#: and nothing shows.
+_INVISIBLE = "\u200b\ufeff"
+
+
+def loose_text(text: str) -> str:
+    """``text`` as a ``loose`` test compares it: without white space -- every character
+    :meth:`str.isspace` counts (Unicode's space separators, category Zs: the space, the
+    no-break space U+00A0, U+2000 to U+200A, U+202F, U+205F, U+3000; and tab, line and
+    paragraph breaks: U+0009 to U+000D, U+001C to U+001F, U+0085, U+2028, U+2029) and the
+    zero-width spaces U+200B and U+FEFF, wherever they are -- then case folded
+    (:meth:`str.casefold`, Unicode's full case folding: ``Straße`` matches ``STRASSE``).
+    Nothing else is normalised: accents, punctuation and a character's composed or
+    decomposed form count."""
+    return "".join(ch for ch in text if not ch.isspace() and ch not in _INVISIBLE).casefold()
 
 #: The most cells :func:`matches` keeps of the columns asked for, so that the pages of a
 #: query need no second pass; past it they are read again, a page at a time.
@@ -162,6 +197,13 @@ class Matches:
     types: dict[str, str]
     not_compared: dict[str, Count] = field(default_factory=dict)
     values: dict[int, list[Value]] | None = field(default=None, repr=False, compare=False)
+    #: Per column with a ``loose`` test that loosens (a text or list column): the matching
+    #: rows that match only loosely -- an exact test would not have passed them -- with
+    #: their first cells' addresses; ``Count(0)`` when loose changed nothing there.
+    loosened: dict[str, Count] = field(default_factory=dict)
+    #: What a filter was read as, said for the result's warnings: ``contains`` given a
+    #: list, read as ``contains_any``; ``loose`` on a column it does not loosen.
+    notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -252,7 +294,9 @@ def matches(workbook: "Workbook", region: Region, *,
     room = KEEP_CELLS
     counted: dict[int, dict] = {o: {} for o in offsets}  # offset -> type -> [count, firsts]
     typed = [t for t in tests if t.compares]
-    found: list[tuple] = []                   # (row, types per typed test, keys per sort key)
+    loose = [t for t in tests if t.loose]
+    # (row, types per typed test, keys per sort key, the loose tests passed only loosely)
+    found: list[tuple] = []
     area = Area(Cell(data.first.row, left), Cell(data.last.row, right))
     # The cells typed: the filtered and sorted columns', and the kept ones' while they are.
     reading = {first + o for o in offsets} | {first + o for o in wanted_offsets}
@@ -268,7 +312,8 @@ def matches(workbook: "Workbook", region: Region, *,
             continue
         number = row[0].row
         found.append((number, tuple(cells[t.offset].t for t in typed),
-                      tuple(k.key(cells[k.offset], date1904) for k in keys)))
+                      tuple(k.key(cells[k.offset], date1904) for k in keys),
+                      _loosely(loose, cells, date1904)))
         if kept is not None:
             room -= len(wanted_offsets)
             if room < 0:
@@ -278,8 +323,9 @@ def matches(workbook: "Workbook", region: Region, *,
             else:
                 kept[number] = [row[first + o - left] for o in wanted_offsets]
 
-    rows, types, not_compared = _settled(region, tests, keys, offsets, counted, found, date1904)
-    return Matches(region, rows, types, not_compared, kept)
+    rows, types, not_compared, loosened, notes = _settled(region, tests, keys, offsets,
+                                                          counted, found, date1904)
+    return Matches(region, rows, types, not_compared, kept, loosened, notes)
 
 
 def dataset_matches(table: "DatasetTable", *,
@@ -298,6 +344,7 @@ def dataset_matches(table: "DatasetTable", *,
     offsets = sorted({t.offset for t in tests} | {k.offset for k in keys})
     counted: dict[int, dict] = {o: {} for o in offsets}
     typed = [t for t in tests if t.compares]
+    loose = [t for t in tests if t.loose]
     found: list[tuple] = []
     for position in range(1, table.rows + 1):
         cells = {o: table.value(position, o) for o in offsets}
@@ -309,16 +356,28 @@ def dataset_matches(table: "DatasetTable", *,
                     entry[1].append(value)
         if all(t.passes(cells[t.offset], date1904) for t in tests):
             found.append((position, tuple(cells[t.offset].t for t in typed),
-                          tuple(k.key(cells[k.offset], date1904) for k in keys)))
-    rows, types, not_compared = _settled(table, tests, keys, offsets, counted, found, date1904)
-    return Matches(table, rows, types, not_compared)
+                          tuple(k.key(cells[k.offset], date1904) for k in keys),
+                          _loosely(loose, cells, date1904)))
+    rows, types, not_compared, loosened, notes = _settled(table, tests, keys, offsets,
+                                                          counted, found, date1904)
+    return Matches(table, rows, types, not_compared, None, loosened, notes)
+
+
+def _loosely(loose: "list[_Test]", cells: Mapping[int, Value], date1904: bool
+             ) -> tuple[tuple[str, Value], ...]:
+    """Of a matching row, the loose tests an exact test would not have passed: each
+    column, with its cell."""
+    return tuple((t.column, cells[t.offset]) for t in loose
+                 if not t.exactly(cells[t.offset], date1904))
 
 
 def _settled(region: Any, tests: list, keys: list, offsets: list[int], counted: dict,
-             found: list[tuple], date1904: bool) -> tuple[tuple[int, ...], dict, dict]:
+             found: list[tuple], date1904: bool
+             ) -> tuple[tuple[int, ...], dict, dict, dict, tuple[str, ...]]:
     """The pass's end, for a sheet's region and a dataset alike: each column's type, the
-    tests checked against it, the rows of that type that passed, in order, and the cells
-    of other types the comparing tests met."""
+    tests checked against it, the rows of that type that passed, in order, the cells
+    of other types the comparing tests met, the rows matched only loosely
+    (:attr:`Matches.loosened`) and what the filters were read as (:attr:`Matches.notes`)."""
     typed = [t for t in tests if t.compares]
     types = {region.columns[o]: majority_type({t: n for t, (n, _) in counted[o].items()})
              for o in offsets}
@@ -338,7 +397,21 @@ def _settled(region: Any, tests: list, keys: list, offsets: list[int], counted: 
             values = sorted((v for _, vs in others for v in vs), key=lambda v: v.row)
             not_compared[test.column] = Count(sum(n for n, _ in others),
                                               tuple(v.a for v in values[:FIRST_ADDRESSES]))
-    return tuple(entry[0] for entry in rows), types, not_compared
+    notes = [note for test in tests for note in test.notes(types[test.column])]
+    loosening = [t.column for t in tests if t.loose and t.op in LOOSENED
+                 and types[t.column] in ("text", "list")]
+    loosened: dict[str, Count] = {}
+    for column in dict.fromkeys(loosening):
+        count, first = 0, list[str]()
+        for entry in rows:
+            cell = next((value for name, value in entry[3] if name == column), None)
+            if cell is not None:
+                count += 1
+                if len(first) < FIRST_ADDRESSES:
+                    first.append(cell.a)
+        loosened[column] = Count(count, tuple(first))
+    return tuple(entry[0] for entry in rows), types, not_compared, loosened, \
+        tuple(dict.fromkeys(notes))
 
 
 def read_rows(workbook: "Workbook", region: Region, columns: Sequence[str],
@@ -389,34 +462,65 @@ def _runs(rows: list[int], apart: bool) -> list[tuple[int, int]]:
 
 class _Test:
     """One test of a filter: ``column`` (as the region spells it) at ``offset``, ``op``,
-    and the value or values as given."""
+    and the value or values as given; ``loose``: text compared as :func:`loose_text`
+    writes it (``read_as``: the test as given, when it was read as another)."""
 
-    def __init__(self, column: str, offset: int, op: str, operand: Any) -> None:
+    def __init__(self, column: str, offset: int, op: str, operand: Any, *,
+                 loose: bool = False, read_as: str | None = None) -> None:
         self.column = column
         self.offset = offset
         self.op = op
         self.operand = operand
+        self.loose = loose
+        self.read_as = read_as
         self.compares = op not in ("blank", "not_blank")
         self._parsed: dict[str, Any] = {}
+        self._exact: _Test | None = None
 
     def _value(self, t: str, date1904: bool) -> Any:
-        """The operand read as a value of type ``t`` (a set for ``in``); ``_BAD`` when it is
-        not one."""
+        """The operand read as a value of type ``t`` (a set for ``in``, a tuple for
+        ``contains_any``), as compared; ``_BAD`` when it is not one."""
         if t not in self._parsed:
             read_as = "text" if t == "list" else t      # a list's items are text
+            loose = self.loose and t in ("text", "list")
             try:
-                if self.op == "in":
-                    parsed: Any = frozenset(_operand(v, read_as, date1904)
-                                            for v in self.operand)
+                if self.op in _LISTED:
+                    values = [_operand(v, read_as, date1904) for v in self.operand]
+                    if loose:
+                        values = [loose_text(v) for v in values]
+                    parsed: Any = frozenset(values) if self.op == "in" else tuple(
+                        dict.fromkeys(v if loose else v.casefold() for v in values))
                 else:
                     parsed = _words(self.operand) if self.op == "words_gt" else \
                         _operand(self.operand, read_as, date1904)
-                    if self.op == "contains":
+                    if loose and self.op in LOOSENED:
+                        parsed = loose_text(parsed)
+                    elif self.op == "contains":
                         parsed = parsed.casefold()
             except _Bad:
                 parsed = _BAD
             self._parsed[t] = parsed
         return self._parsed[t]
+
+    def exactly(self, value: Value, date1904: bool) -> bool:
+        """Whether ``value`` passes the test as it would without ``loose``."""
+        if not self.loose:
+            return self.passes(value, date1904)
+        if self._exact is None:
+            self._exact = _Test(self.column, self.offset, self.op, self.operand)
+        return self._exact.passes(value, date1904)
+
+    def notes(self, column_type: str) -> list[str]:
+        """What the test was read as, for the result's warnings."""
+        out = []
+        if self.read_as is not None:
+            out.append(f"{self.read_as} on {self.column} was given a list: read as {self.op}, "
+                       "any of them")
+        if self.loose and (self.op not in LOOSENED or column_type not in ("text", "list")):
+            out.append(f"loose on {self.column} changes nothing: it loosens text tests "
+                       f"({', '.join(LOOSENED)}), and this is {self.op} on a {column_type} "
+                       "column")
+        return out
 
     def passes(self, value: Value, date1904: bool) -> bool:
         """Whether ``value`` passes, were its type the column's."""
@@ -432,26 +536,37 @@ class _Test:
             return False
         if t == "list":                     # any of its items
             items = cast("list[str]", value.v)
-            if self.op == "eq":
-                return wanted in items
-            if self.op == "in":
-                return any(item in wanted for item in items)
-            return any(wanted in item.casefold() for item in items)
+            return any(self._text_passes(item, wanted) for item in items)
         key = _key(value, t, date1904)
         if key is None:
             return False
+        if t == "text":
+            text = cast(str, value.v)
+            if self.op == "words_gt":
+                return len(text.split()) > wanted
+            return self._text_passes(text, wanted)
         if self.op == "eq":
             return key == wanted
         if self.op == "in":
             return key in wanted
         if self.op == "gte":
             return key >= wanted
-        if self.op == "lte":
-            return key <= wanted
-        text = cast(str, value.v)                       # words_gt and contains: on text
-        if self.op == "words_gt":
-            return len(text.split()) > wanted
-        return wanted in text.casefold()             # contains, on text
+        return key <= wanted                            # lte
+
+    def _text_passes(self, text: str, wanted: Any) -> bool:
+        """Whether a text (or a list's item) passes ``eq``, ``in``, ``contains`` or
+        ``contains_any`` against ``wanted`` (:meth:`_value`'s)."""
+        if self.loose:
+            text = loose_text(text)
+        elif self.op in ("contains", "contains_any"):
+            text = text.casefold()
+        if self.op == "eq":
+            return text == wanted
+        if self.op == "in":
+            return text in wanted
+        if self.op == "contains":
+            return wanted in text
+        return any(part in text for part in wanted)    # contains_any
 
 
     def check(self, column_type: str, date1904: bool) -> None:
@@ -493,21 +608,36 @@ def _tests(region: "Region | DatasetTable", where: Any) -> list[_Test]:
                 raise QueryError("bad_filter", "where maps a column name to its tests, as "
                                  "{\"Price\": {\"gte\": 5}}")
             name = region.columns[region.column_index(column)]
+            loose = ops.get("loose", False)
+            if not isinstance(loose, bool):
+                raise QueryError("bad_filter", f"loose on {name} is true or false",
+                                 column=name)
             for op, operand in ops.items():
-                out.append(_test(region, name, op, operand, mapping=True))
+                if op != "loose":
+                    out.append(_test(region, name, op, operand, mapping=True, loose=loose))
         return out
     if isinstance(where, (str, bytes)) or not isinstance(where, Iterable):
         raise QueryError("bad_filter", "where is a mapping of columns to tests, or a list of "
                          "{column, op, value} filters")
     for item in where:
         if not isinstance(item, Mapping) or not isinstance(item.get("column"), str) \
-                or set(item) - {"column", "op", "value", "values"}:
-            raise QueryError("bad_filter", "each filter is {column, op, value} (values for in)")
+                or set(item) - {"column", "op", "value", "values", "loose"}:
+            raise QueryError("bad_filter", "each filter is {column, op, value} (values for "
+                             "in and contains_any; loose: true to compare text ignoring case "
+                             "and white space)")
         op = item.get("op")
         name = region.columns[region.column_index(item["column"])]
-        if op == "in":
+        loose = item.get("loose", False)
+        if not isinstance(loose, bool):
+            raise QueryError("bad_filter", f"loose on {name} is true or false", column=name)
+        if op == "contains" and "values" in item and "value" not in item:
+            # values for contains: any of them (rule 1), said in the result
+            out.append(_test(region, name, "contains_any", item.get("values"),
+                             mapping=False, loose=loose, read_as="contains"))
+            continue
+        if op in _LISTED:
             if "value" in item:
-                raise QueryError("bad_filter", f"in on {name} takes values, a list",
+                raise QueryError("bad_filter", f"{op} on {name} takes values, a list",
                                  column=name)
             operand = item.get("values")
         elif op in ("blank", "not_blank"):
@@ -519,32 +649,40 @@ def _tests(region: "Region | DatasetTable", where: Any) -> list[_Test]:
                 raise QueryError("bad_filter", f"{op} on {name} takes one value, not values",
                                  column=name, valid_options=OPS if op not in OPS else ())
             operand = item.get("value")
-        out.append(_test(region, name, op, operand, mapping=False))
+        out.append(_test(region, name, op, operand, mapping=False, loose=loose))
     return out
 
 
 def _test(region: "Region | DatasetTable", name: str, op: Any, operand: Any, *,
-          mapping: bool) -> _Test:
+          mapping: bool, loose: bool = False, read_as: str | None = None) -> _Test:
     if op not in OPS:
         raise QueryError("bad_filter", f"a filter on {name} has an unknown test; the tests are "
                          f"{', '.join(OPS)}", column=name, valid_options=OPS)
+    if op == "contains" and isinstance(operand, (list, tuple)):
+        op, read_as = "contains_any", "contains"        # a list for contains: any of them
     if op in ("blank", "not_blank"):
         if operand is not True:
             raise QueryError("bad_filter", f"{op} on {name} is written {op}: true; for the "
                              "other, use " + ("not_blank" if op == "blank" else "blank"),
                              column=name)
-    elif op == "in":
+    elif op in _LISTED:
         if isinstance(operand, (str, bytes, Mapping)) or not isinstance(operand, Iterable):
-            raise QueryError("bad_filter", f"in on {name} takes a list of values", column=name)
+            raise QueryError("bad_filter", f"{op} on {name} takes a list of values",
+                             column=name)
         operand = list(operand)
         if not operand or len(operand) > MAX_IN:
-            raise QueryError("bad_filter", f"in on {name} takes 1 to {MAX_IN} values",
+            raise QueryError("bad_filter", f"{op} on {name} takes 1 to {MAX_IN} values",
                              column=name)
+        if op == "contains_any" and any(v == "" or (loose and isinstance(v, str)
+                                                    and not loose_text(v)) for v in operand):
+            raise QueryError("bad_filter", f"contains_any on {name} needs some text in each "
+                             "value", column=name)
     elif operand is None:
         raise QueryError("bad_filter", f"{op} on {name} needs a value", column=name)
-    elif op == "contains" and operand == "":
+    elif op == "contains" and (operand == "" or (loose and isinstance(operand, str)
+                                                 and not loose_text(operand))):
         raise QueryError("bad_filter", f"contains on {name} needs some text", column=name)
-    return _Test(name, region.column_index(name), op, operand)
+    return _Test(name, region.column_index(name), op, operand, loose=loose, read_as=read_as)
 
 
 def _words(raw: Any) -> int:

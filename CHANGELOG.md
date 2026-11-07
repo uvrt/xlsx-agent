@@ -26,6 +26,31 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.18 (unreleased) -- key sets on datasets, any of a list, loose text
+
+- **Key sets on datasets** (production round 40, R42): `d:by_region/{South,North}/total`
+  names the rows of its keys in its order, as a table's key set does, in `xlsx_read`
+  (paged, `columns`), `xlsx_trace` and `DatasetTable.read`/`select` (`DatasetSelection.order`,
+  `positions`). Keys are looked up as a table's are (`KeyIndex`): a missing key names its
+  place in the set and the rows like it by position, a shared key the rows by position. A
+  dataset's key column is its own when a derive grouped it by one column; otherwise
+  `xlsx_read`'s `key` names one (`d:by_rep/{Ann,Bob}` with `key: "Rep"`), and without it the
+  read is refused (`no_key_column`) with the columns that can be the key as `valid_options`
+  and the call that works in the message and `details.call`. A `key` given for a dataset
+  address with no row by key changes nothing and says so. `no_key_set` is no longer raised.
+- **Any of a list, and loose text** (R43): the filters' `contains_any` (text holding any of
+  `values`, case ignored as `contains`; `contains` given `values` is read as it, said in the
+  warnings) and a filter's `loose: true`: `eq`, `in`, `contains` and `contains_any` on a
+  text or list column compare both sides with every white space character dropped
+  (`str.isspace`, plus U+200B and U+FEFF) and Unicode's full case folding
+  (`xlsx_agent.query.loose_text`); accents and punctuation still count. The result's
+  `loosened` counts, per column, the matching rows that match only loosely, with their
+  first addresses; `loose` where it loosens nothing says so. A query that matches no row
+  but would with `loose` says how many and which filters. In `xlsx_query` (tables and
+  datasets) and `xlsx_derive`'s `where` alike (`Derived.loosened`, `Derived.notes`).
+  `xlsx_query` 473 -> 513 and `xlsx_derive` 1,245 -> 1,286 estimated; the core 4,844 ->
+  4,924, every definition 5,815 -> 5,896 (guards 4,925 and 5,900). Neither tool is strict.
+
 ## 0.1.17 (unreleased) -- a workbook's values for a check of numbers
 
 - **Numbers in text no value holds** (production round 36, R28; ooxml-edit 0.84.0): the
