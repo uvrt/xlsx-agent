@@ -230,6 +230,7 @@ class _Table:
     style_name: str | None
     display_name: str | None = None
     id: int = 0
+    calculated: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -358,11 +359,13 @@ class SheetBuilder:
     def table(self, name: str, ref: str, columns: Sequence[str], *, header_row: bool = True,
               totals_row: bool = False, totals_labels: dict[str, str] | None = None,
               totals_functions: dict[str, str] | None = None, write_header: bool = True,
-              style_name: str | None = None, display_name: str | None = None) -> "SheetBuilder":
+              style_name: str | None = None, display_name: str | None = None,
+              calculated: dict[str, str] | None = None) -> "SheetBuilder":
         """An Excel table (a ListObject, §18.5) over ``ref``, which includes its header and
         totals rows.  ``write_header`` writes the column names into the header row's cells
         (shared strings); the data and totals cells are the caller's.  ``display_name`` is
-        the ``displayName`` when it differs from ``name``."""
+        the ``displayName`` when it differs from ``name``.  ``calculated``: a column's
+        ``calculatedColumnFormula`` (§18.5.1.1), by name; its cells are the caller's."""
         (top, left), (bottom, right) = parse_area(ref)
         if len(columns) != right - left + 1:
             raise ValueError(f"{len(columns)} columns for a table {right - left + 1} wide")
@@ -380,8 +383,12 @@ class SheetBuilder:
         if header_row and write_header:
             for offset, column in enumerate(columns):
                 self.cell(cell_name(top, left + offset), column)
+        for column in calculated or {}:
+            if column not in columns:
+                raise ValueError(f"no column {column!r}")
         self.tables.append(_Table(name, ref, list(columns), header_row, totals_row,
-                                  totals_labels, totals_functions, style_name, display_name))
+                                  totals_labels, totals_functions, style_name, display_name,
+                                  calculated=dict(calculated or {})))
         return self
 
     # -- writing --------------------------------------------------------------------------------
@@ -804,6 +811,8 @@ def _table_xml(table: _Table) -> etree._Element:
             node.set("totalsRowLabel", table.totals_labels[name])
         if name in table.totals_functions:
             node.set("totalsRowFunction", table.totals_functions[name])
+        if name in table.calculated:
+            etree.SubElement(node, _x("calculatedColumnFormula")).text = table.calculated[name]
     if table.style_name:
         etree.SubElement(root, _x("tableStyleInfo"), name=table.style_name)
     return root

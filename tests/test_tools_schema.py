@@ -148,6 +148,14 @@ So ``xlsx_read``'s ``target`` drops "held_by names them (null: cells read as the
 how to read the cells): ``xlsx_read`` 713 -> 698, the core 4,953 -> 4,938 (about 6,985
 online), every definition 5,924 -> 5,909; the guards 4,925 -> 4,940 and 5,900 -> 5,910.
 Neither tool is strict: the strict set is unchanged.
+Round 44 (lane T, E4): ``xlsx_write_table`` in the deferred ``xlsx_edit`` group, 390
+estimated (headers and rows from a first cell, rows appended to a table, a dataset's rows):
+the core unchanged, 4,938; every definition 5,909 -> 6,298, the guard 5,910 -> 6,300.  It
+is sent non-strict (``strict=False``): its cells are an object in an array in an array, and
+the strict set stays ``xlsx_set_cells`` (13 optional parameters, the proxy's limit).  The
+shared ``new_document``'s xlsx handler is not in ``TOOLS``: with it the core would be 4,938
+-> 5,163 estimated (about 7,320 online), past the 7,000 budget
+(``xlsx_agent.tools.NEW_DOCUMENT``, which an application adds).
 """
 
 from __future__ import annotations
@@ -174,10 +182,11 @@ CORE_COUNTED_BUDGET = 7000
 #: Round 40, R43: contains_any and loose in the filters, -> 4,924 and 5,896.
 #: Round 41: text_chars on xlsx_read and xlsx_query, and xlsx_query's sentence on refused
 #: filters dropped, and xlsx_read's target on held_by, -> 4,938 and 5,909.
+#: Round 44: xlsx_write_table (deferred), every definition -> 6,298.
 #: Round 44, lane F (E7): the deferred xlsx_format (499 estimated; not strict), every
-#: definition 5,909 -> 6,408; the core unchanged.
+#: definition 6,298 -> about 6,797; the core unchanged.
 CORE_GUARD = 4940
-ALL_GUARD = 6410
+ALL_GUARD = 6800
 
 
 @pytest.fixture(scope="module")
@@ -235,7 +244,7 @@ def test_the_groups_are_the_roadmaps():
                                "xlsx_validate_data", "save_document", "undo", "batch",
                                "read_batch"},
                       "shared_misc": {"close_document", "read_blob"},
-                      "xlsx_edit": {"xlsx_set_cells"},
+                      "xlsx_edit": {"xlsx_set_cells", "xlsx_write_table"},
                       "xlsx_format": {"xlsx_format"},
                       "xlsx_trace": {"xlsx_trace"}}
 
