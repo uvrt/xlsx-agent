@@ -7,7 +7,11 @@ through the xlsx :data:`~xlsx_agent.tools.FORMAT` (its ``detect``, ``open``, ``p
 ``summary``, and from E1 its undo scopes and the workbook's own ``batch``, ``savepoint``,
 ``undo`` and ``redo``: :mod:`xlsx_agent.edit`).  This module adds the workbook's
 ``describe``: the catalogue (:mod:`xlsx_agent.catalogue`), its ``find_text`` and (E1) its
-``save_document``.  ``new_document`` (E9) comes with its milestone.
+``save_document``.  ``new_document``'s xlsx handler (round 44, R51) is :data:`NEW_DOCUMENT`,
+not in :data:`TOOLS`: the shared definition is a core tool, and the Excel core is at its
+token budget, so an application that offers new workbooks adds it (a toolbox that also
+holds docx-agent's or pptx-agent's tools sends ``new_document`` already, and merges this
+handler into it).
 
 **save_document** writes the workbook as ``format`` -- ``xlsx``, ``xlsm`` or ``xltx`` (the
 main part's content type set to it; a deck's or a document's format is refused, naming
@@ -225,6 +229,49 @@ def save_document(call: Any, doc: str, name: str, format: str) -> Result:  # noq
     described["saved"] = {"verified": checked.verified,
                           "calculation": workbook.calculation_status}
     return Result(summary=f"Saved {name} ({format}, {len(data):,} bytes)", data=described)
+
+
+# -- S2 new_document (round 44, R51) -------------------------------------------------------------
+
+
+@shared.handler("new_document", kind=KIND)
+@handler
+def new_document(call: Any, kind: str, template_blob: str | None = None,
+                 size: str | None = None, title: str | None = None, author: str | None = None,
+                 name: str | None = None) -> Result:
+    """The shared ``new_document``'s xlsx handler: a new workbook as Excel makes one
+    (:meth:`Workbook.new <xlsx_agent.Workbook.new>`), or from a template blob (an
+    ``.xltx``: a new workbook from a template is the template's content, as Excel makes
+    one, saved as a workbook).  ``size`` is a deck's or a page's: refused unless empty."""
+    from ..edit.blank import build
+
+    if size:
+        raise ToolError("invalid_arguments", "a workbook has no page or slide size: leave "
+                        "size out", field="size")
+    fmt = call.session.formats[KIND]
+    if template_blob:
+        data = call.blob(template_blob).data
+        try:
+            workbook = fmt.open(data)
+        except ValueError as error:
+            raise ToolError("invalid_arguments", f"the template is not a workbook: {error}",
+                            field="template_blob") from None
+        if workbook.kind in ("xltx", "xltm"):        # a workbook made from the template
+            data = serialise(workbook, "xlsx" if workbook.kind == "xltx" else "xlsm")
+            workbook = fmt.open(data)
+    else:
+        data = build(author=author, title=title, created=call.now())
+        workbook = fmt.open(data)
+    doc_id = call.session.adopt(workbook, KIND, name or "new.xlsx",
+                                source=template_blob or "new", size=len(data))
+    entry = call.session.entry(doc_id)
+    return Result(summary=f"Made {entry.name} as {doc_id}", created=[doc_id],
+                  data={**entry.describe(), "sheets": [s.name for s in workbook.sheets]})
+
+
+#: The ``new_document`` tool with its xlsx handler (see the module): add it to a toolbox's
+#: tools to offer new workbooks (it is not in :data:`TOOLS`).
+NEW_DOCUMENT = new_document
 
 
 #: ``read_batch`` (ooxml-edit 0.78.0; round 32, R15): many reads -- records, cells, regions,

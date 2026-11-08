@@ -34,7 +34,7 @@ on Azure OpenAI's Responses API.
 | --- | --- |
 | `core` (always loaded) | `open_document`, `undo`, `batch`, `read_batch`, `describe`, `find_text`, `save_document`, `xlsx_read`, `xlsx_profile`, `xlsx_query`, `xlsx_derive`, `xlsx_compare`, `xlsx_validate_data` |
 | `shared_misc` | `close_document`, `read_blob` |
-| `xlsx_edit` (E3) | `xlsx_set_cells` |
+| `xlsx_edit` (E3, E4) | `xlsx_set_cells`, `xlsx_write_table` |
 | `xlsx_trace` (round 31) | `xlsx_trace`: rows of a table or dataset, each with the rows it rests on and why (`source`, `names` by key, `lists` its key), every value in full, within a size budget, what did not fit listed |
 
 `describe` and `find_text` are the shared tools with the workbook's handlers: one
@@ -79,6 +79,21 @@ model -- comes before anything changes, each by code and address in the error's
 workbook gives reads `cache: invalidated` (Excel recalculates when it opens the file;
 nothing here does), and a dataset derived from those values is stale; a deck or document
 table placed from them says `stale` and the counts in its `from`.
+
+**Writing a block or a table** (`xlsx_write_table`, round 44, E4). `at` a first cell
+with its sheet (`Stock!B2`): `headers` in that row and `rows` below, each row's cells as
+`xlsx_set_cells`' value fields (`{}` a blank), or `from` a dataset (`d:<id>`: its columns
+and rows); `table: true` (or a `name`) makes an Excel table with its filters and the
+workbook's default style banded by rows (`style`: another). `at` a table (`t:Orders`):
+the rows are appended to it -- it grows, its calculated columns are filled, a totals row
+moves below (`Workbook.append_rows`). Refused, changing nothing, over cells holding values
+(unless `overwrite`), a merged area or another table, a table name Excel refuses (with one
+that would do), columns withheld from the model; at most 5,000 cells a call. Returns the
+range written (`range`, `table`, `table_range`, `totals`, `filled`). Sent non-strict: its
+cells are objects in an array in an array, and the strict set stays `xlsx_set_cells`.
+`new_document`'s xlsx handler is `xlsx_agent.tools.NEW_DOCUMENT`, not in `TOOLS`: an
+application that offers new workbooks adds it (`Toolbox([*TOOLS, NEW_DOCUMENT], ...)`); in
+the core it would cost about 225 estimated tokens, past the core's budget.
 
 **Guards** (`xlsx_set_cells`, X4). An `address` may name a value by its row's key,
 `t:stock/P-7/Quantity`: the row holding the key now, wherever it moved; a key two rows
@@ -129,17 +144,18 @@ A workbook can also come in as an input the model opens itself:
 `{"blob": "b1"}`. `.xlsx`, `.xlsm`, `.xltx` and `.xltm` open; `.xls`, `.xlsb` and encrypted
 workbooks are refused with the reason. A macro is never run.
 
-**Roles.** Every workbook tool but `undo` and `xlsx_set_cells` reads, so those are the
-`review` role's (ooxml-edit 0.45.0,
-[TOOLS.md, "Roles"](https://github.com/uvrt/ooxml-edit/blob/main/docs/TOOLS.md)); `undo`
-and `xlsx_set_cells` are `edit`'s. A reviewer's toolbox, `Toolbox(..., roles=["review"])`,
-sends the same definitions without those two (and without the `xlsx_edit` group), and in a
+**Roles.** Every workbook tool but `undo`, `xlsx_set_cells` and `xlsx_write_table` reads,
+so those are the `review` role's (ooxml-edit 0.45.0,
+[TOOLS.md, "Roles"](https://github.com/uvrt/ooxml-edit/blob/main/docs/TOOLS.md)); `undo`,
+`xlsx_set_cells` and `xlsx_write_table` are `edit`'s. A reviewer's toolbox,
+`Toolbox(..., roles=["review"])`, sends the same definitions without those (and without the
+`xlsx_edit` group), and in a
 toolbox with the deck or Word tools a reviewer keeps every reading workbook tool.
 
 | Role | Workbook tools |
 | --- | --- |
 | `review` | `describe`, `find_text`, `xlsx_read`, `xlsx_profile`, `xlsx_query`, `xlsx_derive`, `xlsx_compare`, `xlsx_validate_data`, `xlsx_trace`, `read_batch` |
-| `edit` | `undo`, `xlsx_set_cells` |
+| `edit` | `undo`, `xlsx_set_cells`, `xlsx_write_table` |
 | any | `open_document`, `close_document`, `read_blob`, `batch`, `save_document` |
 Agents sharing one session (ooxml-edit 0.46.0) each work through a view of it,
 `session.view(roles=[...], context={...})`: the workbook and the datasets derived from it
