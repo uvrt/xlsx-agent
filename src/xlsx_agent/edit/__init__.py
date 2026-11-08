@@ -132,6 +132,20 @@ EDIT_CODES = {
     # a declared field derived from another (round 26, xlsx_agent.declare's from_field)
     "derived_column": "the column is read from another column's cells by the table's own "
                       "rules: write that column",
+    # inserting, deleting and moving rows and columns (round 44, xlsx_agent.edit.grid)
+    "bad_position": "not a row or column (or run of them) on the sheet",
+    "array_split": "the change would cut through an array formula, which Excel changes only "
+                   "as a whole",
+    "off_grid": "cells that hold something would be pushed off the sheet",
+    "table_header_row": "a table's header row would be deleted, which Excel refuses",
+    "table_move": "columns of a table, or rows out of or across a table's edge, would be "
+                  "moved, which Excel refuses",
+    "table_rows": "rows of two tables side by side would be inserted, deleted or moved at "
+                  "once, which Excel refuses",
+    "merge_split": "part of a merged area would be moved, which Excel refuses",
+    "pivot_table": "the change would cut through a pivot table",
+    "not_measured": "a dependent whose change Excel makes is not measured yet: nothing is "
+                    "written rather than half of it",
 }
 
 #: The content type of a VBA project part ([MS-OFFMACRO2]; what Excel writes).

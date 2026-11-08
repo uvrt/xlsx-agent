@@ -108,6 +108,8 @@ if TYPE_CHECKING:
     from .trace import TraceResult
     from .edit import Editor, EditReport, SaveReport
     from .edit.cells import Written
+    from .edit.rearrange import Rearranged
+    from .edit.restructure import Restructured
     from .edit.policy import Allowed, WritePolicy
     from .validations import ValidationRule
 
@@ -501,6 +503,79 @@ class Workbook:
 
         return set_cells(self, cells, replace_formulas=replace_formulas, new_rows=new_rows,
                          allocate=allocate, revision=revision)
+
+    # -- rows and columns (round 44: xlsx_agent.edit.grid) ---------------------------------
+
+    def insert_rows(self, sheet: "Sheet | str | SheetRef", at: "int | str", count: int | None = None,
+                    *, revision: int | None = None) -> "Restructured":
+        """Insert ``count`` empty rows before row ``at``, as Excel inserts them: every
+        reference to the cells after them moves, ranges that span them grow, and the new
+        rows take the format of the row above (:mod:`xlsx_agent.edit.grid`).  One step;
+        :class:`~xlsx_agent.edit.EditError` before anything changes when Excel would refuse
+        (an array formula cut through, cells pushed off the sheet) or a dependent is not
+        measured.  Returns the :class:`~xlsx_agent.edit.restructure.Restructured`."""
+        from .edit.restructure import restructure
+
+        return restructure(self, sheet, "insert_rows", at, count, revision=revision)
+
+    def insert_columns(self, sheet: "Sheet | str | SheetRef", at: "int | str",
+                       count: int | None = None, *, revision: int | None = None
+                       ) -> "Restructured":
+        """Insert ``count`` empty columns before column ``at`` (``"C"`` or 3), as Excel
+        does: see :meth:`insert_rows`; inside a table the table gets new columns."""
+        from .edit.restructure import restructure
+
+        return restructure(self, sheet, "insert_columns", at, count, revision=revision)
+
+    def delete_rows(self, sheet: "Sheet | str | SheetRef", first: "int | str",
+                    count: int | None = None, *, revision: int | None = None
+                    ) -> "Restructured":
+        """Delete rows ``first`` .. ``first + count - 1`` (or ``"5:7"``), as Excel does:
+        references into them become ``#REF!``, ranges shrink, what lies wholly in them goes
+        (merges, rules, hyperlinks, comments).  To give a sheet new rows each run, clear and
+        write it rather than delete rows: a deleted row's references are gone for good.
+        See :meth:`insert_rows` for the step and the refusals (a table's header row too)."""
+        from .edit.restructure import restructure
+
+        return restructure(self, sheet, "delete_rows", first, count, revision=revision)
+
+    def delete_columns(self, sheet: "Sheet | str | SheetRef", first: "int | str",
+                       count: int | None = None, *, revision: int | None = None
+                       ) -> "Restructured":
+        """Delete columns ``first`` (``"C"``, 3 or ``"C:D"``) onwards, as Excel does: see
+        :meth:`delete_rows`; a table loses those columns, structured references to them
+        become ``#REF!``."""
+        from .edit.restructure import restructure
+
+        return restructure(self, sheet, "delete_columns", first, count, revision=revision)
+
+    def move_rows(self, sheet: "Sheet | str | SheetRef", source: "int | str",
+                  before: "int | str", *, revision: int | None = None) -> "Restructured":
+        """Move rows ``source`` (``5`` or ``"5:7"``) to before row ``before`` (numbered as
+        before the move): Excel's Cut and "Insert Cut Cells".  The cells and all that is
+        attached to them go with them; references to them follow."""
+        from .edit.restructure import restructure
+
+        return restructure(self, sheet, "move_rows", source, None, before, revision=revision)
+
+    def move_columns(self, sheet: "Sheet | str | SheetRef", source: "int | str",
+                     before: "int | str", *, revision: int | None = None) -> "Restructured":
+        """Move columns ``source`` (``"E"`` or ``"E:F"``) to before column ``before``:
+        see :meth:`move_rows`.  Excel refuses to move a table's columns; so does this."""
+        from .edit.restructure import restructure
+
+        return restructure(self, sheet, "move_columns", source, None, before,
+                           revision=revision)
+
+    def rearrange_columns(self, sheet: "Sheet | str | SheetRef", order: Any = None, *,
+                          drop: "Sequence[str | int]" = (), revision: int | None = None
+                          ) -> "Rearranged":
+        """Put a sheet's columns in an order, and drop some, in one step: a composition of
+        :meth:`move_columns` and :meth:`delete_columns`, every reference remapped through
+        it (:mod:`xlsx_agent.edit.rearrange`)."""
+        from .edit.rearrange import rearrange_columns
+
+        return rearrange_columns(self, sheet, order, drop=drop, revision=revision)
 
     def _forget(self) -> None:
         """Forget everything read from the package: it changed (an edit, a rollback, an
