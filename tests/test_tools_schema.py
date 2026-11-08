@@ -185,8 +185,10 @@ CORE_COUNTED_BUDGET = 7000
 #: Round 44: xlsx_write_table (deferred), every definition -> 6,298.
 #: Round 44, lane S: the deferred xlsx_manage_sheets (E5), 280 estimated (about 414
 #: counted), the core unchanged -> 4,938 and 6,578.
+#: Round 44, lane F (E7): the deferred xlsx_format (499 estimated; not strict), every
+#: definition 6,578 -> about 7,077; the core unchanged.
 CORE_GUARD = 4940
-ALL_GUARD = 6580
+ALL_GUARD = 7080
 
 
 @pytest.fixture(scope="module")
@@ -245,6 +247,7 @@ def test_the_groups_are_the_roadmaps():
                                "read_batch"},
                       "shared_misc": {"close_document", "read_blob"},
                       "xlsx_edit": {"xlsx_set_cells", "xlsx_write_table", "xlsx_manage_sheets"},
+                      "xlsx_format": {"xlsx_format"},
                       "xlsx_trace": {"xlsx_trace"}}
 
 

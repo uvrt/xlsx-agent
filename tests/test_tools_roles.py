@@ -41,8 +41,8 @@ def _book() -> bytes:
 
 #: The workbook tools that are the edit role's, and the group of its own they make
 #: (an OpenAI namespace a reviewer is not sent).
-EDITING = {"undo", "xlsx_set_cells", "xlsx_write_table", "xlsx_manage_sheets"}
-EDITING_GROUPS = {"xlsx_edit"}
+EDITING = {"undo", "xlsx_set_cells", "xlsx_write_table", "xlsx_manage_sheets", "xlsx_format"}
+EDITING_GROUPS = {"xlsx_edit", "xlsx_format"}
 
 
 def test_every_workbook_tool_is_a_reviewer_s():

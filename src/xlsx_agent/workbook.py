@@ -108,6 +108,7 @@ if TYPE_CHECKING:
     from .trace import TraceResult
     from .edit import Editor, EditReport, SaveReport
     from .edit.cells import Written
+    from .edit.format import Formatted
     from .edit.rearrange import Rearranged
     from .edit.restructure import Restructured
     from .edit.merges import MergeChange
@@ -507,6 +508,76 @@ class Workbook:
         return set_cells(self, cells, replace_formulas=replace_formulas, new_rows=new_rows,
                          allocate=allocate, revision=revision)
 
+    # -- formatting and layout (E7, round 44) ----------------------------------------------
+
+    def format(self, target: "str | Sequence[str]", *, font: "Mapping[str, Any] | None" = None,
+               fill: Any = False, border: Any = None,
+               alignment: "Mapping[str, Any] | None" = None,
+               number_format: "str | int | None" = None,
+               protection: "Mapping[str, bool] | None" = None, like: str | None = None,
+               style: str | None = None) -> "Formatted":
+        """Format cells (:mod:`xlsx_agent.edit.format`): ``target`` a range with its sheet
+        (``"Stock!A1:H1"``), whole columns or rows (``"Stock!D:D"``, ``"Stock!1:1"``) or a
+        list of them; ``font`` (``bold``, ``italic``, ``underline``, ``strike``, ``color``
+        ``"#RRGGBB"``, ``size``, ``name``), ``fill`` (a colour; ``None`` no fill),
+        ``border`` (``all``, ``outline``, ``left``, ``right``, ``top``, ``bottom``: a style
+        such as ``"thin"``, or ``{"style", "color"}``), ``alignment`` (``horizontal``,
+        ``vertical``, ``wrap``, ``indent``, ``rotation``, ``shrink``), ``number_format`` (a
+        code, as ``"0.0"``, or a built-in id), ``protection`` (``locked``, ``hidden``),
+        ``like`` (a cell whose whole format the cells take) or ``style`` (a named cell
+        style of the workbook).  Only what is asked changes; equal formats are reused.  One
+        step; every problem refused before anything changes."""
+        from .edit.format import format_cells
+
+        return format_cells(self, target, font=font, fill=fill, border=border,
+                            alignment=alignment, number_format=number_format,
+                            protection=protection, like=like, style=style)
+
+    def set_column_widths(self, target: "str | Sequence[str]", width: Any) -> "Formatted":
+        """Column widths (:mod:`xlsx_agent.edit.layout`): characters as Excel's Column Width
+        takes them, ``"fit"`` (Excel's AutoFit, measured) or ``None`` (the sheet's
+        default); ``target`` whole columns (``"Stock!A:C"``) or a range (its columns; a fit
+        reads its cells only)."""
+        from .edit.layout import set_column_widths
+
+        return set_column_widths(self, target, width)
+
+    def set_row_heights(self, target: "str | Sequence[str]", height: Any) -> "Formatted":
+        """Row heights in points (``"Stock!1:1"``, or a range: its rows); ``None`` lets the
+        rows fit their text again."""
+        from .edit.layout import set_row_heights
+
+        return set_row_heights(self, target, height)
+
+    def freeze_panes(self, sheet: str, *, rows: int | None = None,
+                     columns: int | None = None, at: str | None = None) -> "Formatted":
+        """Freeze ``sheet``'s top ``rows`` and left ``columns`` (or what is above and left
+        of the cell ``at``, as ``"B2"``); ``rows=0, columns=0`` unfreezes."""
+        from .edit.layout import freeze_panes
+
+        return freeze_panes(self, sheet, rows=rows, columns=columns, at=at)
+
+    def set_gridlines(self, sheet: str, shown: bool) -> "Formatted":
+        """Show or hide ``sheet``'s gridlines."""
+        from .edit.layout import set_gridlines
+
+        return set_gridlines(self, sheet, shown)
+
+    def protect_sheet(self, sheet: str, *, password: str | None = None) -> "Formatted":
+        """Protect ``sheet`` as Excel's Protect Sheet does (its locked cells can no longer
+        be edited in Excel, nor written here), with ``password`` hashed as Excel hashes it
+        (SHA-512, salted, 100,000 rounds)."""
+        from .edit.layout import protect_sheet
+
+        return protect_sheet(self, sheet, password=password)
+
+    def unprotect_sheet(self, sheet: str, *, password: str | None = None,
+                        force: bool = False) -> "Formatted":
+        """Take ``sheet``'s protection away; a password-protected sheet needs its password
+        (``force``: the host's own code, without checking it)."""
+        from .edit.layout import unprotect_sheet
+
+        return unprotect_sheet(self, sheet, password=password, force=force)
     # -- rows and columns (round 44: xlsx_agent.edit.grid) ---------------------------------
 
     def insert_rows(self, sheet: "Sheet | str | SheetRef", at: "int | str", count: int | None = None,

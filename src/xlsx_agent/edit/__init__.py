@@ -130,6 +130,13 @@ EDIT_CODES = {
     "existing_key": "a row already has the key allocated a new row",
     "capacity_gap": "the rows allocated leave a blank row below the table's data rows",
     "not_allocated": "the write policy takes new rows only where allocate names them",
+    # formatting and layout (E7, round 44: xlsx_agent.edit.format, .layout, .fit)
+    "bad_format": "not a formatting option or value that can be written",
+    "bad_target": "not cells, columns, rows or a sheet that can be formatted",
+    "no_cell_style": "the workbook has no cell style of that name",
+    "too_many_cells": "more cells than one formatting call takes",
+    "unmeasured_font": "a cell's font has no measured widths to fit a column to",
+    "wrong_password": "not the sheet's password",
     # a declared field derived from another (round 26, xlsx_agent.declare's from_field)
     "derived_column": "the column is read from another column's cells by the table's own "
                       "rules: write that column",
@@ -410,6 +417,15 @@ class Editor:
         for cell in cells:
             edit.cells.setdefault(label, set()).add((cell.row, cell.column))
             self._written.setdefault(sheet.part, set()).add((cell.row, cell.column))
+        edit.sheets.add(sheet.part)
+
+    def touched_format(self, sheet: Any) -> None:
+        """Record ``sheet`` as changed in the open batch by formatting or layout, which
+        writes no value (:mod:`.format`, :mod:`.layout`): its structure is checked when the
+        step closes, and no calculation is invalidated."""
+        edit = self._edit
+        if edit is None:
+            raise RuntimeError("a sheet is recorded inside a batch")
         edit.sheets.add(sheet.part)
 
     # -- reports -----------------------------------------------------------------------------

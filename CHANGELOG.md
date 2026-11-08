@@ -26,6 +26,67 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.23 (unreleased) -- formatting and layout from code
+
+- **`wb.format(target, font=, fill=, border=, alignment=, number_format=, protection=,
+  like=, style=)`** (production round 44, R53; E7): cells, whole columns or whole rows
+  formatted in one step (`xlsx_agent.edit.format`). Only what is asked changes (bold keeps
+  the fill, the number format, the borders); a font, fill, border, number format or cell
+  format equal to one the workbook has is reused, never copied per cell. What is written is
+  what Excel writes (measured, Excel for Mac 16.106, Excel formatting cells itself): a
+  font's parts in Excel's order, a solid fill with `bgColor indexed="64"`, a border's
+  automatic colour `indexed="64"`, a code that is a built-in format's by its id (`0.00` is
+  2), an indent making a `general` cell `left`, and each `apply*` flag `1` exactly where
+  that part differs from the cell style the format is based on. `style="Heading 1"` applies
+  a named cell style of the workbook as Excel does (measured on five styles: the parts the
+  style includes are its, the others the cell's), a built-in one also by its English name
+  (a Dutch Excel saves it as `Kop 1`); `like="Stock!D2"` gives the cells another cell's
+  whole format, from any sheet. Whole columns and rows as Excel formats them (measured: a
+  column's style, a row's `customFormat`, each cell held, none made).
+- **`wb.set_column_widths(target, width | "fit" | None)`** (`xlsx_agent.edit.layout`): a
+  width in characters stored as Excel stores one typed in (measured: 12 is
+  `12.83203125`), and `"fit"`: Excel's AutoFit, measured on 258 columns -- each character's
+  advance width at the font's size rounded to whole pixels, one more pixel per five widest
+  digits past fifteen, 7 px of padding, over the default font's widest digit
+  (`xlsx_agent.edit.fit`). Exact on every probe column in Calibri, Arial, Times New Roman,
+  Courier New, Cambria and Aptos at 10 to 16 points; 2 px (a third of a character) off at
+  8 and 20 points. A font without measured widths refuses the fit (`unmeasured_font`:
+  Aptos Narrow measured 15% narrower than Aptos's widths); cells not measured (merged,
+  wrapped, dates, booleans...) are listed apart. **`wb.set_row_heights`** (points, or
+  `None`), **`wb.freeze_panes(sheet, rows=, columns=, at=)`** and **`wb.set_gridlines`**
+  as Excel writes them (measured), **`wb.protect_sheet(sheet, password=)`** and
+  **`wb.unprotect_sheet`**: Excel's `sheetProtection` defaults, a password hashed as Excel
+  hashes it (SHA-512, a 16-byte salt, 100,000 rounds: the hash Excel wrote is the one
+  computed here, and Excel unprotected a sheet protected here with its password).
+- **On a protected sheet, as Excel allows** (measured, Excel for Mac 16.106, AppleScript
+  on a sheet protected with Excel's defaults and on one with `formatCells`,
+  `formatColumns` and `formatRows` `0`): `freeze_panes` and `set_gridlines` always;
+  `format` only where `formatCells="0"` (whole columns and rows also need `formatColumns`
+  / `formatRows`), widths only where `formatColumns="0"`, heights only where
+  `formatRows="0"` -- with the defaults Excel refused bold and left widths and heights as
+  they were. Anything else on a protected sheet is refused (`protected`).
+- A column given a style on a sheet without `sheetFormatPr` gets Excel for Mac's default
+  width there (`baseColWidth` 10: `10.83203125` with Calibri 11; measured on Mac, Excel
+  for Windows not measured); with `sheetFormatPr`, its `defaultColWidth`, else
+  `baseColWidth` (default 8).
+- Each call is one step, undone to the bytes before it, refused before anything changes
+  with every problem listed and what would work (`bad_format`, `bad_target`,
+  `no_cell_style`, `too_many_cells`, `unmeasured_font`, `wrong_password`, `protected`,
+  `not_writable`); something already so is `changed: 0` with a note. Formatting writes no
+  value: the calculation status is kept.
+- **`xlsx_format`**, the deferred `xlsx_format` group's one tool (the `edit` role's): the
+  formats, `width` or `fit`, `height`, `freeze` and `gridlines` in one call, flat; not
+  strict (the strict set stays `xlsx_set_cells`). 499 estimated; every definition 6,578 ->
+  about 7,077 (guard 7,080); the core unchanged. Protection is the host's only: no password
+  in a tool call.
+- Oracle (Excel for Mac 16.106): the shop stock list plain, `r`-less, with inline strings
+  and with a table, and a stock list with four named styles applied, each formatted with
+  every option, a fitted and a given width, a row height, frozen panes, gridlines off and a
+  password: 5 of 5 open without a repair, and Excel's re-save keeps every cell's format,
+  the widths, the height, the panes, the gridlines and the password's hash.
+- Needs ooxml-edit 0.95.0 (`Worksheet.set_style`, `set_row_height`, `set_row_style`,
+  `cells_in`; `Styles.add_format`).
+
 ## 0.1.22 (unreleased) -- inserting, deleting and moving rows and columns
 
 - `Workbook.insert_rows`, `insert_columns`, `delete_rows`, `delete_columns`, `move_rows`,
@@ -1205,7 +1266,7 @@ each earlier version added is in that package's CHANGELOG. `pyproject.toml`'s ve
 the one this file's top version section names, and `xlsx_agent.__version__` the same
 (`tools/check_version.py`, run by CI's `build` job).
 
-- `ooxml-edit>=0.57.0`: the format-neutral editing core the siblings share (the OPC
+- `ooxml-edit>=0.95.0`: the format-neutral editing core the siblings share (the OPC
   package with parts as their original bytes, the safe parser, the history, the tool
   layer with workbooks a kind of the shared tools, the session's locale and datasets, the
   sources resolver hook, and `ooxml_edit.sheets`, the lossless cell writer the edits and
@@ -1216,7 +1277,9 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   dataset goes stale when the joined side changes (round 25, X1); 0.78.0
   `shared.READ_BATCH`, many reads in one call (round 32, R15); 0.84.0 a check of numbers
   in a deck's or document's text against the open workbooks (`value_sources`,
-  `Dataset.formats`; round 36, R28) -- the floor.
+  `Dataset.formats`; round 36, R28); 0.95.0 a cell's format and a row's height and format
+  set on their own (`Worksheet.set_style`, `set_row_height`, `set_row_style`, `cells_in`,
+  `Styles.add_format`; round 44, R53) -- the floor.
 - `ooxml-common>=0.29.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
   widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, and from

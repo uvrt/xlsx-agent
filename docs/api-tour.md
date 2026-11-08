@@ -925,3 +925,33 @@ wb.rearrange_columns("Stock", ["C", "A", "B"], drop=["E"])   # one step, R59
   template's order. `order` lists columns in the order they are to stand, in the places the
   listed columns hold now (columns not listed stay); a mapping says the same as
   `{"C": "A", "A": "B", "B": "C"}`; `drop` deletes columns first, named as before.
+
+## Formatting and layout (round 44: R53, E7)
+
+Formats from code, each call one step (undone with `wb.undo()`), refused before anything
+changes with every problem listed, and no value touched (`xlsx_agent.edit.format`,
+`xlsx_agent.edit.layout`):
+
+```python
+wb.format("Stock!A1:H1", font={"bold": True, "color": "#1F3864", "size": 12},
+          fill="#DDEBF7", border={"bottom": "thin"},
+          alignment={"horizontal": "center", "vertical": "center", "wrap": True})
+wb.format("Stock!D2:D40", number_format="0.0")       # "0.00" is built-in id 2, reused
+wb.format("Stock!J2:J40", like="Stock!D2")           # that cell's whole format
+wb.format("Stock!A1:H1", style="Heading 1")          # a cell style of the workbook
+wb.format("Stock!E:E", protection={"locked": False}) # whole columns (and rows: "Stock!3:3")
+wb.set_column_widths("Stock!A:H", "fit")             # Excel's AutoFit, measured
+wb.set_column_widths("Stock!J:J", 14)                # characters, as Excel's Column Width
+wb.set_row_heights("Stock!1:1", 30)                  # points; None fits the text again
+wb.freeze_panes("Stock", rows=1, columns=1)          # or at="B2"; rows=0, columns=0 unfreezes
+wb.set_gridlines("Stock", False)
+wb.protect_sheet("Stock", password="s3cret")         # Excel's SHA-512 hash; unprotect_sheet
+```
+
+Only what is asked changes (bold keeps the fill and the number format), and equal fonts,
+fills, borders, number formats and cell formats are reused, never added per cell. A fit
+measures each cell's shown text in its own font with ooxml-common's advance widths (exact
+against Excel's AutoFit for Calibri, Arial, Times New Roman, Courier New, Cambria and
+Aptos at 10-16 points); a cell in a font without measured widths (Aptos Narrow) refuses
+it, and the cells not measured (merged, wrapped, dates) are listed in `skipped`. The
+agent tool is `xlsx_format`, in the deferred `xlsx_format` group.
