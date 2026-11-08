@@ -812,3 +812,35 @@ wb.save("stock-filled.xlsx")             # SaveReport(kind='xlsx', size=..., ver
   bytes are reopened and every cell written since the workbook was opened is read back
   through the reader, type and value (`readback`, with the addresses), before anything is
   written.
+
+### Sheets, merged cells and text XML cannot carry (E5; round 44: R52, R56, R63b)
+
+Each is one undoable step (or part of the open batch), refused before anything changes,
+and does what Excel does (measured in Excel for Mac; `xlsx_agent.edit.sheets` and
+`xlsx_agent.edit.merges` say what):
+
+```python
+wb.add_sheet("Rota", index=1)              # an empty worksheet, as Excel makes one
+wb.rename_sheet("Lists", "Tax rates").as_dict()
+# {'action': 'rename', 'sheet': 'Tax rates', 'id': 2, 'changed': True, 'sheets': [...],
+#  'rewritten': [{'kind': 'name', 'a': 'Categories'}, {'kind': 'formula', 'a': 'Stock!I10'},
+#                {'kind': 'chart', 'a': 'Totals!xl/charts/chart1.xml'},
+#                {'kind': 'pivot_cache', 'a': 'xl/pivotCache/pivotCacheDefinition1.xml'}, ...],
+#  'not_rewritten': [{'kind': 'hyperlink', 'a': 'Totals!A6'}]}    # Excel leaves those too
+wb.sheet_referents("Tax rates")            # what refers to it, by kind and address
+wb.delete_sheet("Tax rates")               # SheetError referred: .referents, each by address
+wb.delete_sheet("Tax rates", force=True)   # ... or as Excel deletes it: each reads #REF!
+wb.clear_sheet("Results")                  # Clear All: references to the sheet stay
+wb.set_sheet_state("Meta", "veryHidden")   # the active tab moves to a visible sheet
+wb.merge("Report!A1:F1")                   # EditError merge_content while B1:F1 hold anything
+wb.merge("Report!A1:F1", drop=True)        # every cell the first cell's format, as Excel
+wb.unmerge("Report!A1", fill="anchor")     # every cell of the area its first cell's format
+wb.set_cells({"Notes!A2": "line\x01feed"}).escaped     # ('Notes!A2',): stored line_x0001_feed
+```
+
+**Regenerating a sheet**: clear it and write it again -- every formula, name, chart series
+and validation that refers to it keeps referring to it. Deleting it and adding one of the
+same name breaks them all (Excel writes `#REF!` into each, and a new sheet of the name does
+not bring them back), which is why `delete_sheet` refuses while anything refers to the
+sheet. Names follow Excel's rules (1 to 31 characters, none of `: \ / ? * [ ]`, no `'` at
+either end, unique as Excel compares them); control characters are refused in a name.

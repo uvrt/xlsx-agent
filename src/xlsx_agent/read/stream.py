@@ -42,7 +42,7 @@ from ..formula import is_external
 from ..xml import iterparse_xml
 from ooxml_edit.markdown import Run
 
-from .strings import SharedStrings, item_runs, item_text, text_markdown
+from .strings import SharedStrings, decode_xstring, item_runs, item_text, text_markdown
 from .styles import DATE_KINDS, NumberFormat, Styles
 
 from ..address import format_cell
@@ -525,10 +525,10 @@ class SheetReader:
                 self._text(value, item_text(is_node),
                            item_runs(is_node) if self.markdown else None)
             elif v_text is not None:
-                self._text(value, v_text)
+                self._text(value, decode_xstring(v_text))
         elif kind == "str":
-            if v_text is not None:
-                self._text(value, v_text)
+            if v_text is not None:     # an ST_Xstring: Excel writes q_x0001_r (measured)
+                self._text(value, decode_xstring(v_text))
         elif kind == "b":
             flag = (v_text or "").strip()
             if flag in ("1", "true"):
@@ -685,7 +685,7 @@ class SheetReader:
         if kind == "shared":
             group = f_node.get("si")
             if text:
-                value.formula_text = text
+                value.formula_text = decode_xstring(text)
                 value.volatile = is_volatile(text)
                 value.external = is_external(text, self.external_names)
                 if group is not None:
@@ -703,7 +703,8 @@ class SheetReader:
             if block is not None:
                 self.arrays.append(block)
         if text:
-            value.formula_text = text
+            # An ST_Xstring too: Excel writes "_x0041_" in a formula as "_x005F_x0041_".
+            value.formula_text = decode_xstring(text)
             value.volatile = is_volatile(text)
             value.external = is_external(text, self.external_names)
 

@@ -1,6 +1,7 @@
 """The workbook tools by role (ooxml-edit 0.45.0, round 7, item 9).
 
-Every xlsx tool but the shared ``undo`` and E3's ``xlsx_set_cells`` reads (E1 adds
+Every xlsx tool but the shared ``undo``, E3's ``xlsx_set_cells`` and E5's
+``xlsx_manage_sheets`` reads (E1 adds
 ``undo``, ``batch`` and ``save_document``): all of them are ``review``'s, or any role's,
 and a reviewer, ``["review"]`` or ``["review", "resolve"]``, is sent the default's
 definitions without ``undo`` and ``xlsx_set_cells``, which are ``edit``'s, with ``accept``
@@ -40,7 +41,7 @@ def _book() -> bytes:
 
 #: The workbook tools that are the edit role's, and the group of its own they make
 #: (an OpenAI namespace a reviewer is not sent).
-EDITING = {"undo", "xlsx_set_cells"}
+EDITING = {"undo", "xlsx_set_cells", "xlsx_manage_sheets"}
 EDITING_GROUPS = {"xlsx_edit"}
 
 
