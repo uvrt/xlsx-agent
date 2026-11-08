@@ -1148,9 +1148,9 @@ class Job:
                 position = _position(cell) if cell else None
                 if position is not None:
                     line = position[0] if change.axis == ROW else position[1]
-                    new = change.index(line)
-                    new = new if new is not None else max(1, min(change.first,
-                                                                 change.limit))
+                    went = change.index(line)
+                    new = went if went is not None else max(1, min(change.first,
+                                                                  change.limit))
                     r, c = (new, position[1]) if change.axis == ROW else (position[0], new)
                     selection.set("activeCell", f"{column_letters(c)}{r}")
                 if selection.get("sqref"):
@@ -1209,9 +1209,9 @@ class Job:
                 totals = area.r2 - table.totals + 1
                 if change.first <= totals and area.r2 <= change.last:
                     _drop_totals(root)
+            moved: Area | None
             if change.kind == "move" and change.axis == ROW:
-                pieces = area_cells(area, change)
-                moved = _bbox(pieces)
+                moved = _bbox(area_cells(area, change))
             else:
                 moved = map_area(area, change)
             if moved is None:
@@ -1433,9 +1433,13 @@ class Job:
                              if m is not None and m.find(XDR + name) is not None]
                 if not positions:
                     continue
+                new: list[int]
                 if len(positions) == 2:
-                    span = change.span(positions[0], positions[1]) if change.kind != "move" \
-                        else (change.index(positions[0]), change.index(positions[1]))
+                    if change.kind != "move":
+                        span = change.span(positions[0], positions[1])
+                    else:
+                        x, y = change.index(positions[0]), change.index(positions[1])
+                        span = None if x is None or y is None else (x, y)
                     if span is None:
                         continue
                     new = list(span)
@@ -1621,6 +1625,7 @@ def _reshare(group: list[_Cell], _unused: Any) -> None:
     if not members:
         return
     master = members[0]
+    assert master.text is not None
     alike = True
     for cell in members[1:]:
         try:

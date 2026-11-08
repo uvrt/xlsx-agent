@@ -40,7 +40,7 @@ def _book() -> bytes:
 
 #: The workbook tools that are the edit role's, and the group of its own they make
 #: (an OpenAI namespace a reviewer is not sent).
-EDITING = {"undo", "xlsx_set_cells"}
+EDITING = {"undo", "xlsx_set_cells", "xlsx_write_table"}
 EDITING_GROUPS = {"xlsx_edit"}
 
 

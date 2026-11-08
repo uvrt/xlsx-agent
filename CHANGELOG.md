@@ -5,6 +5,27 @@ reaches `main` is tagged `v<version>`, from 0.1.1, the first tagged. [`ROADMAP.m
 has the detail of every milestone. Why each dependency is needed at its version:
 [Dependencies](#dependencies), at the end.
 
+## Unreleased
+
+- The loaded core's online budget is now 6,800 tokens as count-tokens counts them (raised
+  from 6,500 by the user on 2026-11-05, keeping `read_batch` in the core): round 32, R15
+  took the core 6,431 -> 6,678 counted online (claude-sonnet-5-5). Tests only; no tool
+  definition changed.
+- The online budget is now 7,000 (the user, 2026-11-06: the budget is guidance, clear tools
+  first), and `xlsx_derive`'s descriptions that 0.1.16's trim left unclear are restored:
+  `join.on` says its first name is the key column of the outer `from` (the rows joined to)
+  and the second of this join's table, `join.from` that it is the table to join;
+  `pivot_values` reads as sentences again (a listed value without rows still gets its
+  column; rows of a value not listed are left out and named in `pivot_unlisted`); `coerce`
+  says "Opt in:" again. Also made clear: `fill`'s `from` is the fill's own column, read in
+  the same row; `join` adds to each row of the outer `from`; `join.columns` are this join's
+  table's; `xlsx_compare`'s, `xlsx_validate_data`'s and `xlsx_query`'s `cursor` is passed back with
+  "the same call" (none has a target). Descriptions, tests and docs only; no behaviour
+  changed, so no version bump (`tools/check_version.py` asks for none). `xlsx_derive`
+  1,182 -> 1,245 estimated, the core 4,783 -> 4,844 (about 6,866 online), every definition
+  5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
+  4,690.
+
 ## 0.1.21 (unreleased) -- inserting, deleting and moving rows and columns
 
 - `Workbook.insert_rows`, `insert_columns`, `delete_rows`, `delete_columns`, `move_rows`,
@@ -26,26 +47,33 @@ has the detail of every milestone. Why each dependency is needed at its version:
   again and opens each result. The oracle drives Excel's own structural edits
   (`Session.operate`, `tools/excel_structure.applescript`). No tool added; host API only.
 
-## Unreleased
+## 0.1.20 (unreleased) -- new workbooks, tables written, rows appended
 
-- The loaded core's online budget is now 6,800 tokens as count-tokens counts them (raised
-  from 6,500 by the user on 2026-11-05, keeping `read_batch` in the core): round 32, R15
-  took the core 6,431 -> 6,678 counted online (claude-sonnet-5-5). Tests only; no tool
-  definition changed.
-- The online budget is now 7,000 (the user, 2026-11-06: the budget is guidance, clear tools
-  first), and `xlsx_derive`'s descriptions that 0.1.16's trim left unclear are restored:
-  `join.on` says its first name is the key column of the outer `from` (the rows joined to)
-  and the second of this join's table, `join.from` that it is the table to join;
-  `pivot_values` reads as sentences again (a listed value without rows still gets its
-  column; rows of a value not listed are left out and named in `pivot_unlisted`); `coerce`
-  says "Opt in:" again. Also made clear: `fill`'s `from` is the fill's own column, read in
-  the same row; `join` adds to each row of the outer `from`; `join.columns` are this join's
-  table's; `xlsx_compare`'s, `xlsx_validate_data`'s and `xlsx_query`'s `cursor` is passed back with
-  "the same call" (none has a target). Descriptions, tests and docs only; no behaviour
-  changed, so no version bump (`tools/check_version.py` asks for none). `xlsx_derive`
-  1,182 -> 1,245 estimated, the core 4,783 -> 4,844 (about 6,866 online), every definition
-  5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
-  4,690.
+- **`Workbook.new()`** (production round 44, R51): a new workbook as Excel makes one, its
+  nine parts measured from what Excel for Mac 16.106 writes for a new workbook
+  (`xlsx_agent.edit.blank`); `sheets`, `author`, `title`. **`Workbook.from_tables({"Stock":
+  {"columns": [...], "rows": [...], "table": True}})`**: a sheet per entry, written by
+  `write_table` at A1, in one step.
+- **`wb.write_table(sheet, origin, headers, rows, as_table=False|name, style=,
+  overwrite=)`** (R54, E4): a block with `set_cells`' values, returning the range written;
+  `as_table` makes a real Excel table (its AutoFilter, the workbook's default style banded
+  by rows), its part as Excel writes it and its name checked by Excel's rules (measured).
+  Refused before anything changes, every problem listed: cells holding values (unless
+  `overwrite`), merges, other tables, a bad table name (with one that would do) or style.
+- **`wb.append_rows(target, rows)`** (R54): to a table (`t:Orders`: it grows, calculated
+  columns filled, the format above each new cell, a totals row moved below unless something
+  refers to it by address), or below the last row holding a value in a sheet's or region's
+  columns (a formatted empty row does not count).
+- A date written by these into a cell that shows no date gets the short date (`numFmtId`
+  14), as Excel formats a typed date (measured). A workbook without a shared-string table
+  gets one with its first text.
+- Tool **`xlsx_write_table`** in the deferred `xlsx_edit` group (`at` a cell, or `t:<table>`
+  to append; `headers`, `rows` of typed cells, `from: d:<id>`, `table`, `name`, `style`,
+  `overwrite`), non-strict: the core unchanged (4,938 estimated), every definition 5,909 ->
+  6,298. The shared `new_document`'s xlsx handler is `xlsx_agent.tools.NEW_DOCUMENT`, which
+  an application adds (in the core it would cost 225 estimated tokens, past the budget).
+- New edit codes: `not_empty`, `table_overlap`, `bad_table_name`, `bad_table_style`,
+  `totals_referenced`. Oracle (`tests/test_oracle_tables.py`): 8 of 8 open without a repair.
 
 ## 0.1.19 (unreleased) -- the length of a text in a page
 
