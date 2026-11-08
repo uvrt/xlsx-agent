@@ -121,24 +121,27 @@ def _copy(cell):
     return deepcopy(cell)
 
 
-@pytest.mark.parametrize("damage", DAMAGE.values(), ids=DAMAGE.keys())
+@pytest.mark.parametrize("name", DAMAGE)
 @pytest.mark.parametrize("book", BOOKS.values(), ids=BOOKS.keys())
-def test_damage_where_a_step_wrote_is_found_as_the_whole_check_finds_it(book, damage):
-    rng = random.Random(hash(damage) & 0xFFFF)
+def test_damage_where_a_step_wrote_is_found_as_the_whole_check_finds_it(book, name):
+    damage = DAMAGE[name]
+    rng = random.Random(name)
     wb = Workbook.open(book())
     cells = _writable(wb)
     for _ in range(4):
-        name, address = rng.choice(cells)
+        sheet_name, address = rng.choice(cells)
         with wb.batch():
             wb.set_cells({address: "written"}, replace_formulas=True)
-            sheet = wb.sheet(name)
-            root = wb.package.tree(sheet.part)
-            ref = address.rpartition("!")[2]
-            node = next(c for c in root.iter(X + "c") if c.get("r") == ref)
+            sheet = wb.sheet(sheet_name)
+            # the cell as the writer finds it (a sheet's cells may have no r)
+            node = wb.editor.cells.sheet(sheet.stored_name)._find(
+                Cell.parse(address.rpartition("!")[2]))
+            if node.get("r") is None:
+                node.set("r", address.rpartition("!")[2])
             damage(node)
             wb.package.mark_dirty(sheet.part)
         report = wb.last_edit
-        whole = wb.validate(sheets=[name])
+        whole = wb.validate(sheets=[sheet_name])
         assert whole, "the damage is an issue"
         assert list(report.issues) == whole
         rows = check_structure(wb, sheets=[sheet.part], rows=_step_rows(wb))
