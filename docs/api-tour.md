@@ -887,3 +887,41 @@ wb.append_rows("Log!B4:D200", [["late", 2]])                 # within a region's
   structured reference follows the table, an address would not.
 - **append_rows to a sheet or region**: the row after the last row holding a value or a
   formula in its columns -- a cell with only a format does not count.
+
+## Rows and columns (round 44)
+
+Excel's own operations, every reference rewritten as Excel rewrites it (measured; what
+was measured is in ROADMAP.md, "Rows and columns: what Excel does"):
+
+```python
+wb.insert_rows("Stock", 5, 2)              # two empty rows before row 5
+wb.insert_columns("Stock", "C")            # one column before C (a table gets "Column1")
+wb.delete_rows("Stock", "8:9")             # references into them become #REF!
+wb.delete_columns("Stock", "K")
+wb.move_rows("Stock", "12:13", 2)          # Cut + "Insert Cut Cells": before row 2
+moved = wb.move_columns("Stock", "J", "A")
+moved.as_dict()
+# {'operation': 'move_columns', 'sheet': 'Stock', 'first': 10, 'count': 1, 'before': 1,
+#  'changed': True, 'formulas': 54, 'broken': [], 'broken_count': 0, 'removed': {},
+#  'notes': [], 'calculation': 'invalidated'}
+wb.rearrange_columns("Stock", ["C", "A", "B"], drop=["E"])   # one step, R59
+```
+
+- **One step each** (or part of the open `wb.batch()`), undone by `wb.undo()`; the report
+  (`Restructured`) counts the formulas rewritten and names where a reference became
+  `#REF!` (`broken`, by the new address; `name:Local` for a defined name) and what went
+  with deleted cells (`removed`).
+- **Inserted lines take the format of the line before them** (above, or to the left):
+  height or width, style, outline, the cells' styles, validations and conditional formats;
+  never hiding. Rows inserted in a table get its calculated columns' formula.
+- **Refused before anything changes, as Excel refuses**: an array formula cut through, cells
+  pushed off the sheet, a table's header row deleted, a table's columns moved, rows moved out
+  of a table, rows through two tables side by side, part of a merged area moved. **Refused,
+  not measured yet** (`not_measured`): see ROADMAP.md, RC. Nothing is written half-updated.
+- **Regenerating a sheet each run**: clear it and write it again rather than delete its rows
+  and add new ones -- a deleted row's references are `#REF!` for good.
+- **Reading a sheet someone rearranged**: a dataset by header (`wb.dataset("t:...")`)
+  already ignores the order of columns; `rearrange_columns` is for giving a sheet back in a
+  template's order. `order` lists columns in the order they are to stand, in the places the
+  listed columns hold now (columns not listed stay); a mapping says the same as
+  `{"C": "A", "A": "B", "B": "C"}`; `drop` deletes columns first, named as before.

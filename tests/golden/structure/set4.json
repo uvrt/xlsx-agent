@@ -1,0 +1,2219 @@
+{
+"book": "FormatBook",
+"cases": {
+"f1": {
+"excel": "refused",
+"steps": [
+"insert_rows|Fmt|4:4|"
+],
+"variant": {}
+},
+"f10": {
+"excel": "done",
+"facts": {
+"charts": [
+[
+"Fmt!$B$1",
+"Fmt!$A$2:$A$5",
+"Fmt!$B$2:$B$5"
+]
+],
+"names": {},
+"pivots": [],
+"sheets": {
+"Fmt": {
+"autoFilter": null,
+"cells": {
+"A1": [
+null,
+"str",
+"Name",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"A2": [
+null,
+"str",
+"N2",
+null
+],
+"A3": [
+null,
+"str",
+"N3",
+null
+],
+"A4": [
+null,
+"str",
+"N4",
+null
+],
+"A5": [
+null,
+"str",
+"N5",
+null
+],
+"A8": [
+null,
+"str",
+"grouped",
+null
+],
+"A9": [
+null,
+"str",
+"grouped too",
+null
+],
+"B1": [
+null,
+"str",
+"Count",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"B2": [
+null,
+"n",
+20.0,
+null
+],
+"B3": [
+null,
+"n",
+30.0,
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"B4": [
+null,
+"n",
+40.0,
+null
+],
+"B5": [
+null,
+"n",
+50.0,
+null
+],
+"C1": [
+null,
+"str",
+"Rate",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"C2": [
+null,
+"n",
+0.5,
+null
+],
+"C3": [
+null,
+"n",
+0.75,
+"nf=0.00"
+],
+"C4": [
+null,
+"n",
+1.0,
+null
+],
+"C5": [
+null,
+"n",
+1.25,
+null
+],
+"D1": [
+null,
+"str",
+"Note",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"D2": [
+null,
+"str",
+"x",
+null
+],
+"D3": [
+null,
+"str",
+"x",
+null
+],
+"D4": [
+null,
+"str",
+"x",
+null
+],
+"D5": [
+null,
+"str",
+"x",
+null
+],
+"F1": [
+null,
+"str",
+"Qty",
+null
+],
+"F2": [
+null,
+"n",
+2.0,
+null
+],
+"F3": [
+null,
+"n",
+3.0,
+null
+],
+"F4": [
+null,
+"n",
+4.0,
+null
+],
+"F5": [
+null,
+"n",
+5.0,
+null
+],
+"G1": [
+null,
+"str",
+"Price",
+null
+],
+"G2": [
+null,
+"n",
+2.5,
+null
+],
+"G3": [
+null,
+"n",
+3.5,
+null
+],
+"G4": [
+null,
+"n",
+4.5,
+null
+],
+"G5": [
+null,
+"n",
+5.5,
+null
+],
+"H1": [
+null,
+"str",
+"Total",
+null
+],
+"H2": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"H3": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"H4": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"H5": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"J1": [
+null,
+"str",
+"Name",
+null
+],
+"J2": [
+null,
+"str",
+"S2",
+null
+],
+"J3": [
+null,
+"str",
+"S3",
+null
+],
+"J4": [
+null,
+"str",
+"S4",
+null
+],
+"J5": [
+null,
+"str",
+"S5",
+null
+],
+"J6": [
+null,
+"str",
+"Total",
+null
+],
+"K1": [
+null,
+"str",
+"Amount",
+null
+],
+"K2": [
+null,
+"n",
+6.0,
+null
+],
+"K3": [
+null,
+"n",
+9.0,
+null
+],
+"K4": [
+null,
+"n",
+12.0,
+null
+],
+"K5": [
+null,
+"n",
+15.0,
+null
+],
+"K6": [
+"SUBTOTAL(109,Sums[Amount])",
+null,
+null,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [],
+"links": [
+[
+"A2",
+"Fmt!B5"
+]
+],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [
+{
+"autoFilter": "F1:H5",
+"calculated": [
+null,
+null,
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]"
+],
+"columns": [
+"Qty",
+"Price",
+"Total"
+],
+"name": "Calc",
+"ref": "F1:H5"
+},
+{
+"autoFilter": "J1:K5",
+"calculated": [
+null,
+null
+],
+"columns": [
+"Name",
+"Amount"
+],
+"name": "Sums",
+"ref": "J1:K6"
+}
+],
+"validations": [],
+"vml": []
+}
+}
+},
+"steps": [
+"insert_rows|Fmt|10:10|"
+],
+"variant": {}
+},
+"f2": {
+"excel": "done",
+"facts": {
+"charts": [
+[
+"Fmt!$B$1",
+"Fmt!$A$2:$A$5",
+"Fmt!$B$2:$B$5"
+]
+],
+"names": {},
+"pivots": [],
+"sheets": {
+"Fmt": {
+"autoFilter": null,
+"cells": {
+"A1": [
+null,
+"str",
+"Name",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"A2": [
+null,
+"str",
+"N2",
+null
+],
+"A3": [
+null,
+"str",
+"N3",
+null
+],
+"A4": [
+null,
+"str",
+"N4",
+null
+],
+"A5": [
+null,
+"str",
+"N5",
+null
+],
+"A8": [
+null,
+"str",
+"grouped",
+null
+],
+"A9": [
+null,
+"str",
+"grouped too",
+null
+],
+"B1": [
+null,
+"str",
+"Count",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"B2": [
+null,
+"n",
+20.0,
+null
+],
+"B3": [
+null,
+"n",
+30.0,
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"B4": [
+null,
+"n",
+40.0,
+null
+],
+"B5": [
+null,
+"n",
+50.0,
+null
+],
+"C1": [
+null,
+"blank",
+null,
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"C3": [
+null,
+"blank",
+null,
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"D1": [
+null,
+"str",
+"Rate",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"D2": [
+null,
+"n",
+0.5,
+null
+],
+"D3": [
+null,
+"n",
+0.75,
+"nf=0.00"
+],
+"D4": [
+null,
+"n",
+1.0,
+null
+],
+"D5": [
+null,
+"n",
+1.25,
+null
+],
+"E1": [
+null,
+"str",
+"Note",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"E2": [
+null,
+"str",
+"x",
+null
+],
+"E3": [
+null,
+"str",
+"x",
+null
+],
+"E4": [
+null,
+"str",
+"x",
+null
+],
+"E5": [
+null,
+"str",
+"x",
+null
+],
+"G1": [
+null,
+"str",
+"Qty",
+null
+],
+"G2": [
+null,
+"n",
+2.0,
+null
+],
+"G3": [
+null,
+"n",
+3.0,
+null
+],
+"G4": [
+null,
+"n",
+4.0,
+null
+],
+"G5": [
+null,
+"n",
+5.0,
+null
+],
+"H1": [
+null,
+"str",
+"Price",
+null
+],
+"H2": [
+null,
+"n",
+2.5,
+null
+],
+"H3": [
+null,
+"n",
+3.5,
+null
+],
+"H4": [
+null,
+"n",
+4.5,
+null
+],
+"H5": [
+null,
+"n",
+5.5,
+null
+],
+"I1": [
+null,
+"str",
+"Total",
+null
+],
+"I2": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"I3": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"I4": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"I5": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"K1": [
+null,
+"str",
+"Name",
+null
+],
+"K2": [
+null,
+"str",
+"S2",
+null
+],
+"K3": [
+null,
+"str",
+"S3",
+null
+],
+"K4": [
+null,
+"str",
+"S4",
+null
+],
+"K5": [
+null,
+"str",
+"S5",
+null
+],
+"K6": [
+null,
+"str",
+"Total",
+null
+],
+"L1": [
+null,
+"str",
+"Amount",
+null
+],
+"L2": [
+null,
+"n",
+6.0,
+null
+],
+"L3": [
+null,
+"n",
+9.0,
+null
+],
+"L4": [
+null,
+"n",
+12.0,
+null
+],
+"L5": [
+null,
+"n",
+15.0,
+null
+],
+"L6": [
+"SUBTOTAL(109,Sums[Amount])",
+null,
+null,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [],
+"links": [
+[
+"A2",
+"Fmt!B5"
+]
+],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [
+{
+"autoFilter": "G1:I5",
+"calculated": [
+null,
+null,
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]"
+],
+"columns": [
+"Qty",
+"Price",
+"Total"
+],
+"name": "Calc",
+"ref": "G1:I5"
+},
+{
+"autoFilter": "K1:L5",
+"calculated": [
+null,
+null
+],
+"columns": [
+"Name",
+"Amount"
+],
+"name": "Sums",
+"ref": "K1:L6"
+}
+],
+"validations": [],
+"vml": []
+}
+}
+},
+"steps": [
+"insert_columns|Fmt|C:C|"
+],
+"variant": {}
+},
+"f3": {
+"excel": "done",
+"facts": {
+"charts": [
+[
+"Fmt!$B$1",
+"Fmt!$A$2:$A$5",
+"Fmt!$B$2:$B$5"
+]
+],
+"names": {},
+"pivots": [],
+"sheets": {
+"Fmt": {
+"autoFilter": null,
+"cells": {
+"A1": [
+null,
+"str",
+"Name",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"A10": [
+null,
+"str",
+"grouped too",
+null
+],
+"A2": [
+null,
+"str",
+"N2",
+null
+],
+"A3": [
+null,
+"str",
+"N3",
+null
+],
+"A4": [
+null,
+"str",
+"N4",
+null
+],
+"A5": [
+null,
+"str",
+"N5",
+null
+],
+"A9": [
+null,
+"str",
+"grouped",
+null
+],
+"B1": [
+null,
+"str",
+"Count",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"B2": [
+null,
+"n",
+20.0,
+null
+],
+"B3": [
+null,
+"n",
+30.0,
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"B4": [
+null,
+"n",
+40.0,
+null
+],
+"B5": [
+null,
+"n",
+50.0,
+null
+],
+"C1": [
+null,
+"str",
+"Rate",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"C2": [
+null,
+"n",
+0.5,
+null
+],
+"C3": [
+null,
+"n",
+0.75,
+"nf=0.00"
+],
+"C4": [
+null,
+"n",
+1.0,
+null
+],
+"C5": [
+null,
+"n",
+1.25,
+null
+],
+"D1": [
+null,
+"str",
+"Note",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"D2": [
+null,
+"str",
+"x",
+null
+],
+"D3": [
+null,
+"str",
+"x",
+null
+],
+"D4": [
+null,
+"str",
+"x",
+null
+],
+"D5": [
+null,
+"str",
+"x",
+null
+],
+"F1": [
+null,
+"str",
+"Qty",
+null
+],
+"F2": [
+null,
+"n",
+2.0,
+null
+],
+"F3": [
+null,
+"n",
+3.0,
+null
+],
+"F4": [
+null,
+"n",
+4.0,
+null
+],
+"F5": [
+null,
+"n",
+5.0,
+null
+],
+"G1": [
+null,
+"str",
+"Price",
+null
+],
+"G2": [
+null,
+"n",
+2.5,
+null
+],
+"G3": [
+null,
+"n",
+3.5,
+null
+],
+"G4": [
+null,
+"n",
+4.5,
+null
+],
+"G5": [
+null,
+"n",
+5.5,
+null
+],
+"H1": [
+null,
+"str",
+"Total",
+null
+],
+"H2": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"H3": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"H4": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"H5": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"J1": [
+null,
+"str",
+"Name",
+null
+],
+"J2": [
+null,
+"str",
+"S2",
+null
+],
+"J3": [
+null,
+"str",
+"S3",
+null
+],
+"J4": [
+null,
+"str",
+"S4",
+null
+],
+"J5": [
+null,
+"str",
+"S5",
+null
+],
+"J7": [
+null,
+"str",
+"Total",
+null
+],
+"K1": [
+null,
+"str",
+"Amount",
+null
+],
+"K2": [
+null,
+"n",
+6.0,
+null
+],
+"K3": [
+null,
+"n",
+9.0,
+null
+],
+"K4": [
+null,
+"n",
+12.0,
+null
+],
+"K5": [
+null,
+"n",
+15.0,
+null
+],
+"K7": [
+"SUBTOTAL(109,Sums[Amount])",
+null,
+null,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [],
+"links": [
+[
+"A2",
+"Fmt!B5"
+]
+],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [
+{
+"autoFilter": "F1:H5",
+"calculated": [
+null,
+null,
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]"
+],
+"columns": [
+"Qty",
+"Price",
+"Total"
+],
+"name": "Calc",
+"ref": "F1:H5"
+},
+{
+"autoFilter": "J1:K6",
+"calculated": [
+null,
+null
+],
+"columns": [
+"Name",
+"Amount"
+],
+"name": "Sums",
+"ref": "J1:K7"
+}
+],
+"validations": [],
+"vml": []
+}
+}
+},
+"steps": [
+"insert_rows|Fmt|6:6|"
+],
+"variant": {}
+},
+"f4": {
+"excel": "done",
+"facts": {
+"charts": [
+[
+"Fmt!$B$1",
+"Fmt!$A$2:$A$5",
+"Fmt!$B$2:$B$5"
+]
+],
+"names": {},
+"pivots": [],
+"sheets": {
+"Fmt": {
+"autoFilter": null,
+"cells": {
+"A1": [
+null,
+"str",
+"Name",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"A2": [
+null,
+"str",
+"N2",
+null
+],
+"A3": [
+null,
+"str",
+"N3",
+null
+],
+"A4": [
+null,
+"str",
+"N4",
+null
+],
+"A5": [
+null,
+"str",
+"N5",
+null
+],
+"A7": [
+null,
+"str",
+"grouped",
+null
+],
+"A8": [
+null,
+"str",
+"grouped too",
+null
+],
+"B1": [
+null,
+"str",
+"Count",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"B2": [
+null,
+"n",
+20.0,
+null
+],
+"B3": [
+null,
+"n",
+30.0,
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"B4": [
+null,
+"n",
+40.0,
+null
+],
+"B5": [
+null,
+"n",
+50.0,
+null
+],
+"C1": [
+null,
+"str",
+"Rate",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"C2": [
+null,
+"n",
+0.5,
+null
+],
+"C3": [
+null,
+"n",
+0.75,
+"nf=0.00"
+],
+"C4": [
+null,
+"n",
+1.0,
+null
+],
+"C5": [
+null,
+"n",
+1.25,
+null
+],
+"D1": [
+null,
+"str",
+"Note",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"D2": [
+null,
+"str",
+"x",
+null
+],
+"D3": [
+null,
+"str",
+"x",
+null
+],
+"D4": [
+null,
+"str",
+"x",
+null
+],
+"D5": [
+null,
+"str",
+"x",
+null
+],
+"F1": [
+null,
+"str",
+"Qty",
+null
+],
+"F2": [
+null,
+"n",
+2.0,
+null
+],
+"F3": [
+null,
+"n",
+3.0,
+null
+],
+"F4": [
+null,
+"n",
+4.0,
+null
+],
+"F5": [
+null,
+"n",
+5.0,
+null
+],
+"G1": [
+null,
+"str",
+"Price",
+null
+],
+"G2": [
+null,
+"n",
+2.5,
+null
+],
+"G3": [
+null,
+"n",
+3.5,
+null
+],
+"G4": [
+null,
+"n",
+4.5,
+null
+],
+"G5": [
+null,
+"n",
+5.5,
+null
+],
+"H1": [
+null,
+"str",
+"Total",
+null
+],
+"H2": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"H3": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"H4": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"H5": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"J1": [
+null,
+"str",
+"Name",
+null
+],
+"J2": [
+null,
+"str",
+"S2",
+null
+],
+"J3": [
+null,
+"str",
+"S3",
+null
+],
+"J4": [
+null,
+"str",
+"S4",
+null
+],
+"J5": [
+null,
+"str",
+"S5",
+null
+],
+"K1": [
+null,
+"str",
+"Amount",
+null
+],
+"K2": [
+null,
+"n",
+6.0,
+null
+],
+"K3": [
+null,
+"n",
+9.0,
+null
+],
+"K4": [
+null,
+"n",
+12.0,
+null
+],
+"K5": [
+null,
+"n",
+15.0,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [],
+"links": [
+[
+"A2",
+"Fmt!B5"
+]
+],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [
+{
+"autoFilter": "F1:H5",
+"calculated": [
+null,
+null,
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]"
+],
+"columns": [
+"Qty",
+"Price",
+"Total"
+],
+"name": "Calc",
+"ref": "F1:H5"
+},
+{
+"autoFilter": "J1:K5",
+"calculated": [
+null,
+null
+],
+"columns": [
+"Name",
+"Amount"
+],
+"name": "Sums",
+"ref": "J1:K5"
+}
+],
+"validations": [],
+"vml": []
+}
+}
+},
+"steps": [
+"delete_rows|Fmt|6:6|"
+],
+"variant": {}
+},
+"f5": {
+"excel": "done",
+"facts": {
+"charts": [
+[
+"Fmt!$B$1",
+"Fmt!$A$2:$A$5",
+"Fmt!$B$2:$B$5"
+]
+],
+"names": {},
+"pivots": [],
+"sheets": {
+"Fmt": {
+"autoFilter": null,
+"cells": {
+"A1": [
+null,
+"str",
+"Name",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"A10": [
+null,
+"str",
+"grouped too",
+null
+],
+"A2": [
+null,
+"str",
+"N2",
+null
+],
+"A3": [
+null,
+"str",
+"N3",
+null
+],
+"A4": [
+null,
+"str",
+"N4",
+null
+],
+"A5": [
+null,
+"str",
+"N5",
+null
+],
+"A8": [
+null,
+"str",
+"grouped",
+null
+],
+"B1": [
+null,
+"str",
+"Count",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"B2": [
+null,
+"n",
+20.0,
+null
+],
+"B3": [
+null,
+"n",
+30.0,
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"B4": [
+null,
+"n",
+40.0,
+null
+],
+"B5": [
+null,
+"n",
+50.0,
+null
+],
+"C1": [
+null,
+"str",
+"Rate",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"C2": [
+null,
+"n",
+0.5,
+null
+],
+"C3": [
+null,
+"n",
+0.75,
+"nf=0.00"
+],
+"C4": [
+null,
+"n",
+1.0,
+null
+],
+"C5": [
+null,
+"n",
+1.25,
+null
+],
+"D1": [
+null,
+"str",
+"Note",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"D2": [
+null,
+"str",
+"x",
+null
+],
+"D3": [
+null,
+"str",
+"x",
+null
+],
+"D4": [
+null,
+"str",
+"x",
+null
+],
+"D5": [
+null,
+"str",
+"x",
+null
+],
+"F1": [
+null,
+"str",
+"Qty",
+null
+],
+"F2": [
+null,
+"n",
+2.0,
+null
+],
+"F3": [
+null,
+"n",
+3.0,
+null
+],
+"F4": [
+null,
+"n",
+4.0,
+null
+],
+"F5": [
+null,
+"n",
+5.0,
+null
+],
+"G1": [
+null,
+"str",
+"Price",
+null
+],
+"G2": [
+null,
+"n",
+2.5,
+null
+],
+"G3": [
+null,
+"n",
+3.5,
+null
+],
+"G4": [
+null,
+"n",
+4.5,
+null
+],
+"G5": [
+null,
+"n",
+5.5,
+null
+],
+"H1": [
+null,
+"str",
+"Total",
+null
+],
+"H2": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"H3": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"H4": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"H5": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"J1": [
+null,
+"str",
+"Name",
+null
+],
+"J2": [
+null,
+"str",
+"S2",
+null
+],
+"J3": [
+null,
+"str",
+"S3",
+null
+],
+"J4": [
+null,
+"str",
+"S4",
+null
+],
+"J5": [
+null,
+"str",
+"S5",
+null
+],
+"J6": [
+null,
+"str",
+"Total",
+null
+],
+"K1": [
+null,
+"str",
+"Amount",
+null
+],
+"K2": [
+null,
+"n",
+6.0,
+null
+],
+"K3": [
+null,
+"n",
+9.0,
+null
+],
+"K4": [
+null,
+"n",
+12.0,
+null
+],
+"K5": [
+null,
+"n",
+15.0,
+null
+],
+"K6": [
+"SUBTOTAL(109,Sums[Amount])",
+null,
+null,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [],
+"links": [
+[
+"A2",
+"Fmt!B5"
+]
+],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [
+{
+"autoFilter": "F1:H5",
+"calculated": [
+null,
+null,
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]"
+],
+"columns": [
+"Qty",
+"Price",
+"Total"
+],
+"name": "Calc",
+"ref": "F1:H5"
+},
+{
+"autoFilter": "J1:K5",
+"calculated": [
+null,
+null
+],
+"columns": [
+"Name",
+"Amount"
+],
+"name": "Sums",
+"ref": "J1:K6"
+}
+],
+"validations": [],
+"vml": []
+}
+}
+},
+"steps": [
+"insert_rows|Fmt|9:9|"
+],
+"variant": {}
+},
+"f6": {
+"excel": "refused",
+"steps": [
+"insert_rows|Fmt|2:2|"
+],
+"variant": {}
+},
+"f7": {
+"excel": "done",
+"facts": {
+"charts": [
+[
+"Fmt!$B$1",
+"Fmt!$A$2:$A$5",
+"Fmt!$B$2:$B$5"
+]
+],
+"names": {},
+"pivots": [],
+"sheets": {
+"Fmt": {
+"autoFilter": null,
+"cells": {
+"A1": [
+null,
+"str",
+"Name",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"A2": [
+null,
+"str",
+"N2",
+null
+],
+"A3": [
+null,
+"str",
+"N3",
+null
+],
+"A4": [
+null,
+"str",
+"N4",
+null
+],
+"A5": [
+null,
+"str",
+"N5",
+null
+],
+"A8": [
+null,
+"str",
+"grouped",
+null
+],
+"A9": [
+null,
+"str",
+"grouped too",
+null
+],
+"B1": [
+null,
+"str",
+"Count",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"B2": [
+null,
+"n",
+20.0,
+null
+],
+"B3": [
+null,
+"n",
+30.0,
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"B4": [
+null,
+"n",
+40.0,
+null
+],
+"B5": [
+null,
+"n",
+50.0,
+null
+],
+"C1": [
+null,
+"str",
+"Rate",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"C2": [
+null,
+"n",
+0.5,
+null
+],
+"C3": [
+null,
+"n",
+0.75,
+"nf=0.00"
+],
+"C4": [
+null,
+"n",
+1.0,
+null
+],
+"C5": [
+null,
+"n",
+1.25,
+null
+],
+"D1": [
+null,
+"str",
+"Note",
+"nf=0 font=5872ef19 fill=8c543dc0"
+],
+"D2": [
+null,
+"str",
+"x",
+null
+],
+"D3": [
+null,
+"str",
+"x",
+null
+],
+"D4": [
+null,
+"str",
+"x",
+null
+],
+"D5": [
+null,
+"str",
+"x",
+null
+],
+"F1": [
+null,
+"str",
+"Qty",
+null
+],
+"F2": [
+null,
+"n",
+2.0,
+null
+],
+"F3": [
+null,
+"n",
+3.0,
+null
+],
+"F4": [
+null,
+"n",
+4.0,
+null
+],
+"F5": [
+null,
+"n",
+5.0,
+null
+],
+"G1": [
+null,
+"str",
+"Kolom1",
+null
+],
+"H1": [
+null,
+"str",
+"Price",
+null
+],
+"H2": [
+null,
+"n",
+2.5,
+null
+],
+"H3": [
+null,
+"n",
+3.5,
+null
+],
+"H4": [
+null,
+"n",
+4.5,
+null
+],
+"H5": [
+null,
+"n",
+5.5,
+null
+],
+"I1": [
+null,
+"str",
+"Total",
+null
+],
+"I2": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"I3": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"I4": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"I5": [
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]",
+null,
+null,
+null
+],
+"K1": [
+null,
+"str",
+"Name",
+null
+],
+"K2": [
+null,
+"str",
+"S2",
+null
+],
+"K3": [
+null,
+"str",
+"S3",
+null
+],
+"K4": [
+null,
+"str",
+"S4",
+null
+],
+"K5": [
+null,
+"str",
+"S5",
+null
+],
+"K6": [
+null,
+"str",
+"Total",
+null
+],
+"L1": [
+null,
+"str",
+"Amount",
+null
+],
+"L2": [
+null,
+"n",
+6.0,
+null
+],
+"L3": [
+null,
+"n",
+9.0,
+null
+],
+"L4": [
+null,
+"n",
+12.0,
+null
+],
+"L5": [
+null,
+"n",
+15.0,
+null
+],
+"L6": [
+"SUBTOTAL(109,Sums[Amount])",
+null,
+null,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [],
+"links": [
+[
+"A2",
+"Fmt!B5"
+]
+],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [
+{
+"autoFilter": "F1:I5",
+"calculated": [
+null,
+null,
+null,
+"Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]"
+],
+"columns": [
+"Qty",
+"Kolom1",
+"Price",
+"Total"
+],
+"name": "Calc",
+"ref": "F1:I5"
+},
+{
+"autoFilter": "K1:L5",
+"calculated": [
+null,
+null
+],
+"columns": [
+"Name",
+"Amount"
+],
+"name": "Sums",
+"ref": "K1:L6"
+}
+],
+"validations": [],
+"vml": []
+}
+}
+},
+"steps": [
+"insert_columns|Fmt|G:G|"
+],
+"variant": {}
+},
+"f8": {
+"excel": "refused",
+"steps": [
+"delete_rows|Fmt|3:3|"
+],
+"variant": {}
+},
+"f9": {
+"excel": "refused",
+"steps": [
+"move|Fmt|8:8|3:3"
+],
+"variant": {}
+}
+}
+}

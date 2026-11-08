@@ -79,6 +79,8 @@ except ImportError:  # Windows: there is no Excel oracle there (it drives Excel 
 EXCEL_APP = Path("/Applications/Microsoft Excel.app")
 PROCESS = "Microsoft Excel"
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "excel_resave.applescript"
+#: The script that inserts, deletes and moves rows and columns before saving (round 44).
+STRUCTURE_SCRIPT = SCRIPT.with_name("excel_structure.applescript")
 
 GROUP_CONTAINER = Path.home() / "Library" / "Group Containers" / "UBF8T346G9.Office"
 #: The machine-wide Excel lock.
@@ -96,7 +98,7 @@ TIMEOUT = 90.0
 SETTLE = 6.0
 
 #: What a run can come to (:class:`Outcome`).
-OUTCOMES = ("ok", "repair", "mismatch", "hang", "preflight", "error")
+OUTCOMES = ("ok", "repair", "mismatch", "hang", "preflight", "error", "refused")
 #: An Excel window of a dialog's size, in points (the repair prompt measured 273 x 274-288).
 ALERT_SIZE = (200, 600)
 
@@ -138,7 +140,9 @@ class Outcome:
       cause found in the file (:func:`repair_causes`) and what Excel showed;
     * ``preflight``: not given to Excel, because the file holds a known cause of the
       repair prompt (``detail``); ``resave(preflight=False)`` gives it to Excel anyway;
-    * ``error``: anything else (``detail`` says what).
+    * ``error``: anything else (``detail`` says what);
+    * ``refused``: (:meth:`Session.operate`) Excel refused a step with an alert, which
+      was answered with its only button; ``detail`` is the alert's text.
 
     ``saved`` is the file Excel wrote, for ``ok``."""
 
@@ -541,16 +545,52 @@ class Session:
                                           "detail": outcome.detail}))
         return outcome
 
+    def operate(self, data: bytes, steps: Sequence[str], *, name: str = "book") -> Outcome:
+        """``data`` opened by Excel, ``steps`` done to it (each ``kind|sheet|range|
+        destination``, as ``tools/excel_structure.applescript`` takes them: Excel's own
+        insert, delete and cut + insert-cut-cells of rows and columns) and saved as a
+        .xlsx; cached by content and steps.  An alert Excel refuses a step with is
+        answered with its only button: the outcome is ``refused``, its text the detail."""
+        causes = repair_causes(data)
+        if causes:
+            return Outcome("preflight", "; ".join(causes))
+        joined = ";".join(steps)
+        digest = hashlib.sha256(data + STRUCTURE_SCRIPT.read_bytes()
+                                + joined.encode()).hexdigest()[:16]
+        record = ORACLE_DIR / f"{name}-{digest}.json"
+        saved = ORACLE_DIR / f"{name}-{digest}-saved.xlsx"
+        if record.exists():
+            known = json.loads(record.read_text())
+            if known["outcome"] != "ok" or saved.exists():
+                return Outcome(known["outcome"], known.get("detail", ""),
+                               saved if known["outcome"] == "ok" else None, cached=True)
+        staged = ORACLE_DIR / f"{name}-{digest}-in.xlsx"
+        staged.write_bytes(data)
+        saved.unlink(missing_ok=True)
+        try:
+            outcome = self._run(staged, saved, sheet_names(data), causes,
+                                script=STRUCTURE_SCRIPT, extra=(joined,))
+        finally:
+            staged.unlink(missing_ok=True)
+            self._clear_locks()
+        if outcome.outcome in ("ok", "repair", "refused"):
+            record.write_text(json.dumps({"outcome": outcome.outcome,
+                                          "detail": outcome.detail}))
+        return outcome
+
     def _run(self, staged: Path, saved: Path, expected: list[str] | None = None,
-             causes: Sequence[str] = ()) -> Outcome:
+             causes: Sequence[str] = (), *, script: Path = SCRIPT,
+             extra: Sequence[str] = ()) -> Outcome:
         start = time.monotonic()
         before = excel_pids()
         # Its own process group: Ctrl-C at the terminal reaches the oracle, which decides.
-        process = subprocess.Popen(["osascript", str(SCRIPT), str(staged), str(saved)],
+        process = subprocess.Popen(["osascript", str(script), str(staged), str(saved),
+                                    *extra],
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                    start_new_session=True)
         try:
-            return self._watch(process, start, before, staged, saved, expected, causes)
+            return self._watch(process, start, before, staged, saved, expected, causes,
+                               dismiss=script is not SCRIPT)
         except BaseException:
             # Interrupted: whatever started is this session's, and a call still running is
             # stopped -- its AppleEvent may be queued, which recover() watches for.
@@ -566,7 +606,7 @@ class Session:
 
     def _watch(self, process: subprocess.Popen, start: float, before: set[int],
                staged: Path, saved: Path, expected: list[str] | None,
-               causes: Sequence[str]) -> Outcome:
+               causes: Sequence[str], *, dismiss: bool = False) -> Outcome:
         outcome: str | None = None
         detail = ""
         locked = screen_locked()
@@ -579,6 +619,12 @@ class Session:
             buttons = _dialog_buttons()
             if buttons:
                 answer = next((b for b in NO_BUTTONS if b in buttons), None)
+                if answer is None and dismiss and len(buttons) == 1:
+                    # Excel refusing a step (operate): its alert's text, answered.
+                    detail = _dialog_text()
+                    _osascript(_CLICK.format(buttons[0]))
+                    outcome = "refused"
+                    continue
                 if answer is None:
                     outcome, detail = "error", f"a dialog with {buttons}"
                     break
@@ -588,6 +634,10 @@ class Session:
                 # It cannot be answered: the call is stopped, and Excel, held by the
                 # prompt, is quit by signal (recover(); a polite quit would wait on it).
                 outcome, detail = "repair", UNANSWERED
+                if dismiss:     # operate: an alert refusing a step, as far as can be seen
+                    outcome, detail = "refused", ("Excel showed an alert (seen through the "
+                                                  "window server; the screen is locked, "
+                                                  "so its text could not be read)")
                 process.kill()
                 self.orphaned = self.modal = True
                 break
@@ -689,6 +739,16 @@ def _osascript(script: str, timeout: float = 10) -> str:
     done = subprocess.run(["osascript", "-e", script], capture_output=True, text=True,
                           timeout=timeout)
     return done.stdout.strip()
+
+
+def _dialog_text() -> str:
+    """The text of Excel's open dialog, as System Events reads its static texts."""
+    try:
+        return _osascript('tell application "System Events" to tell process '
+                          '"Microsoft Excel" to get value of static texts of (first window '
+                          'whose subrole is "AXDialog")', timeout=5)[:500]
+    except subprocess.TimeoutExpired:
+        return ""
 
 
 def _dialog_buttons() -> list[str]:

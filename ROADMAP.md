@@ -78,8 +78,8 @@ These are settled and are not reopened anywhere below.
 - **Following links.** External workbook links, DDE links, web queries and data
   connections are reported, never opened or refreshed.
 - **The binary formats.** `.xls` and `.xlsb` are refused with a clear error.
-- **Inserting and deleting rows and columns** (0.2). Every reference in the workbook would
-  have to move with them; see *Open questions*.
+- ~~**Inserting and deleting rows and columns**~~ -- lifted by the user (2026-11-08: Excel
+  does it, it is basic); built in round 44 as Excel's own operations (RC below).
 - **Authoring pivot tables, slicers, sparklines, form controls.** Kept losslessly; not
   created or edited.
 - **Showing a value as Excel shows it** before 0.3: no display strings are produced
@@ -1248,7 +1248,38 @@ outer from"), `join.columns` (this join's table's) and `xlsx_compare`'s,
 | E6 | **`xlsx_validation`**: drop-down lists and value rules, kept beside any existing rules | S | Excel shows the drop-down and rejects an out-of-rule entry (oracle) |
 | E7 | **`xlsx_format`**: styles reused, number formats, fonts, fills, borders, alignment, widths (auto-fit measured: Excel's width unit and padding probed from Excel), freeze panes, print settings | M | auto-fit widths match Excel's on the probe's columns |
 | E8 | **`xlsx_conditional_format`**: colour scales, data bars, icon sets, rule fills (`dxf` styles reused) | S | Excel opens each rule kind unprompted and lists it in its rules manager (oracle re-save keeps it) |
+| RC | **Rows and columns** (round 44, lane M; R52 `delete_rows`, R59). **Built:** `wb.insert_rows`/`insert_columns(sheet, at, count)`, `delete_rows`/`delete_columns(sheet, first, count)` (or `"5:7"`, `"C:D"`), `move_rows`/`move_columns(sheet, source, before)` (Excel's Cut and "Insert Cut Cells"), `rearrange_columns(sheet, order or mapping, drop=[...])` (a composition of deletes and moves; R59): one step each, undoable, refused before any change with every problem listed. `xlsx_agent.edit.grid` (the rules: a `Change` along one axis, references rewritten through E2's lexer, rules split where their cells no longer share one formula) and `xlsx_agent.edit.restructure` (the parts). What was measured is the table below. Refused as Excel refuses (measured): an array formula cut through (`array_split`), cells pushed off the grid (`off_grid`), a table's header row deleted (`table_header_row`), columns of a table moved or rows moved out of or across a table (`table_move`), rows through two tables side by side (`table_rows`), part of a merge moved (`merge_split`). Refused, not measured (`not_measured`, `pivot_table`): a pivot table cut through, a data table, a structured reference to a column range a deletion reaches, a defined name anchored in part, every data row of a table deleted with other rows, a totals row deleted with data rows, columns through two tables, a drawing wholly deleted or cut by a move, form objects, scenarios, data consolidation, custom views, unknown extensions holding references. Oracle (Excel for Mac 16.106, Dutch): 108 operations on three made-up workbooks (`tests/structure_book.py`), Excel's own result recorded as facts (`tests/golden/structure`, `tests/structure_facts.py`): xlsx-agent gives the same facts offline for every one (`tests/test_structure.py`), and in Excel (`tests/test_structure_oracle.py`) its results open without a repair and re-save to the same facts | L | each operation on each fixture opens unprompted and equals Excel's own result cell by cell and for every dependent |
 | E9 | **`edit_chart` and `new_document`.** Needs O5; a new workbook's parts measured from what Excel writes for a new workbook. **`new_document`'s part built (round 44, lane T, R51):** `Workbook.new(sheets=None, author=, title=)` (`xlsx_agent.edit.blank`): the nine parts Excel for Mac 16.106 writes for `make new workbook`, saved (measured 2026-11-08): the theme (PowerPoint's Office theme but Aptos Narrow as the body face and Tahoma for Thai, with `lnDef`), styles (Aptos Narrow 12, two fills, the Normal style, `TableStyleMedium2`/`PivotStyleLight16`, the slicer and timeline extensions), the sheet (`baseColWidth` 10, `defaultRowHeight` 16, margins), `workbook.xml` (`fileVersion`, `defaultThemeVersion` 202300, `calcId` 181029, the calculation features), core and app properties; Excel's session and machine left out (`absPath`, `revisionPtr`, window geometry, uids), English names (`Sheet1`, `Normal`, `Office Theme`, `Worksheets`). `Workbook.from_tables({sheet: {columns, rows, table?, origin?, style?}})`: `new()` and `write_table` in one step. The shared `new_document`'s xlsx handler (`xlsx_agent.tools.NEW_DOCUMENT`; a template blob gives its content, saved as a workbook) is not in `TOOLS`: the core is at its budget (+225 estimated). Oracle: Excel opens a new workbook and a `from_tables` one unprompted, and its re-save changes only the application's name, its user, localised names, the folder saved in, ids, row `spans`/`dyDescent` and `fullCalcOnLoad` cleared. Charts are not in this part | M | a chart added from a dataset opens in Excel with its data in the sheet |
+
+### Rows and columns: what Excel does (measured, round 44)
+
+Excel for Mac 16.106 (Dutch), 2026-11-08, driven by `tools/excel_structure.applescript`
+on `tests/structure_book.py`'s workbooks; 108 operations recorded in `tests/golden/structure`.
+
+| Dependent | Insert | Delete | Move (Cut + Insert Cut Cells) |
+| --- | --- | --- | --- |
+| cell references (same and other sheets, relative and `$`) | follow their cell | to a deleted cell: `#REF!` (`Stock!#REF!` with its sheet) | follow their cell |
+| ranges | grow when inserted after the first line up to the last; move when inserted at or before the first | shrink; all lines deleted: `#REF!` | each end follows its line unless the range turns over; a range the block stays inside is unchanged; otherwise as a delete then an insert at the new place |
+| a range's end at the grid's edge | `B2:B1048576` keeps its end; a single reference pushed off is `#REF!` (`XFD1`) | the end stays at the edge | a single reference to the last line becomes `#REF!` (the insert pushes it off) |
+| whole columns / rows, full-height ranges | `B:B` unchanged by rows (`B1:B1048576` is read as `B:B`); `2:7` as a range of rows | as ranges | as ranges |
+| a table's data rows (`B2:B7`, `$A$2:$F$7`: rows exactly the body, columns within) | inserting at the first data row grows them (others move) | as ranges | rows moved into the table: as the insert |
+| 3-D references (`Stock:Notes!B2`), other workbooks, `INDIRECT` text | unchanged | unchanged | unchanged |
+| defined names | as formulas; print area and titles too; a fully relative name (`Stock!B3`) is left as it is | as formulas (`Stock!#REF!,Stock!$1:$1`) | as formulas; the filter's hidden name follows the filter |
+| structured references | unchanged | to a deleted column, or a deleted table: `#REF!` | unchanged |
+| tables | grow (new columns `Kolom1`, the first free; a calculated column's formula filled into new rows); inserting at the totals row adds a data row | shrink; header row: refused; every data row: one empty row kept (its hyperlinks go); totals row: the table keeps none | rows within or into a table: allowed; out of or across it: refused; table columns: refused; rows through two tables side by side: refused (insert and delete too) |
+| merges | grow when inserted inside | shrink; one cell left or all deleted: gone | part of a merge moved: refused |
+| data validations, conditional formats | sqref as cells; inserted lines take the rules of the line before them; formulas keep their meaning per cell (Excel splits a rule whose cells would differ) | sqref shrinks, rule gone with its cells; a formula's deleted reference `#REF!` | rules travel with their cells; the moved lines also take the validations of the line before their place (conditional formats only moving up or left, the range ending just before) |
+| row heights, styles, outline / column widths, styles | an inserted line takes the height (width), style and outline of the line before it -- never its hiding, nothing from a hidden line; cells take its cells' styles | go with their lines | go with their lines |
+| hidden rows and columns | stay with their lines | go | go with their lines |
+| hyperlinks, comments (and their VML note), threaded comments | follow their cell; a hyperlink's `location` text is never changed | go with their cell | follow their cell |
+| filter (`autoFilter`), its colIds | as a range | as a range | as a delete then an insert (the moved column leaves it) |
+| frozen panes | inserted at or before the split: the split grows, the top-left moves | unchanged (deleting the frozen column keeps one) | as the insert at the new place |
+| chart series | as references | as references (`Stock!#REF!`; Excel drops such a reference when it opens a file) | as references |
+| pivot cache source | as a range | as a range; wholly deleted: left as it was | as a range |
+| shared formulas | kept shared where the members still read alike | | |
+| array formulas | inside them: refused | part: refused; whole: gone | part: refused |
+| cells that would be pushed off the grid | refused | | refused |
+| drawings (charts on the sheet) | anchors move with their cells | | |
 
 ---
 
@@ -1294,9 +1325,8 @@ outer from"), `join.columns` (this join's table's) and `xlsx_compare`'s,
 
 ## Open questions
 
-1. **Inserting and deleting rows and columns.** Needs E2's lexer and a rewrite of every
-   reference (formulas, names, tables, merges, validation, conditional formats, charts,
-   pivot sources). After 0.2, on demand.
+1. ~~**Inserting and deleting rows and columns.**~~ Built in round 44 (RC), every
+   dependent measured from Excel; what is not measured yet is refused, listed in RC.
 2. **Recalculation** (decision 3). What would trigger revisiting it: agents meeting
    `no_cached_value` often enough in practice. Record the counts when they come.
 3. **Display strings before 0.3.** Whether an agent needs "as Excel shows it" for some

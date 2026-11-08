@@ -26,6 +26,27 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.22 (unreleased) -- inserting, deleting and moving rows and columns
+
+- `Workbook.insert_rows`, `insert_columns`, `delete_rows`, `delete_columns`, `move_rows`,
+  `move_columns` (round 44, lane M; R52's `delete_rows`): Excel's own operations, one undoable
+  step each, every dependent rewritten as measured from Excel for Mac -- formulas on every
+  sheet (shared groups kept where they still read alike), defined names, print areas and
+  titles, tables (new columns, calculated columns filled, totals rows), merges, data
+  validations and conditional formats (split where their cells' formulas part, inherited by
+  inserted lines), hyperlinks, comments and their notes, filters, frozen panes, page breaks,
+  column widths and row heights, chart series, pivot cache sources, drawing anchors. What
+  Excel refuses is refused alike, what is not measured is refused (`not_measured`); new
+  `EditError` codes `bad_position`, `array_split`, `off_grid`, `table_header_row`,
+  `table_move`, `table_rows`, `merge_split`, `pivot_table`, `not_measured`. The roadmap's
+  non-goal is lifted (user, 2026-11-08); what was measured is a table in ROADMAP.md.
+- `Workbook.rearrange_columns(sheet, order or mapping, drop=[...])` (R59): deletes and moves
+  composed in one step.
+- Tests: 108 operations recorded from Excel (`tests/golden/structure`) replayed offline
+  (`tests/test_structure.py`); `pytest -m oracle tests/test_structure_oracle.py` asks Excel
+  again and opens each result. The oracle drives Excel's own structural edits
+  (`Session.operate`, `tools/excel_structure.applescript`). No tool added; host API only.
+
 ## 0.1.21 (unreleased) -- sheets, merged cells, text XML cannot carry
 
 - **Sheets** (production round 44, R52; E5): `wb.add_sheet(name, index)`,
