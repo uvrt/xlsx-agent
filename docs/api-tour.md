@@ -815,8 +815,8 @@ wb.save("stock-filled.xlsx")             # SaveReport(kind='xlsx', size=..., ver
 
 ## Rows and columns (round 44)
 
-Excel's own operations, every reference rewritten as Excel rewrites it (measured; the
-findings are in ROADMAP.md, "Rows and columns: what Excel does"):
+Excel's own operations, every reference rewritten as Excel rewrites it (measured; what
+was measured is in ROADMAP.md, "Rows and columns: what Excel does"):
 
 ```python
 wb.insert_rows("Stock", 5, 2)              # two empty rows before row 5

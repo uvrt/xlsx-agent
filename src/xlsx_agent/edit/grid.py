@@ -14,7 +14,7 @@ anything changes -- every problem listed (:class:`~xlsx_agent.edit.EditError`, i
 not been measured from Excel yet.  Nothing is ever written half-updated.
 
 **What moves, measured** (Excel for Mac 16.106, 2026-11-08; ``tests/structure_book.py`` and
-``tests/test_structure_oracle.py``; the table of findings is in ROADMAP.md, round 44):
+``tests/test_structure_oracle.py``; the table of what was measured is in ROADMAP.md, round 44):
 
 * *References* (in cells on every sheet, defined names, data validation and conditional
   format formulas, chart series, table formulas, pivot cache sources): a cell reference

@@ -36,10 +36,11 @@ _EXT_HANDLED = {
     "{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}",     # x14 data validations
     "{05C60535-1F16-4fd2-B633-F4F36F0B64E0}",     # sparklines
 }
-#: Worksheet children whose references are not rewritten: a sheet holding one is refused.
+#: Worksheet children whose references are not rewritten: a sheet holding one is refused
+#: (form objects are found by their VML shapes, which Excel writes for each).
 _UNHANDLED = {"scenarios": "scenarios", "dataConsolidate": "a data consolidation",
               "customSheetViews": "custom views", "oleObjects": "embedded objects",
-              "controls": "form objects", "cellWatches": "watched cells",
+              "cellWatches": "watched cells",
               "smartTags": "smart tags", "webPublishItems": "web publishing items"}
 
 

@@ -39,7 +39,7 @@ has the detail of every milestone. Why each dependency is needed at its version:
   Excel refuses is refused alike, what is not measured is refused (`not_measured`); new
   `EditError` codes `bad_position`, `array_split`, `off_grid`, `table_header_row`,
   `table_move`, `table_rows`, `merge_split`, `pivot_table`, `not_measured`. The roadmap's
-  non-goal is lifted (user, 2026-11-08); the findings are a table in ROADMAP.md.
+  non-goal is lifted (user, 2026-11-08); what was measured is a table in ROADMAP.md.
 - `Workbook.rearrange_columns(sheet, order or mapping, drop=[...])` (R59): deletes and moves
   composed in one step.
 - Tests: 108 operations recorded from Excel (`tests/golden/structure`) replayed offline
