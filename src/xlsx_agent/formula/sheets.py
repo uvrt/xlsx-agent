@@ -142,13 +142,16 @@ def rename(text: str, old: str, new: str) -> str | None:
     out = [token.text for token in found]
     changed = False
     for index, token, prefix in _prefixed(found):
-        first = new if fold_name(prefix.first) == key else prefix.first
+        hit = fold_name(prefix.first) == key
+        first = new if hit else prefix.first
         last = prefix.last
         if last is not None and fold_name(last) == key:
-            last = new
-        if first == prefix.first and last == prefix.last:
+            last, hit = new, True
+        if not hit:
             continue
         spelled = spell_prefix(first, last)
+        if spelled == (token.sheet if token.kind == "ref" else token.text):
+            continue
         out[index] = spelled + (token.body if token.kind == "ref" else "")
         changed = True
     return "".join(out) if changed else None

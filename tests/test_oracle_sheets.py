@@ -20,6 +20,7 @@ import pytest
 from lxml import etree
 
 from xlsx_agent import Workbook
+from xlsx_agent.formula.sheets import rename
 
 import oracle
 import referents
@@ -54,9 +55,17 @@ def _facts(data: bytes) -> dict:
                                  for n in book.iter(X + "definedName")),
                  "sheets": [(s.get("name"), s.get("state") or "visible")
                             for s in book.iter(X + "sheet")]}
+    names = [s.get("name") for s in book.iter(X + "sheet")]
+
+    def spelled(text: str) -> str:
+        # Excel writes a sheet's name bare where it needs no quotes ('Lists'!B3 -> Lists!B3).
+        for name in names:
+            text = rename(text, name, name) or text
+        return text
+
     for sheet in book.iter(X + "sheet"):
         tree = etree.fromstring(parts[targets[sheet.get(R_ID)]])
-        out[sheet.get("name")] = sorted((f.getparent().get("r"), f.text)
+        out[sheet.get("name")] = sorted((f.getparent().get("r"), spelled(f.text))
                                         for f in tree.iter(X + "f") if f.text)
         out[sheet.get("name") + ":merges"] = sorted(m.get("ref")
                                                      for m in tree.iter(X + "mergeCell"))

@@ -550,3 +550,22 @@ def test_the_tool_is_deferred_in_the_edit_group():
     assert "xlsx_manage_sheets" not in core
     every = {d["name"] for d in toolbox.definitions("anthropic")}
     assert "xlsx_manage_sheets" in every
+
+
+def test_a_long_list_of_referents_is_cut_and_counted_never_silently():
+    from ooxml_edit.tools.limits import Limits
+
+    _, wb = _open()
+    change = wb.rename_sheet("Lists", "Tax rates")
+    shown = change.as_dict(limit=3)
+    assert len(shown["rewritten"]) == 3
+    assert shown["rewritten_cut"] == len(change.rewritten) - 3
+    toolbox = Toolbox(TOOLS, formats=[FORMAT], groups=GROUPS, limits=Limits(max_list_items=2))
+    current = toolbox.session()
+    blob = current.add_blob(referents.book(), name="shop.xlsx")
+    assert toolbox.dispatch(current, "open_document", {"blob": blob}).ok
+    refused = toolbox.dispatch(current, "xlsx_manage_sheets",
+                               {"doc": "d1", "action": "delete", "sheet": "Lists"})
+    details = refused.error.details
+    assert len(details["referents"]) == 2
+    assert details["referents_cut"] == len(Workbook.open(referents.book()).sheet_referents("Lists")) - 2
