@@ -25,12 +25,13 @@ font's (the ``Normal`` style's) digits' advance widths at its size, each rounded
 pixels at 72 per inch (measured: 6 px for Calibri 11, Arial 10, Times New Roman 12 and
 Aptos Narrow 11; 8 for Calibri 16).
 
-**Fitted widths** (``"fit"``) are Excel's AutoFit, measured in the same session (88
-columns of text and numbers in the default fonts Calibri 11, Arial 10, Times New Roman 12
-and Calibri 16, and in eleven other fonts and sizes): a text's width in pixels is the sum
-of its characters' advance widths at the font's size in points, each rounded to whole
-pixels (the face's bold widths for bold); past five widest digits Excel adds one pixel per
-five widest digits, less two (``max(0, T // (5 * digit) - 2)``); a number is as wide as its
+**Fitted widths** (``"fit"``) are Excel's AutoFit, measured in the same session (258
+columns of text and numbers in the default fonts Calibri 11, Arial 10, Times New Roman 12,
+Aptos Narrow 11 and Calibri 16, and in eleven other fonts and sizes; one character
+repeated 1 to 40 times shows the rule): a text's width ``T`` in pixels is the sum of its
+characters' advance widths at the font's size in points, each rounded to whole pixels (the
+face's bold widths for bold); Excel then adds ``max(0, T // (5 * digit) - 2)`` pixels (none
+up to fifteen widest digits, then one more per five); a number is as wide as its
 shown text has characters, each the widest digit; then 7 px of padding, over the widest
 digit, truncated to 1/256, written with ``bestFit``.  A column's width is its widest cell's.
 On the probe this is exact for Calibri, Arial, Times New Roman, Courier New, Cambria and
@@ -38,7 +39,7 @@ Aptos at 10 to 16 points; at 8 points Excel's width was 2 px narrower and at 20 
 wider (0.33 of a character), and a word with accented letters up to 4 px off in Arial.
 Fonts are measured with ooxml-common's advance widths
 (:func:`ooxml_common.text.fontmap.metrics_for`): a face is measured when its table is its
-own or a metric-compatible clone's (Calibri, Arial, Helvetica, Times New Roman, Courier
+own or a clone's with the same widths (Calibri, Arial, Helvetica, Times New Roman, Courier
 New, Cambria, Aptos, Aptos Display and the others :func:`measurable` accepts).  A cell in
 another font refuses the fit (``unmeasured_font``, naming the font and the fonts that are
 measured): Aptos Narrow, which has no table of its own, measured 15% narrower than Aptos's
@@ -92,7 +93,7 @@ SHEET_ORDER = ("sheetPr", "dimension", "sheetViews", "sheetFormatPr", "cols", "s
                "conditionalFormatting", "dataValidations", "hyperlinks", "printOptions",
                "pageMargins", "pageSetup", "headerFooter", "rowBreaks", "colBreaks",
                "customProperties", "cellWatches", "ignoredErrors", "smartTags", "drawing",
-               "legacyDrawing", "legacyDrawingHF", "picture", "oleObjects", "controls",
+               "legacyDrawing", "legacyDrawingHF", "picture", "oleObjects",
                "webPublishItems", "tableParts", "extLst")
 
 #: Excel's padding of a column width set by hand, and of a fitted one, in pixels (measured).
@@ -121,7 +122,7 @@ class Face:
 
 def measurable(name: str) -> bool:
     """Whether ``name``'s advance widths are known: ooxml-common has a table of its own,
-    or of a metric-compatible clone (Carlito for Calibri)."""
+    or of a clone with the same widths (Carlito for Calibri)."""
     from ooxml_common.text.fontmap import metrics_for, substitution_for
 
     if metrics_for(name) is None:

@@ -349,9 +349,10 @@ def test_cleaning_changes_no_tool_definition():
     # (X10's, T19's, L8's, X3b's and X5's additions aside); the read tools
     # only (E3's xlsx_set_cells is new)
     # (round 31's xlsx_trace, a group of its own, aside too; and round 44's
-    # xlsx_write_table, an edit tool)
+    # xlsx_write_table, an edit tool, and xlsx_format, a group of its own)
     own = [d for d in plain if d["name"].startswith("xlsx_")
-           and d["name"] not in ("xlsx_set_cells", "xlsx_trace", "xlsx_write_table")]
+           and d["name"] not in ("xlsx_set_cells", "xlsx_trace", "xlsx_write_table",
+                                 "xlsx_format")]
     assert len(json.dumps(own, separators=(",", ":"), ensure_ascii=False)) == XLSX_CHARS
 
 

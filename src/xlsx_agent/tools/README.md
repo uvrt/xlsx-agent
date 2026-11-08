@@ -35,6 +35,7 @@ on Azure OpenAI's Responses API.
 | `core` (always loaded) | `open_document`, `undo`, `batch`, `read_batch`, `describe`, `find_text`, `save_document`, `xlsx_read`, `xlsx_profile`, `xlsx_query`, `xlsx_derive`, `xlsx_compare`, `xlsx_validate_data` |
 | `shared_misc` | `close_document`, `read_blob` |
 | `xlsx_edit` (E3, E4) | `xlsx_set_cells`, `xlsx_write_table` |
+| `xlsx_format` (E7) | `xlsx_format`: font, fill, border, alignment, number format, locked, `like` or a named `style`, column `width` or `fit` (Excel's AutoFit, measured), row `height`, `freeze`, `gridlines` |
 | `xlsx_trace` (round 31) | `xlsx_trace`: rows of a table or dataset, each with the rows it rests on and why (`source`, `names` by key, `lists` its key), every value in full, within a size budget, what did not fit listed |
 
 `describe` and `find_text` are the shared tools with the workbook's handlers: one
