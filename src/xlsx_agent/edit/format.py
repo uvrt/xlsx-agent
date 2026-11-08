@@ -54,7 +54,9 @@ every cell it holds.  Excel makes no cell where nothing is.
 EditError`): an option or value that is not one (``bad_format``, with what is valid), a
 colour that is not ``#RRGGBB`` (``bad_format``), a style the workbook does not have
 (``no_cell_style``, with the names it has), ``like`` and ``style`` together, a protected
-sheet (``protected``), cells the host's write policy does not cover (``not_writable``), and
+sheet (``protected``; unless its protection allows formatting cells, ``formatCells="0"``,
+and for whole columns or rows ``formatColumns``/``formatRows`` too, as Excel allows,
+measured), cells the host's write policy does not cover (``not_writable``), and
 more than :data:`MAX_CELLS` cells in one call (``too_many_cells``: format whole columns or
 rows instead).  Formatting changes no value: the calculation status stays as it was.
 """
@@ -895,10 +897,39 @@ def targets(workbook: Any, target: Any, problems: Problems, *,
     return out
 
 
+#: What a protected sheet still lets be done, by the call's action (measured, Excel for Mac
+#: 16.106, 2026-11-08, AppleScript on a sheet protected with Excel's defaults and on one
+#: with ``formatCells``, ``formatColumns`` and ``formatRows`` set to ``0``): freezing panes
+#: and hiding gridlines always (a window's view, not the sheet's content); formatting cells,
+#: column widths and row heights only where the protection's flag of that name is ``0``
+#: (with the defaults Excel refused bold and left widths and heights as they were).
+#: ``None`` (the default) is refused on any protected sheet.
+PROTECTED_ALLOWS = ("view", "formatCells", "formatColumns", "formatRows")
+
+
+def protection_allows(workbook: Any, sheet: Any, action: "str | tuple[str, ...] | None") -> bool:
+    """Whether ``sheet``'s protection lets ``action`` (one of :data:`PROTECTED_ALLOWS`, or
+    several, all needed) be done; ``True`` for a sheet that is not protected."""
+    if not sheet.protected:
+        return True
+    if action is None:
+        return False
+    if action == "view":
+        return True
+    root = workbook.package.tree(sheet.part)
+    node = root.find(_X + "sheetProtection") if root is not None else None
+    if node is None:
+        return True
+    needed = (action,) if isinstance(action, str) else action
+    return all((node.get(name) or "1").strip().lower() in ("0", "false") for name in needed)
+
+
 def guard(workbook: Any, found: list[Target], problems: Problems, *,
-          whole_sheet: bool = False) -> None:
+          whole_sheet: bool = False,
+          protected: "str | tuple[str, ...] | None" = None) -> None:
     """A protected sheet, and the host's write policy: the cells (or, ``whole_sheet``, the
-    whole sheet, for a sheet's settings) must be writable."""
+    whole sheet, for a sheet's settings) must be writable; ``protected`` the action a
+    protected sheet may still allow (:data:`PROTECTED_ALLOWS`)."""
     from .policy import PolicyError
 
     try:
@@ -907,9 +938,11 @@ def guard(workbook: Any, found: list[Target], problems: Problems, *,
         problems.add("bad_policy", "policy", error.message)
         return
     for item in found:
-        if item.sheet.protected:
+        if item.sheet.protected and not protection_allows(workbook, item.sheet, protected):
+            allowed_by = (f" or protect it allowing {protected}" if isinstance(protected, str)
+                          and protected != "view" else "")
             problems.add("protected", item.text, "unprotect the sheet first "
-                         "(wb.unprotect_sheet)")
+                         f"(wb.unprotect_sheet){allowed_by}")
             continue
         if allowed is None:
             continue
@@ -955,7 +988,10 @@ def format_cells(workbook: Any, target: Any, **options: Any) -> Formatted:
         if spec.empty and not problems.found:
             problems.add("bad_format", "options", "nothing to change: give font, fill, "
                          "border, alignment, number_format, protection, like or style")
-        guard(workbook, found, problems)
+        needs = {"cells": ("formatCells",), "columns": ("formatCells", "formatColumns"),
+                 "rows": ("formatCells", "formatRows")}
+        for item in found:
+            guard(workbook, [item], problems, protected=needs[item.span])
         plan = [(item, list(_cells_of(editor, item))) for item in found]
         total = sum(len(cells) for _, cells in plan)
         if total > MAX_CELLS:

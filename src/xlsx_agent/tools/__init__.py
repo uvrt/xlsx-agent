@@ -63,7 +63,9 @@ workbook has changed since is marked stale, never refreshed (ooxml-edit's datase
 ``xlsx_validate_data`` (:mod:`.validate`), a workbook checked against a declared schema.
 From 0.2 (E1, E3) the shared ``save_document``, ``undo`` and ``batch`` are in the core, and
 the deferred ``xlsx_edit`` group holds ``xlsx_set_cells`` (:mod:`.edit`): cells written
-typed and guarded, in one step (the ``edit`` role's).  Where the model may write is the
+typed and guarded, in one step (the ``edit`` role's), and from 0.1.21 ``xlsx_manage_sheets``
+(:mod:`.sheets`): sheets added, renamed (references rewritten), cleared, deleted (refused
+while anything refers to them) and hidden.  Where the model may write is the
 application's (X4): ``policy(session, {"cells": [...], "tables": [...]})`` before the
 session opens a workbook (:mod:`xlsx_agent.edit.policy`; ``{"cells": []}`` lets nothing be
 written), ``narrow(session, ...)`` to narrow it later; ``describe`` shows it
@@ -91,11 +93,13 @@ from .formatting import TOOLS as FORMATTING_TOOLS
 from .query import TOOLS as QUERY_TOOLS
 from .read import TOOLS as READ_TOOLS
 from .shared import TOOLS as SHARED_TOOLS
+from .sheets import TOOLS as SHEET_TOOLS
 from .trace import TOOLS as TRACE_TOOLS
 from .validate import TOOLS as VALIDATE_TOOLS
 
 GROUPS = [*_shared.GROUPS,
-          ToolGroup("xlsx_edit", "Excel: write cells (text, numbers, dates, formulas, blanks)."),
+          ToolGroup("xlsx_edit", "Excel: write cells (text, numbers, dates, formulas, blanks); "
+                    "add, rename, clear, delete, hide sheets."),
           ToolGroup("xlsx_format", "Excel: format cells (font, fill, border, alignment, number "
                     "format), column widths and AutoFit, row heights, freeze panes, gridlines."),
           ToolGroup("xlsx_trace", "Excel: trace rows to the rows they rest on (sources, keys "
@@ -103,7 +107,7 @@ GROUPS = [*_shared.GROUPS,
 
 #: Every tool a workbook has, the shared ones included, in the order they are offered.
 TOOLS = [*SHARED_TOOLS, *READ_TOOLS, *QUERY_TOOLS, *DERIVE_TOOLS, *COMPARE_TOOLS,
-         *VALIDATE_TOOLS, *EDIT_TOOLS, *FORMATTING_TOOLS, *TRACE_TOOLS]
+         *VALIDATE_TOOLS, *EDIT_TOOLS, *SHEET_TOOLS, *FORMATTING_TOOLS, *TRACE_TOOLS]
 
 CORE_TOOLS = [t.name for t in TOOLS if t.group == CORE]
 

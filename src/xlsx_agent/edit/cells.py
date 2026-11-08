@@ -115,11 +115,12 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping
 
 from ooxml_common.locales import DATE_ORDERS
-from ooxml_edit.markdown import plain
+from ooxml_edit.markdown import Run, plain
 from ooxml_edit.sheets import MAX_TEXT, Area, Cell, Formula, RichText
 
 from ..formula import ShiftError, shift, tokens
 from ..markdown import cell_runs
+from ..read.strings import decode_xstring, encode_xstring, needs_xstring
 from ..read.regions import capacity_rows
 from ..read.styles import classify_format
 from ..address import format_cell
@@ -180,6 +181,10 @@ class Written:
     new_rows: tuple[str, ...] = ()
     invalid: tuple[str, ...] = ()
     unchecked: tuple[str, ...] = ()
+    #: The cells whose text (or formula) holds characters XML cannot carry, or text that
+    #: reads as an escape, written ``_xHHHH_`` as Excel writes them (R63b): read back as
+    #: given, by xlsx-agent and by Excel.
+    escaped: tuple[str, ...] = ()
 
     def as_dict(self, limit: int = MAX_LISTED) -> dict[str, Any]:
         """As plain data, at most ``limit`` cells listed (the rest counted)."""
@@ -194,7 +199,7 @@ class Written:
             out["fixed_height"] = list(self.fixed_height[:limit])
         if self.new_rows:
             out["new_rows"] = list(self.new_rows[:limit])
-        for name in ("invalid", "unchecked"):
+        for name in ("invalid", "unchecked", "escaped"):
             found = getattr(self, name)
             if found:
                 out[name] = list(found[:limit])
@@ -255,7 +260,7 @@ def set_cells(workbook: Any, cells: Any, *, replace_formulas: bool = False,
                 base = style if style is not None else writer.style(write.cell, inherited=True)
                 if base < editor.cells.styles.count:
                     style = editor.cells.styles.with_wrap_text(base)
-            if editor.write(write.sheet, write.cell, write.value, style=style):
+            if editor.write(write.sheet, write.cell, stored(write.value), style=style):
                 changed += 1
         if changed:
             # What was read from the cells (scans, keys, a table's rows) is read again by
@@ -268,10 +273,44 @@ def set_cells(workbook: Any, cells: Any, *, replace_formulas: bool = False,
         invalid, unchecked = _checked(workbook, planned)
     except Exception:  # noqa: BLE001 -- advisory: a rule that cannot be read fails no write
         invalid, unchecked = (), tuple(w.address for w in planned)
+    escaped = tuple(w.address for w in planned if stored(w.value) is not w.value)
     return Written(cells=tuple(w.address for w in planned), changed=changed,
                    old={w.address: w.old for w in planned}, released=tuple(released),
                    calculation=workbook.calculation_status, fixed_height=fixed,
-                   new_rows=rows, invalid=invalid, unchecked=unchecked)
+                   new_rows=rows, invalid=invalid, unchecked=unchecked, escaped=escaped)
+
+
+def stored(value: Any) -> Any:
+    """``value`` as the writer is given it (R63b): text, rich text's runs and a formula's
+    text as ST_Xstrings (:func:`xlsx_agent.read.strings.encode_xstring`: what XML cannot
+    carry, and text that reads as an escape, written ``_xHHHH_`` as Excel writes it);
+    ``value`` itself when nothing needs it."""
+    if isinstance(value, str):
+        return encode_xstring(value) if needs_xstring(value) else value
+    if isinstance(value, Formula):
+        text = value.text
+        cached = value.value
+        if needs_xstring(text) or isinstance(cached, str) and needs_xstring(cached):
+            return Formula(encode_xstring(text), encode_xstring(cached)
+                           if isinstance(cached, str) else cached)
+        return value
+    if isinstance(value, RichText):
+        if not any(needs_xstring(run.text) for run in value.runs) \
+                and not needs_xstring(value.text):
+            return value
+        runs = [Run(encode_xstring(run.text), run.bold, run.italic, run.strike)
+                for run in value.runs]
+        if decode_xstring("".join(run.text for run in runs)) != value.text:
+            # An escape-like text across two runs (_x00 | 41_): its underscore escaped.
+            runs = [Run(_PARTIAL.sub("_x005F_", run.text) if n < len(runs) - 1 else run.text,
+                        run.bold, run.italic, run.strike) for n, run in enumerate(runs)]
+        return RichText(tuple(runs))
+    return value
+
+
+#: The underscore of an escape-like text a run ends with (``_x00``), which the next run's
+#: text could complete.
+_PARTIAL = re.compile(r"_(?=x[0-9A-Fa-f]{0,4}$)")
 
 
 def _checked(workbook: Any, planned: "list[Planned]") -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -538,7 +577,9 @@ class _Shown:
 
     def meets(self, content: Any) -> bool:
         held, kind = content.value, content.kind
-        if kind in ("text", "error"):
+        if kind == "text":
+            return decode_xstring(held) == self.text
+        if kind == "error":
             return held == self.text
         if kind == "bool":
             return self.text.strip().lower() == ("true" if held else "false")
@@ -631,7 +672,9 @@ def _meets(content: Any, kind: str | None, value: Any) -> bool:
     if isinstance(value, (int, float)):
         return content.kind == "number" and not isinstance(held, bool) \
             and float(held) == float(value)
-    return content.kind in ("text", "error") and held == value
+    if content.kind == "text":
+        return decode_xstring(held) == value
+    return content.kind == "error" and held == value
 
 
 class _SheetFacts:
@@ -714,6 +757,11 @@ def _value(workbook: Any, facts: _SheetFacts, label: str, sheet: Any, cell: Cell
     if isinstance(given, str):
         if len(given) > MAX_TEXT:
             refusals.add("text_too_long", label, f"{len(given):,} characters")
+            return None
+        if needs_xstring(given) and len(encode_xstring(given)) > MAX_TEXT:
+            refusals.add("text_too_long", label, f"{len(encode_xstring(given)):,} characters "
+                         "as stored, its characters XML cannot carry written _xHHHH_ as "
+                         "Excel writes them")
             return None
         if not given:
             refusals.add("bad_value", label, "empty text is no value: write None for a blank")

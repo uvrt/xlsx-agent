@@ -34,7 +34,7 @@ on Azure OpenAI's Responses API.
 | --- | --- |
 | `core` (always loaded) | `open_document`, `undo`, `batch`, `read_batch`, `describe`, `find_text`, `save_document`, `xlsx_read`, `xlsx_profile`, `xlsx_query`, `xlsx_derive`, `xlsx_compare`, `xlsx_validate_data` |
 | `shared_misc` | `close_document`, `read_blob` |
-| `xlsx_edit` (E3, E4) | `xlsx_set_cells`, `xlsx_write_table` |
+| `xlsx_edit` (E3, E4, E5) | `xlsx_set_cells`, `xlsx_write_table`, `xlsx_manage_sheets` |
 | `xlsx_format` (E7) | `xlsx_format`: font, fill, border, alignment, number format, locked, `like` or a named `style`, column `width` or `fit` (Excel's AutoFit, measured), row `height`, `freeze`, `gridlines` |
 | `xlsx_trace` (round 31) | `xlsx_trace`: rows of a table or dataset, each with the rows it rests on and why (`source`, `names` by key, `lists` its key), every value in full, within a size budget, what did not fit listed |
 
@@ -96,6 +96,26 @@ cells are objects in an array in an array, and the strict set stays `xlsx_set_ce
 application that offers new workbooks adds it (`Toolbox([*TOOLS, NEW_DOCUMENT], ...)`); in
 the core it would cost about 225 estimated tokens, past the core's budget.
 
+**Sheets** (`xlsx_manage_sheets`, E5; round 44). One `action` a call, each one undoable
+step: `add` (`name`, `position`: 1 the first tab, the end by default; an empty worksheet as
+Excel makes one), `rename` (`sheet`, `name`: every formula, defined name, rule,
+validation, chart series and pivot cache naming it rewritten as Excel rewrites them,
+listed in `rewritten`; hyperlinks, which Excel leaves, in `not_rewritten`), `clear`
+(Excel's Clear All on every cell: references to the sheet stay -- the way to regenerate a
+sheet), `delete` (refused while anything refers to the sheet, each referent in
+`details.referents` by kind and address; `force` writes `#REF!` into each, as Excel does),
+`hide` and `unhide` (the active tab moves to a visible sheet; the last visible sheet is
+never hidden). Already so is no error: `changed: false` with a `note`. An `add` given only
+`sheet` takes it as the name. A sheet withheld from the model is neither reached nor named:
+a referent on one is counted (`referents_withheld`). The workbook's structure lock, a
+protected sheet (for `clear`) and the host's write policy (a sheet covered whole) refuse
+before anything changes. Sent non-strict (the strict set stays `xlsx_set_cells`). Merged
+cells (`Workbook.merge`, `unmerge`) are host calls only.
+
+**Text XML cannot carry** (R63b). `xlsx_set_cells` writes text holding control characters
+(and a carriage return, and text that reads as an `_xHHHH_` escape) as Excel writes it,
+`_xHHHH_`, and names those cells in `escaped`; it reads back as given.
+
 **Guards** (`xlsx_set_cells`, X4). An `address` may name a value by its row's key,
 `t:stock/P-7/Quantity`: the row holding the key now, wherever it moved; a key two rows
 share, a key no row has, a row by place (`#3`), a table without a declared key column and
@@ -145,10 +165,10 @@ A workbook can also come in as an input the model opens itself:
 `{"blob": "b1"}`. `.xlsx`, `.xlsm`, `.xltx` and `.xltm` open; `.xls`, `.xlsb` and encrypted
 workbooks are refused with the reason. A macro is never run.
 
-**Roles.** Every workbook tool but `undo`, `xlsx_set_cells` and `xlsx_write_table` reads,
-so those are the `review` role's (ooxml-edit 0.45.0,
+**Roles.** Every workbook tool but `undo`, `xlsx_set_cells`, `xlsx_write_table` and
+`xlsx_manage_sheets` reads, so those are the `review` role's (ooxml-edit 0.45.0,
 [TOOLS.md, "Roles"](https://github.com/uvrt/ooxml-edit/blob/main/docs/TOOLS.md)); `undo`,
-`xlsx_set_cells` and `xlsx_write_table` are `edit`'s. A reviewer's toolbox,
+`xlsx_set_cells`, `xlsx_write_table` and `xlsx_manage_sheets` are `edit`'s. A reviewer's toolbox,
 `Toolbox(..., roles=["review"])`, sends the same definitions without those (and without the
 `xlsx_edit` group), and in a
 toolbox with the deck or Word tools a reviewer keeps every reading workbook tool.
@@ -156,7 +176,7 @@ toolbox with the deck or Word tools a reviewer keeps every reading workbook tool
 | Role | Workbook tools |
 | --- | --- |
 | `review` | `describe`, `find_text`, `xlsx_read`, `xlsx_profile`, `xlsx_query`, `xlsx_derive`, `xlsx_compare`, `xlsx_validate_data`, `xlsx_trace`, `read_batch` |
-| `edit` | `undo`, `xlsx_set_cells`, `xlsx_write_table` |
+| `edit` | `undo`, `xlsx_set_cells`, `xlsx_write_table`, `xlsx_manage_sheets` |
 | any | `open_document`, `close_document`, `read_blob`, `batch`, `save_document` |
 Agents sharing one session (ooxml-edit 0.46.0) each work through a view of it,
 `session.view(roles=[...], context={...})`: the workbook and the datasets derived from it

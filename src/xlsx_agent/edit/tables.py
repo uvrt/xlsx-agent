@@ -95,6 +95,7 @@ from lxml import etree
 from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell, Formula
 
 from ..address import AddressError, RangeAddress, format_range, format_sheet, parse_address
+from ..read.strings import encode_xstring
 from .cells import MAX_LISTED, Written
 
 NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -598,7 +599,7 @@ def _add_table(workbook: Any, sheet: Any, area: Area, name: str, header: list[st
     for n, text in enumerate(header, 1):
         column = etree.SubElement(columns, _X + "tableColumn")
         column.set("id", str(n))
-        column.set("name", text)
+        column.set("name", encode_xstring(text))   # an ST_Xstring, as a cell's text (R63b)
     info = etree.SubElement(root, _X + "tableStyleInfo")
     for key, value in (("name", style), ("showFirstColumn", "0"), ("showLastColumn", "0"),
                        ("showRowStripes", "1"), ("showColumnStripes", "0")):

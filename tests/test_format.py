@@ -270,7 +270,8 @@ def test_whole_columns_and_rows_are_formatted_as_excel_formats_them():
     sheet = _sheet(wb)
     col = sheet.find(X + "cols")[0]
     assert (col.get("min"), col.get("max")) == ("4", "4") and col.get("style")
-    assert col.get("width") == str(stored_width(8, 6))       # the default, base 8
+    # no sheetFormatPr: Excel for Mac's base 10 (measured), 10.83203125 with Calibri 11
+    assert col.get("width") == str(stored_width(10, 6)) == "10.83203125"
     row = [r for r in sheet.iter(X + "row") if r.get("r") == "2"][0]
     assert row.get("customFormat") == "1" and row.get("s")
     held = {c.get("r") for c in sheet.iter(X + "c") if c.get("s")}
@@ -323,6 +324,36 @@ def test_a_protected_sheet_and_the_write_policy_refuse_formatting():
     with pytest.raises(EditError) as error:
         wb.freeze_panes("Stock", rows=1)
     assert error.value.code == "not_writable"
+
+
+def test_a_protected_sheet_allows_what_excel_allows():
+    """Measured: on a sheet protected with Excel's defaults, freezing panes and hiding
+    gridlines work and formatting, widths and heights do not; with formatCells,
+    formatColumns and formatRows 0 they all do."""
+    _, wb = _open(protected=True)
+    assert wb.freeze_panes("Stock", at="B2").changed == 1
+    assert wb.set_gridlines("Stock", False).changed == 1
+    for call in (lambda: wb.set_column_widths("Stock!B:B", 20),
+                 lambda: wb.set_row_heights("Stock!2:2", 30),
+                 lambda: wb.format("Stock!A1", font={"bold": True})):
+        with pytest.raises(EditError) as error:
+            call()
+        assert error.value.code == "protected"
+    book = stock_book()
+    data = book.to_bytes()
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        parts = {n: archive.read(n) for n in archive.namelist()}
+    parts["xl/worksheets/sheet1.xml"] = parts["xl/worksheets/sheet1.xml"].replace(
+        b"</sheetData>", b'</sheetData><sheetProtection sheet="1" objects="1" scenarios="1" '
+        b'formatCells="0" formatColumns="0" formatRows="0"/>')
+    from build import zip_parts
+
+    wb = Workbook.open(zip_parts(parts))
+    assert wb.sheet("Stock").protected
+    assert wb.set_column_widths("Stock!B:B", 20).changed == 1
+    assert wb.set_row_heights("Stock!2:2", 30).changed == 1
+    assert wb.format("Stock!A1", font={"bold": True}).changed == 1
+    assert wb.format("Stock!D:D", font={"bold": True}).columns == ("Stock!D:D",)
 
 
 def test_formatting_is_one_step_undone_to_the_bytes_opened_and_atomic_in_a_batch():

@@ -12,7 +12,10 @@ fitted to the content), row heights, freeze panes, gridlines and sheet protectio
     wb.unprotect_sheet("Stock", password="s3cret")
 
 Each is one step (or part of the open batch), refused before anything changes, and changes
-no value: the calculation status stays as it was.  Something already so is ``changed: 0``
+no value: the calculation status stays as it was.  On a protected sheet, as Excel allows
+(measured): panes are frozen and gridlines hidden always; widths only where the
+protection's ``formatColumns`` is ``0``, heights only where ``formatRows`` is
+(:data:`xlsx_agent.edit.format.PROTECTED_ALLOWS`).  Something already so is ``changed: 0``
 with a note, never an error.
 
 **Widths** are characters of the workbook's default font's widest digit, as Excel's Column
@@ -99,9 +102,13 @@ SHEET_ORDER = ("sheetPr", "dimension", "sheetViews", "sheetFormatPr", "cols", "s
 #: Excel's padding of a column width set by hand, and of a fitted one, in pixels (measured).
 PADDING = 5
 FIT_PADDING = 7
-#: A sheet's base column width, in characters, when it gives none (ECMA-376 Part 1,
-#: 18.3.1.81 ``baseColWidth``).
+#: A sheet's base column width, in characters, when its ``sheetFormatPr`` gives none
+#: (ECMA-376 Part 1, 18.3.1.81 ``baseColWidth``).
 BASE_COLUMN_WIDTH = 8
+#: ... and when the sheet has no ``sheetFormatPr`` at all: what Excel for Mac 16.106 wrote
+#: for such a sheet (``baseColWidth="10"``, a column's width ``10.83203125`` with Calibri
+#: 11; measured on Mac, 2026-11-08 -- Excel for Windows not measured).
+BASE_COLUMN_WIDTH_ABSENT = 10
 #: The widest a column is (Excel's column width limit, in characters).
 MAX_WIDTH = 255
 #: What a password is hashed with, as Excel's Protect Sheet hashed it (measured).
@@ -241,14 +248,15 @@ class Columns:
 
     def default_width(self) -> float:
         """The sheet's default column width in the file's unit: ``defaultColWidth``, or
-        ``baseColWidth`` (default 8) as Excel stores it."""
+        ``baseColWidth`` (default 8; 10 when the sheet has no ``sheetFormatPr``, as Excel
+        for Mac wrote) as Excel stores it."""
         node = self.root.find(_X + "sheetFormatPr")
         if node is not None and node.get("defaultColWidth"):
             try:
                 return float(node.get("defaultColWidth"))
             except ValueError:
                 pass
-        base = BASE_COLUMN_WIDTH
+        base = BASE_COLUMN_WIDTH if node is not None else BASE_COLUMN_WIDTH_ABSENT
         if node is not None and (node.get("baseColWidth") or "").isdigit():
             base = int(node.get("baseColWidth"))
         return stored_width(base, digit_width(default_face(self.workbook)))
@@ -374,7 +382,7 @@ def set_column_widths(workbook: Any, target: Any, width: Any) -> Formatted:
                                           or not 0 <= width <= MAX_WIDTH):
         problems.add("bad_format", "width", f'characters, 0 to {MAX_WIDTH}, "fit", or None '
                      f"(the sheet's default), not {width!r}")
-    guard(workbook, found, problems)
+    guard(workbook, found, problems, protected="formatColumns")
     editor = workbook.editor
     if editor.cells.styles is None and width is not None:
         problems.add("bad_format", "width", "the workbook has no stylesheet: its default "
@@ -448,7 +456,7 @@ def set_row_heights(workbook: Any, target: Any, height: Any) -> Formatted:
                                or not math.isfinite(height) or not 0 <= height <= 409):
         problems.add("bad_format", "height", f"points, 0 to 409, or None (the row fits its "
                      f"text), not {height!r}")
-    guard(workbook, found, problems)
+    guard(workbook, found, problems, protected="formatRows")
     total = sum(item.area.rows for item in found)
     if total > 100_000:
         problems.add("too_many_cells", found[0].text, f"{total:,} rows; at most 100,000 in "
@@ -525,7 +533,7 @@ def freeze_panes(workbook: Any, sheet: Any, *, rows: int | None = None,
         if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= limit:
             problems.add("bad_format", name, f"a whole number of {name}, 0 to {limit}")
     if item is not None:
-        guard(workbook, [item], problems, whole_sheet=True)
+        guard(workbook, [item], problems, whole_sheet=True, protected="view")
     problems.raise_any()
     assert item is not None
     editor = workbook.editor
@@ -585,7 +593,7 @@ def set_gridlines(workbook: Any, sheet: Any, shown: Any) -> Formatted:
     if not isinstance(shown, bool):
         problems.add("bad_format", "shown", f"true or false, not {shown!r}")
     if item is not None:
-        guard(workbook, [item], problems, whole_sheet=True)
+        guard(workbook, [item], problems, whole_sheet=True, protected="view")
     problems.raise_any()
     assert item is not None
     editor = workbook.editor

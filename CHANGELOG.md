@@ -26,7 +26,7 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
-## 0.1.21 (unreleased) -- formatting and layout from code
+## 0.1.22 (unreleased) -- formatting and layout from code
 
 - **`wb.format(target, font=, fill=, border=, alignment=, number_format=, protection=,
   like=, style=)`** (production round 44, R53; E7): cells, whole columns or whole rows
@@ -58,6 +58,17 @@ has the detail of every milestone. Why each dependency is needed at its version:
   **`wb.unprotect_sheet`**: Excel's `sheetProtection` defaults, a password hashed as Excel
   hashes it (SHA-512, a 16-byte salt, 100,000 rounds: the hash Excel wrote is the one
   computed here, and Excel unprotected a sheet protected here with its password).
+- **On a protected sheet, as Excel allows** (measured, Excel for Mac 16.106, AppleScript
+  on a sheet protected with Excel's defaults and on one with `formatCells`,
+  `formatColumns` and `formatRows` `0`): `freeze_panes` and `set_gridlines` always;
+  `format` only where `formatCells="0"` (whole columns and rows also need `formatColumns`
+  / `formatRows`), widths only where `formatColumns="0"`, heights only where
+  `formatRows="0"` -- with the defaults Excel refused bold and left widths and heights as
+  they were. Anything else on a protected sheet is refused (`protected`).
+- A column given a style on a sheet without `sheetFormatPr` gets Excel for Mac's default
+  width there (`baseColWidth` 10: `10.83203125` with Calibri 11; measured on Mac, Excel
+  for Windows not measured); with `sheetFormatPr`, its `defaultColWidth`, else
+  `baseColWidth` (default 8).
 - Each call is one step, undone to the bytes before it, refused before anything changes
   with every problem listed and what would work (`bad_format`, `bad_target`,
   `no_cell_style`, `too_many_cells`, `unmeasured_font`, `wrong_password`, `protected`,
@@ -65,8 +76,8 @@ has the detail of every milestone. Why each dependency is needed at its version:
   value: the calculation status is kept.
 - **`xlsx_format`**, the deferred `xlsx_format` group's one tool (the `edit` role's): the
   formats, `width` or `fit`, `height`, `freeze` and `gridlines` in one call, flat; not
-  strict (the strict set stays `xlsx_set_cells`). 499 estimated; every definition 6,298 ->
-  about 6,797 (guard 6,800); the core unchanged. Protection is the host's only: no password
+  strict (the strict set stays `xlsx_set_cells`). 499 estimated; every definition 6,578 ->
+  about 7,077 (guard 7,080); the core unchanged. Protection is the host's only: no password
   in a tool call.
 - Oracle (Excel for Mac 16.106): the shop stock list plain, `r`-less, with inline strings
   and with a table, and a stock list with four named styles applied, each formatted with
@@ -75,6 +86,46 @@ has the detail of every milestone. Why each dependency is needed at its version:
   the widths, the height, the panes, the gridlines and the password's hash.
 - Needs ooxml-edit 0.95.0 (`Worksheet.set_style`, `set_row_height`, `set_row_style`,
   `cells_in`; `Styles.add_format`).
+
+## 0.1.21 (unreleased) -- sheets, merged cells, text XML cannot carry
+
+- **Sheets** (production round 44, R52; E5): `wb.add_sheet(name, index)`,
+  `wb.rename_sheet(sheet, name)`, `wb.delete_sheet(sheet, force=False)`,
+  `wb.clear_sheet(sheet, force=False)`, `wb.set_sheet_state(sheet, "visible" | "hidden" |
+  "veryHidden")` and `wb.sheet_referents(sheet)` (`xlsx_agent.edit.sheets`): each one
+  undoable step, refused before anything changes, as Excel does it (measured, Excel for Mac
+  16.106). A rename rewrites every formula, defined name, conditional format and data
+  validation (the `x14` ones too), chart series and title (`c:f`), pivot cache source and
+  table formula that names the sheet (`rewritten`, by kind and address); a hyperlink's
+  location, which Excel leaves, is listed (`not_rewritten`), and a sheet's name inside a
+  string is no reference. A delete is refused while anything refers to the sheet
+  (`referred`, `SheetError.referents` by address); `force` deletes it as Excel does: each
+  reference `#REF!`, a 3-D run ending at it shrunk inward, the names local to it gone, the
+  active tab moved. `clear_sheet` is Excel's Clear All on every cell -- cells, row and
+  column formats, merges, rules, validations, comments, hyperlinks, tables and pivot tables
+  go; widths, custom heights, views, print settings, drawings and every reference to the
+  sheet stay -- the way to regenerate a sheet (delete + add breaks every reference).
+  Hiding the active sheet moves the active tab right, else left; the last visible sheet is
+  never hidden. Names as Excel takes them (1-31 characters, none of `: \ / ? * [ ]`, no
+  `'` at an end, unique as Excel compares names); control characters refused. A locked
+  structure, a protected sheet (clear) and the host's policy (the sheet covered whole)
+  refuse.
+- **`xlsx_manage_sheets`** (deferred, `xlsx_edit`; non-strict): `action` add, rename,
+  clear, delete (refused with `details.referents`, or `force`), hide, unhide; a no-op is
+  `changed: false`; withheld sheets neither reached nor named. 280 estimated tokens (about
+  414 counted); the core unchanged.
+- **Merged cells** (R56): `wb.merge(range, drop=False)` gives every cell the first cell's
+  format, refused while other cells hold content (each listed) unless `drop`, which drops
+  them as Excel does (the first value moved into an empty first cell); an overlap with a
+  merge (with the union to merge), a table or an array formula is refused.
+  `wb.unmerge(range, fill=None | "anchor")`: every merge the range overlaps.
+- **Text XML cannot carry** (R63b): `set_cells` writes control characters, a carriage
+  return and text that reads as an escape (`_x0041_`) as Excel writes them, `_xHHHH_`
+  (`_x005F_x0041_`), in shared and inline strings, rich text and formulas, and names those
+  cells (`escaped`); before, it raised lxml's `ValueError`. A formula's string result
+  (`t="str"`) and its text are read decoded.
+- `xlsx_agent.formula.sheets`: sheet names in references renamed and deleted, structured
+  references to a removed table, names folded as Excel compares them.
 
 ## 0.1.20 (unreleased) -- new workbooks, tables written, rows appended
 
