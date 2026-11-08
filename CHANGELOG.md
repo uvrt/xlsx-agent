@@ -26,6 +26,36 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.19 (unreleased) -- the length of a text in a page
+
+- **`text_chars`** (production round 41, R45) on `xlsx_read` and `xlsx_query`, of a table, a
+  sheet's cells or a dataset: the characters a cell's text (a value, a formula, a comment,
+  a link) may have in a page before it is cut, by default 2,000 as before (a read of one
+  cell: as far as the page holds, unless `text_chars` is given). `max_text_chars` and
+  `text_length` are read as it, with a warning. A longer `text_chars` gives fewer cells a
+  page, never a bigger one: pages keep `max_chars`/`Limits.max_result_chars` and page with
+  `next_cursor` as before.
+- **`cut.text` gives the call for the rest** (rule 4): besides `count` and `first`, the
+  `longest` cut text's full length and `call`, the call's own arguments (the same page, its
+  cursor if any) with `text_chars` that long -- and without a `max_chars` too small for it
+  -- which gives every text of the page in full, paged. A text longer than a page holds is
+  cut to the page in any read, and a warning says so. A cut cell keeps its full `length`
+  (`f_length`, a comment's `length`, `url_length`). A dataset read's `cut.text` and
+  `xlsx_derive`'s were a count: they are now this object, `xlsx_derive`'s `call` the
+  `xlsx_read` of the new dataset.
+- Definitions: `xlsx_read` 690 -> 713 estimated, `xlsx_query` 513 -> 537, the core 4,924 ->
+  4,972, every definition 5,896 -> 5,943: counted online 7,024, past the 7,000 budget. So
+  `xlsx_query`'s description no longer says "A filter on a column of another type is
+  refused, naming the type." (the refusal says so itself, with the tests the type takes):
+  `xlsx_query` 537 -> 518, the core 4,972 -> 4,953 (about 6,997 online at the counted
+  ratio), every definition 5,943 -> 5,924; counted online 7,006. So `xlsx_read`'s `target`
+  no longer says "held_by names them (null: cells read as themselves)" (the result's
+  `held_by`, the first such read's warning and `cells_only` say it): `xlsx_read` 713 -> 698,
+  the core 4,953 -> 4,938 (about 6,985 online), every definition 5,924 -> 5,909. **The
+  online count must be checked again**
+  (`test_tools_online.py`, budget 7,000). Neither tool is strict. `xlsx_trace` is unchanged
+  (its values are always whole).
+
 ## 0.1.18 (unreleased) -- key sets on datasets, any of a list, loose text
 
 - **Key sets on datasets** (production round 40, R42): `d:by_region/{South,North}/total`

@@ -398,7 +398,10 @@ cursor for the rest. The ones a workbook meets:
 | `max_datasets`, `max_dataset_cells` | 50, 50,000 | datasets in a session; values in one |
 
 And the tools' own: `describe` targets about 3,000 tokens and names what it left for
-`xlsx_profile`; `xlsx_read` gives 50 rows by default and at most 500; `xlsx_derive` keeps
+`xlsx_profile`; `xlsx_read` gives 50 rows by default and at most 500, and `xlsx_read`
+and `xlsx_query` cut a cell's text at 2,000 characters unless `text_chars` says otherwise
+(`cut.text` names the cells, the longest one's length and the call that gives them in
+full, paged); `xlsx_derive` keeps
 at most 1,000 result rows and shows 50, with at most eight sources per value, counted in
 units -- a range, or one key of a key set (the rest through `xlsx_read`'s `sources`); `xlsx_validate_data` keeps 10,000 problems and
 counts the rest. The read tools do not check `Limits.soft_deadline` yet: a call on a very
