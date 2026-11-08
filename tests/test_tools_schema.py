@@ -174,8 +174,10 @@ CORE_COUNTED_BUDGET = 7000
 #: Round 40, R43: contains_any and loose in the filters, -> 4,924 and 5,896.
 #: Round 41: text_chars on xlsx_read and xlsx_query, and xlsx_query's sentence on refused
 #: filters dropped, and xlsx_read's target on held_by, -> 4,938 and 5,909.
+#: Round 44, lane F (E7): the deferred xlsx_format (499 estimated; not strict), every
+#: definition 5,909 -> 6,408; the core unchanged.
 CORE_GUARD = 4940
-ALL_GUARD = 5910
+ALL_GUARD = 6410
 
 
 @pytest.fixture(scope="module")
@@ -234,6 +236,7 @@ def test_the_groups_are_the_roadmaps():
                                "read_batch"},
                       "shared_misc": {"close_document", "read_blob"},
                       "xlsx_edit": {"xlsx_set_cells"},
+                      "xlsx_format": {"xlsx_format"},
                       "xlsx_trace": {"xlsx_trace"}}
 
 

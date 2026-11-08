@@ -625,6 +625,10 @@ class WorkbookBuilder:
         #: Style 0 is the default; each style is a number format id.
         self._styles: list[int] = [0]
         self._formats: dict[str, int] = {}
+        #: A whole ``styles.xml`` written as given in place of the builder's own (fonts,
+        #: fills, borders and named cell styles a test needs); cell ``style`` numbers then
+        #: index its ``cellXfs``.
+        self.styles_xml: bytes | None = None
 
     def sheet(self, name: str, *, state: str = "visible", sheet_id: int | None = None) -> SheetBuilder:
         if state not in SHEET_STATES:
@@ -694,7 +698,8 @@ class WorkbookBuilder:
             if rels:
                 body[f"xl/worksheets/_rels/sheet{number}.xml.rels"] = _serialize(_rels_xml(rels))
         workbook_rels.append((f"rId{len(workbook_rels) + 1}", REL_STYLES, "styles.xml"))
-        body["xl/styles.xml"] = _serialize(self._styles_xml())
+        body["xl/styles.xml"] = (self.styles_xml if self.styles_xml is not None
+                                 else _serialize(self._styles_xml()))
         overrides.append(("/xl/styles.xml", CT_STYLES))
         if strings.items:
             workbook_rels.append((f"rId{len(workbook_rels) + 1}", REL_SHARED_STRINGS, "sharedStrings.xml"))

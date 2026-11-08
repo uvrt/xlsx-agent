@@ -87,6 +87,7 @@ from .docformat import (ERRORS, KIND, PROMPT, QUERY_CODES, REGION_CODES, STRICT_
 from .compare import TOOLS as COMPARE_TOOLS
 from .derive import TOOLS as DERIVE_TOOLS
 from .edit import TOOLS as EDIT_TOOLS
+from .formatting import TOOLS as FORMATTING_TOOLS
 from .query import TOOLS as QUERY_TOOLS
 from .read import TOOLS as READ_TOOLS
 from .shared import TOOLS as SHARED_TOOLS
@@ -95,12 +96,14 @@ from .validate import TOOLS as VALIDATE_TOOLS
 
 GROUPS = [*_shared.GROUPS,
           ToolGroup("xlsx_edit", "Excel: write cells (text, numbers, dates, formulas, blanks)."),
+          ToolGroup("xlsx_format", "Excel: format cells (font, fill, border, alignment, number "
+                    "format), column widths and AutoFit, row heights, freeze panes, gridlines."),
           ToolGroup("xlsx_trace", "Excel: trace rows to the rows they rest on (sources, keys "
                     "their text names, rows listing them).")]
 
 #: Every tool a workbook has, the shared ones included, in the order they are offered.
 TOOLS = [*SHARED_TOOLS, *READ_TOOLS, *QUERY_TOOLS, *DERIVE_TOOLS, *COMPARE_TOOLS,
-         *VALIDATE_TOOLS, *EDIT_TOOLS, *TRACE_TOOLS]
+         *VALIDATE_TOOLS, *EDIT_TOOLS, *FORMATTING_TOOLS, *TRACE_TOOLS]
 
 CORE_TOOLS = [t.name for t in TOOLS if t.group == CORE]
 
