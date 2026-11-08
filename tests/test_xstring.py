@@ -103,3 +103,13 @@ def test_the_tool_writes_control_characters_and_says_so():
     result = toolbox.dispatch(session, "xlsx_set_cells", {"doc": "d1", "cells": [
         {"address": "Totals!A20", "text": "a\x01b"}]})
     assert result.ok and result.data["escaped"] == ["Totals!A20"]
+
+
+def test_a_table_header_holding_a_control_character_is_escaped_too():
+    wb = Workbook.new()
+    wb.write_table("Sheet1", "A1", ["a\x01b", "c"], [[1, 2]], as_table=True)
+    assert wb.validate() == []
+    again = Workbook.open(wb.to_bytes())
+    assert again.tables[0].columns[0] == "a\x01b"
+    assert again.cell("Sheet1!A1").v == "a\x01b"
+    assert b'name="a_x0001_b"' in unzipped(wb.to_bytes())["xl/tables/table1.xml"]

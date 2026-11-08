@@ -63,7 +63,7 @@ workbook has changed since is marked stale, never refreshed (ooxml-edit's datase
 ``xlsx_validate_data`` (:mod:`.validate`), a workbook checked against a declared schema.
 From 0.2 (E1, E3) the shared ``save_document``, ``undo`` and ``batch`` are in the core, and
 the deferred ``xlsx_edit`` group holds ``xlsx_set_cells`` (:mod:`.edit`): cells written
-typed and guarded, in one step (the ``edit`` role's), and from 0.1.20 ``xlsx_manage_sheets``
+typed and guarded, in one step (the ``edit`` role's), and from 0.1.21 ``xlsx_manage_sheets``
 (:mod:`.sheets`): sheets added, renamed (references rewritten), cleared, deleted (refused
 while anything refers to them) and hidden.  Where the model may write is the
 application's (X4): ``policy(session, {"cells": [...], "tables": [...]})`` before the

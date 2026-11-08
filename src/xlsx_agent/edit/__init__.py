@@ -149,6 +149,14 @@ EDIT_CODES = {
     "merge_table": "the range overlaps a table, whose cells Excel does not merge",
     "merge_array": "the range overlaps an array formula",
     "merge_content": "cells other than the range's first hold content, which a merge drops",
+    # a table written, rows appended (round 44, xlsx_agent.edit.tables)
+    "not_empty": "the cell holds a value or a formula, which a block is not written over "
+                 "unless asked",
+    "table_overlap": "a table or an AutoFilter is there, which a block is never written over",
+    "bad_table_name": "not a name Excel gives a table",
+    "bad_table_style": "not a table style the workbook has",
+    "totals_referenced": "something refers to the table's totals row by address, and the "
+                         "row would move down from under it",
 }
 
 #: The content type of a VBA project part ([MS-OFFMACRO2]; what Excel writes).

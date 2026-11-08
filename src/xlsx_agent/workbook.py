@@ -111,6 +111,7 @@ if TYPE_CHECKING:
     from .edit.merges import MergeChange
     from .edit.policy import Allowed, WritePolicy
     from .edit.sheets import Referent, SheetChange
+    from .edit.tables import Appended, TableWritten
     from .validations import ValidationRule
 
 #: SpreadsheetML's main namespace, transitional and strict.
@@ -568,6 +569,82 @@ class Workbook:
         from .edit.merges import unmerge
 
         return unmerge(self, address, fill=fill)
+    def write_table(self, sheet: "str | Sheet | None", origin: str,
+                    headers: "Sequence[str] | None", rows: "Sequence[Any]", *,
+                    as_table: "bool | str" = False, name: str | None = None,
+                    style: str | None = None, overwrite: bool = False) -> "TableWritten":
+        """Write a block -- ``headers`` in the row at ``origin`` (``"B2"``, or
+        ``"Stock!B2"`` with ``sheet`` ``None``), ``rows`` below -- with set_cells' values
+        (:mod:`xlsx_agent.edit.tables`); ``as_table`` (``True`` or the table's name) makes
+        it a real Excel table with its AutoFilter and the workbook's default style banded
+        by rows (``style``: another).  Refused before anything changes, every problem
+        listed: a cell of the block holding a value or formula (unless ``overwrite``), a
+        merged area or table it touches, a table name Excel refuses (measured).  One step;
+        returns :class:`~xlsx_agent.edit.tables.TableWritten`, the range written."""
+        from .edit.tables import write_table
+
+        return write_table(self, sheet, origin, headers, list(rows), as_table=as_table,
+                           name=name, style=style, overwrite=overwrite)
+
+    def append_rows(self, target: str, rows: "Sequence[Any]") -> "Appended":
+        """Append ``rows`` (lists, or mappings by a table's column names) to a table
+        (``"t:Orders"``: it grows, calculated columns filled, a totals row moved below),
+        below the last row holding a value in a sheet's columns (``"Log"``) or a region's
+        (``"Log!B4:D200"``) -- a cell with only a format does not count
+        (:mod:`xlsx_agent.edit.tables`).  One step; returns
+        :class:`~xlsx_agent.edit.tables.Appended`, the range written."""
+        from .edit.tables import append_rows
+
+        return append_rows(self, target, list(rows))
+
+    @classmethod
+    def new(cls, sheets: "Sequence[str] | str | None" = None, *, author: str | None = None,
+            title: str | None = None, locale: Any = None, grouping: bool = True,
+            local_dates: bool = False, policy: Any = None) -> "Workbook":
+        """A new workbook as Excel makes one (R51; its parts measured,
+        :mod:`xlsx_agent.edit.blank`): one sheet, ``Sheet1``, or ``sheets`` (names, in
+        order), each empty; ``author`` and ``title`` its document properties.  Opened as
+        :meth:`open` opens bytes (``locale``, ``grouping``, ``local_dates``, ``policy``),
+        unchanged: its history starts here, and :meth:`save` writes it."""
+        from .edit import EditError
+        from .edit.blank import DEFAULT_SHEET, build, sheet_name_problems
+
+        names = [sheets] if isinstance(sheets, str) else list(sheets or [DEFAULT_SHEET])
+        problems = sheet_name_problems(names)
+        if problems:
+            raise EditError("bad_value", "; ".join(problems[:5]))
+        return cls.open(build(names, author=author, title=title), locale=locale,
+                        grouping=grouping, local_dates=local_dates, policy=policy)
+
+    @classmethod
+    def from_tables(cls, tables: "Mapping[str, Mapping[str, Any]]", *,
+                    author: str | None = None, title: str | None = None, locale: Any = None,
+                    policy: Any = None) -> "Workbook":
+        """A new workbook (:meth:`new`) with a sheet per entry of ``tables``, in order, each
+        written by :meth:`write_table` at ``A1``: ``{"Stock": {"columns": ["Item", "Qty"],
+        "rows": [["Lamp", 3]]}}``.  An entry may say ``"table": True`` (or the table's
+        name) to make an Excel table, ``"origin"`` another first cell and ``"style"`` a
+        table style.  One step after the new workbook; refused whole."""
+        from .edit import EditError
+
+        if not isinstance(tables, Mapping) or not tables:
+            raise EditError("bad_value", 'tables is {"Sheet": {"columns": [...], "rows": '
+                            "[...]}}, at least one sheet")
+        allowed = {"columns", "rows", "table", "origin", "style"}
+        for sheet, entry in tables.items():
+            if not isinstance(entry, Mapping) or set(entry) - allowed:
+                raise EditError("bad_value", f"sheet {sheet!r}: an entry has columns and rows "
+                                f"(and optionally table, origin, style)",
+                                addresses=[str(sheet)[:40]])
+        workbook = cls.new(list(tables), author=author, title=title, locale=locale,
+                           policy=policy)
+        with workbook.batch():
+            for sheet, entry in tables.items():
+                workbook.write_table(sheet, entry.get("origin", "A1"), entry.get("columns"),
+                                     list(entry.get("rows") or []),
+                                     as_table=entry.get("table", False),
+                                     style=entry.get("style"))
+        return workbook
 
     def _forget(self) -> None:
         """Forget everything read from the package: it changed (an edit, a rollback, an

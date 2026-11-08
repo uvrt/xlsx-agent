@@ -26,6 +26,74 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.21 (unreleased) -- sheets, merged cells, text XML cannot carry
+
+- **Sheets** (production round 44, R52; E5): `wb.add_sheet(name, index)`,
+  `wb.rename_sheet(sheet, name)`, `wb.delete_sheet(sheet, force=False)`,
+  `wb.clear_sheet(sheet, force=False)`, `wb.set_sheet_state(sheet, "visible" | "hidden" |
+  "veryHidden")` and `wb.sheet_referents(sheet)` (`xlsx_agent.edit.sheets`): each one
+  undoable step, refused before anything changes, as Excel does it (measured, Excel for Mac
+  16.106). A rename rewrites every formula, defined name, conditional format and data
+  validation (the `x14` ones too), chart series and title (`c:f`), pivot cache source and
+  table formula that names the sheet (`rewritten`, by kind and address); a hyperlink's
+  location, which Excel leaves, is listed (`not_rewritten`), and a sheet's name inside a
+  string is no reference. A delete is refused while anything refers to the sheet
+  (`referred`, `SheetError.referents` by address); `force` deletes it as Excel does: each
+  reference `#REF!`, a 3-D run ending at it shrunk inward, the names local to it gone, the
+  active tab moved. `clear_sheet` is Excel's Clear All on every cell -- cells, row and
+  column formats, merges, rules, validations, comments, hyperlinks, tables and pivot tables
+  go; widths, custom heights, views, print settings, drawings and every reference to the
+  sheet stay -- the way to regenerate a sheet (delete + add breaks every reference).
+  Hiding the active sheet moves the active tab right, else left; the last visible sheet is
+  never hidden. Names as Excel takes them (1-31 characters, none of `: \ / ? * [ ]`, no
+  `'` at an end, unique as Excel compares names); control characters refused. A locked
+  structure, a protected sheet (clear) and the host's policy (the sheet covered whole)
+  refuse.
+- **`xlsx_manage_sheets`** (deferred, `xlsx_edit`; non-strict): `action` add, rename,
+  clear, delete (refused with `details.referents`, or `force`), hide, unhide; a no-op is
+  `changed: false`; withheld sheets neither reached nor named. 280 estimated tokens (about
+  414 counted); the core unchanged.
+- **Merged cells** (R56): `wb.merge(range, drop=False)` gives every cell the first cell's
+  format, refused while other cells hold content (each listed) unless `drop`, which drops
+  them as Excel does (the first value moved into an empty first cell); an overlap with a
+  merge (with the union to merge), a table or an array formula is refused.
+  `wb.unmerge(range, fill=None | "anchor")`: every merge the range overlaps.
+- **Text XML cannot carry** (R63b): `set_cells` writes control characters, a carriage
+  return and text that reads as an escape (`_x0041_`) as Excel writes them, `_xHHHH_`
+  (`_x005F_x0041_`), in shared and inline strings, rich text and formulas, and names those
+  cells (`escaped`); before, it raised lxml's `ValueError`. A formula's string result
+  (`t="str"`) and its text are read decoded.
+- `xlsx_agent.formula.sheets`: sheet names in references renamed and deleted, structured
+  references to a removed table, names folded as Excel compares them.
+
+## 0.1.20 (unreleased) -- new workbooks, tables written, rows appended
+
+- **`Workbook.new()`** (production round 44, R51): a new workbook as Excel makes one, its
+  nine parts measured from what Excel for Mac 16.106 writes for a new workbook
+  (`xlsx_agent.edit.blank`); `sheets`, `author`, `title`. **`Workbook.from_tables({"Stock":
+  {"columns": [...], "rows": [...], "table": True}})`**: a sheet per entry, written by
+  `write_table` at A1, in one step.
+- **`wb.write_table(sheet, origin, headers, rows, as_table=False|name, style=,
+  overwrite=)`** (R54, E4): a block with `set_cells`' values, returning the range written;
+  `as_table` makes a real Excel table (its AutoFilter, the workbook's default style banded
+  by rows), its part as Excel writes it and its name checked by Excel's rules (measured).
+  Refused before anything changes, every problem listed: cells holding values (unless
+  `overwrite`), merges, other tables, a bad table name (with one that would do) or style.
+- **`wb.append_rows(target, rows)`** (R54): to a table (`t:Orders`: it grows, calculated
+  columns filled, the format above each new cell, a totals row moved below unless something
+  refers to it by address), or below the last row holding a value in a sheet's or region's
+  columns (a formatted empty row does not count).
+- A date written by these into a cell that shows no date gets the short date (`numFmtId`
+  14), as Excel formats a typed date (measured). A workbook without a shared-string table
+  gets one with its first text.
+- Tool **`xlsx_write_table`** in the deferred `xlsx_edit` group (`at` a cell, or `t:<table>`
+  to append; `headers`, `rows` of typed cells, `from: d:<id>`, `table`, `name`, `style`,
+  `overwrite`), non-strict: the core unchanged (4,938 estimated), every definition 5,909 ->
+  6,298. The shared `new_document`'s xlsx handler is `xlsx_agent.tools.NEW_DOCUMENT`, which
+  an application adds (in the core it would cost 225 estimated tokens, past the budget).
+- New edit codes: `not_empty`, `table_overlap`, `bad_table_name`, `bad_table_style`,
+  `totals_referenced`. Oracle (`tests/test_oracle_tables.py`): 8 of 8 open without a repair.
+
 ## 0.1.19 (unreleased) -- the length of a text in a page
 
 - **`text_chars`** (production round 41, R45) on `xlsx_read` and `xlsx_query`, of a table, a

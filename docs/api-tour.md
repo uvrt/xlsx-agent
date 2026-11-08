@@ -844,3 +844,46 @@ same name breaks them all (Excel writes `#REF!` into each, and a new sheet of th
 not bring them back), which is why `delete_sheet` refuses while anything refers to the
 sheet. Names follow Excel's rules (1 to 31 characters, none of `: \ / ? * [ ]`, no `'` at
 either end, unique as Excel compares them); control characters are refused in a name.
+## New workbooks, tables written, rows appended (round 44: R51, R54, E4)
+
+```python
+wb = Workbook.new()                              # as Excel makes one: Sheet1, empty
+wb = Workbook.new(["Stock", "Notes"], author="Stock clerk")
+wb = Workbook.from_tables({                      # new() + write_table at A1, one step
+    "Stock": {"columns": ["Item", "Qty", "Added"], "table": "Stock",
+              "rows": [["Lamp", 3, date(2026, 1, 5)], ["Fan", 4, None]]},
+    "Notes": {"columns": ["Note"], "rows": [["checked"]]}})
+
+done = wb.write_table("Stock", "F2", ["Shelf", "Count"], [["A", 3], {"count": 4, "Shelf": "B"}],
+                      as_table="Shelves")       # or as_table=True: Table1, Table2...
+done.range, done.table                           # ('Stock!F2:G4', 'Shelves')
+wb.append_rows("t:Stock", [["Desk", 1, date(2026, 1, 7)]])   # the table grows
+wb.append_rows("Log", [["2026-11-08", "started"]])           # below the last value
+wb.append_rows("Log!B4:D200", [["late", 2]])                 # within a region's rows
+```
+
+- **A new workbook** has the nine parts Excel for Mac writes for one (measured: `make new
+  workbook`, saved): its theme (Aptos Narrow body, Excel's script faces), styles (12 pt, the
+  Normal style, `TableStyleMedium2` as the default table style), one sheet with its view and
+  margins, `calcPr calcId`, the document properties. Excel's re-save changes only its own:
+  the application's name, its user, localised names, the folder saved in, ids.
+- **Values** are `set_cells`' (text literal, numbers, booleans, dates, `{"formula": ...}`,
+  `{"markdown": ...}`, `None`), `""` a blank; a row is a list, or a mapping by header. A
+  date in a cell that shows none gets Excel's short date (`numFmtId` 14), as a typed date
+  does (measured). Every guard of `set_cells` applies, and the whole call is one step.
+- **Refused, every problem listed, nothing changed**: a cell of the block holding a value or
+  a formula (`not_empty`, unless `overwrite=True`), a merged area or a table it meets
+  (`merged_cell`, `table_overlap`), a table name Excel refuses (`bad_table_name`, with one
+  that would do: the rules were measured -- not a cell or R1C1 reference, letters, digits,
+  `_ \ . ?`, at most 255, unique with defined names), an unknown style (`bad_table_style`).
+- **A table** is the part Excel writes when it makes one from a range: `ref`,
+  `totalsRowShown="0"`, an AutoFilter, a column per header, the workbook's default style
+  banded by rows. Excel opens it as a table with its filters and banding (oracle).
+- **append_rows to a table**: the rows after its data; `ref` and the AutoFilter grow, its
+  calculated columns are filled into a row that leaves them blank, a new cell takes the
+  format above it, and a totals row moves down below the new rows -- as Excel does when a
+  row is typed below a table, or the table resized (measured). The rows it grows into must
+  be empty, and nothing may refer to the totals row by address (`totals_referenced`): a
+  structured reference follows the table, an address would not.
+- **append_rows to a sheet or region**: the row after the last row holding a value or a
+  formula in its columns -- a cell with only a format does not count.
