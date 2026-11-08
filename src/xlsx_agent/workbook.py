@@ -110,7 +110,9 @@ if TYPE_CHECKING:
     from .edit.cells import Written
     from .edit.rearrange import Rearranged
     from .edit.restructure import Restructured
+    from .edit.merges import MergeChange
     from .edit.policy import Allowed, WritePolicy
+    from .edit.sheets import Referent, SheetChange
     from .edit.tables import Appended, TableWritten
     from .validations import ValidationRule
 
@@ -578,6 +580,70 @@ class Workbook:
 
         return rearrange_columns(self, sheet, order, drop=drop, revision=revision)
 
+    # -- sheets and merged cells (E5, R52, R56) ------------------------------------------
+
+    def add_sheet(self, name: str, index: int | None = None) -> "SheetChange":
+        """Add an empty worksheet ``name`` at ``index`` (0 the first tab; ``None`` the end),
+        as Excel makes one; one step (:mod:`xlsx_agent.edit.sheets`)."""
+        from .edit.sheets import add_sheet
+
+        return add_sheet(self, name, index)
+
+    def rename_sheet(self, sheet: Any, name: str) -> "SheetChange":
+        """Rename a sheet, every reference to it rewritten as Excel rewrites it: formulas,
+        defined names, rules, validations, chart series, pivot caches
+        (:mod:`xlsx_agent.edit.sheets`)."""
+        from .edit.sheets import rename_sheet
+
+        return rename_sheet(self, sheet, name)
+
+    def delete_sheet(self, sheet: Any, *, force: bool = False) -> "SheetChange":
+        """Delete a sheet: refused while anything refers to it, each referent listed by
+        address, unless ``force`` (each then reads ``#REF!``, as Excel writes it).  To
+        regenerate a sheet, :meth:`clear_sheet` it and write it again: references keep."""
+        from .edit.sheets import delete_sheet
+
+        return delete_sheet(self, sheet, force=force)
+
+    def clear_sheet(self, sheet: Any, *, force: bool = False) -> "SheetChange":
+        """Excel's Clear All on every cell of a sheet: cells, merges, rules, validations,
+        comments, hyperlinks, tables and pivot tables go; widths, heights, views, print
+        settings, drawings and every reference to the sheet stay
+        (:mod:`xlsx_agent.edit.sheets`)."""
+        from .edit.sheets import clear_sheet
+
+        return clear_sheet(self, sheet, force=force)
+
+    def set_sheet_state(self, sheet: Any, state: str) -> "SheetChange":
+        """Show or hide a sheet: ``"visible"``, ``"hidden"`` or ``"veryHidden"``; the
+        active tab moves to a visible sheet as Excel moves it; the last visible sheet is
+        never hidden (:mod:`xlsx_agent.edit.sheets`)."""
+        from .edit.sheets import set_sheet_state
+
+        return set_sheet_state(self, sheet, state)
+
+    def sheet_referents(self, sheet: Any) -> "list[Referent]":
+        """What refers to a sheet from outside it, by address: formulas, defined names,
+        rules, validations, chart series, pivot caches, hyperlinks, and formulas naming a
+        table on it (:mod:`xlsx_agent.edit.sheets`)."""
+        from .edit.sheets import referents
+
+        return referents(self, sheet)
+
+    def merge(self, address: str, *, drop: bool = False) -> "MergeChange":
+        """Merge a range (``Stock!A1:C2``) as Excel does: every cell given the first
+        cell's format; refused while other cells hold content unless ``drop``
+        (:mod:`xlsx_agent.edit.merges`)."""
+        from .edit.merges import merge
+
+        return merge(self, address, drop=drop)
+
+    def unmerge(self, address: str, *, fill: str | None = None) -> "MergeChange":
+        """Unmerge the merged areas a range or cell overlaps; ``fill="anchor"`` gives every
+        cell its area's first cell's format (:mod:`xlsx_agent.edit.merges`)."""
+        from .edit.merges import unmerge
+
+        return unmerge(self, address, fill=fill)
     def write_table(self, sheet: "str | Sheet | None", origin: str,
                     headers: "Sequence[str] | None", rows: "Sequence[Any]", *,
                     as_table: "bool | str" = False, name: str | None = None,

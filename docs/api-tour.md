@@ -813,43 +813,37 @@ wb.save("stock-filled.xlsx")             # SaveReport(kind='xlsx', size=..., ver
   through the reader, type and value (`readback`, with the addresses), before anything is
   written.
 
-## Rows and columns (round 44)
+### Sheets, merged cells and text XML cannot carry (E5; round 44: R52, R56, R63b)
 
-Excel's own operations, every reference rewritten as Excel rewrites it (measured; what
-was measured is in ROADMAP.md, "Rows and columns: what Excel does"):
+Each is one undoable step (or part of the open batch), refused before anything changes,
+and does what Excel does (measured in Excel for Mac; `xlsx_agent.edit.sheets` and
+`xlsx_agent.edit.merges` say what):
 
 ```python
-wb.insert_rows("Stock", 5, 2)              # two empty rows before row 5
-wb.insert_columns("Stock", "C")            # one column before C (a table gets "Column1")
-wb.delete_rows("Stock", "8:9")             # references into them become #REF!
-wb.delete_columns("Stock", "K")
-wb.move_rows("Stock", "12:13", 2)          # Cut + "Insert Cut Cells": before row 2
-moved = wb.move_columns("Stock", "J", "A")
-moved.as_dict()
-# {'operation': 'move_columns', 'sheet': 'Stock', 'first': 10, 'count': 1, 'before': 1,
-#  'changed': True, 'formulas': 54, 'broken': [], 'broken_count': 0, 'removed': {},
-#  'notes': [], 'calculation': 'invalidated'}
-wb.rearrange_columns("Stock", ["C", "A", "B"], drop=["E"])   # one step, R59
+wb.add_sheet("Rota", index=1)              # an empty worksheet, as Excel makes one
+wb.rename_sheet("Lists", "Tax rates").as_dict()
+# {'action': 'rename', 'sheet': 'Tax rates', 'id': 2, 'changed': True, 'sheets': [...],
+#  'rewritten': [{'kind': 'name', 'a': 'Categories'}, {'kind': 'formula', 'a': 'Stock!I10'},
+#                {'kind': 'chart', 'a': 'Totals!xl/charts/chart1.xml'},
+#                {'kind': 'pivot_cache', 'a': 'xl/pivotCache/pivotCacheDefinition1.xml'}, ...],
+#  'not_rewritten': [{'kind': 'hyperlink', 'a': 'Totals!A6'}]}    # Excel leaves those too
+wb.sheet_referents("Tax rates")            # what refers to it, by kind and address
+wb.delete_sheet("Tax rates")               # SheetError referred: .referents, each by address
+wb.delete_sheet("Tax rates", force=True)   # ... or as Excel deletes it: each reads #REF!
+wb.clear_sheet("Results")                  # Clear All: references to the sheet stay
+wb.set_sheet_state("Meta", "veryHidden")   # the active tab moves to a visible sheet
+wb.merge("Report!A1:F1")                   # EditError merge_content while B1:F1 hold anything
+wb.merge("Report!A1:F1", drop=True)        # every cell the first cell's format, as Excel
+wb.unmerge("Report!A1", fill="anchor")     # every cell of the area its first cell's format
+wb.set_cells({"Notes!A2": "line\x01feed"}).escaped     # ('Notes!A2',): stored line_x0001_feed
 ```
 
-- **One step each** (or part of the open `wb.batch()`), undone by `wb.undo()`; the report
-  (`Restructured`) counts the formulas rewritten and names where a reference became
-  `#REF!` (`broken`, by the new address; `name:Local` for a defined name) and what went
-  with deleted cells (`removed`).
-- **Inserted lines take the format of the line before them** (above, or to the left):
-  height or width, style, outline, the cells' styles, validations and conditional formats;
-  never hiding. Rows inserted in a table get its calculated columns' formula.
-- **Refused before anything changes, as Excel refuses**: an array formula cut through, cells
-  pushed off the sheet, a table's header row deleted, a table's columns moved, rows moved out
-  of a table, rows through two tables side by side, part of a merged area moved. **Refused,
-  not measured yet** (`not_measured`): see ROADMAP.md, RC. Nothing is written half-updated.
-- **Regenerating a sheet each run**: clear it and write it again rather than delete its rows
-  and add new ones -- a deleted row's references are `#REF!` for good.
-- **Reading a sheet someone rearranged**: a dataset by header (`wb.dataset("t:...")`)
-  already ignores the order of columns; `rearrange_columns` is for giving a sheet back in a
-  template's order. `order` lists columns in the order they are to stand, in the places the
-  listed columns hold now (columns not listed stay); a mapping says the same as
-  `{"C": "A", "A": "B", "B": "C"}`; `drop` deletes columns first, named as before.
+**Regenerating a sheet**: clear it and write it again -- every formula, name, chart series
+and validation that refers to it keeps referring to it. Deleting it and adding one of the
+same name breaks them all (Excel writes `#REF!` into each, and a new sheet of the name does
+not bring them back), which is why `delete_sheet` refuses while anything refers to the
+sheet. Names follow Excel's rules (1 to 31 characters, none of `: \ / ? * [ ]`, no `'` at
+either end, unique as Excel compares them); control characters are refused in a name.
 ## New workbooks, tables written, rows appended (round 44: R51, R54, E4)
 
 ```python
@@ -893,3 +887,41 @@ wb.append_rows("Log!B4:D200", [["late", 2]])                 # within a region's
   structured reference follows the table, an address would not.
 - **append_rows to a sheet or region**: the row after the last row holding a value or a
   formula in its columns -- a cell with only a format does not count.
+
+## Rows and columns (round 44)
+
+Excel's own operations, every reference rewritten as Excel rewrites it (measured; what
+was measured is in ROADMAP.md, "Rows and columns: what Excel does"):
+
+```python
+wb.insert_rows("Stock", 5, 2)              # two empty rows before row 5
+wb.insert_columns("Stock", "C")            # one column before C (a table gets "Column1")
+wb.delete_rows("Stock", "8:9")             # references into them become #REF!
+wb.delete_columns("Stock", "K")
+wb.move_rows("Stock", "12:13", 2)          # Cut + "Insert Cut Cells": before row 2
+moved = wb.move_columns("Stock", "J", "A")
+moved.as_dict()
+# {'operation': 'move_columns', 'sheet': 'Stock', 'first': 10, 'count': 1, 'before': 1,
+#  'changed': True, 'formulas': 54, 'broken': [], 'broken_count': 0, 'removed': {},
+#  'notes': [], 'calculation': 'invalidated'}
+wb.rearrange_columns("Stock", ["C", "A", "B"], drop=["E"])   # one step, R59
+```
+
+- **One step each** (or part of the open `wb.batch()`), undone by `wb.undo()`; the report
+  (`Restructured`) counts the formulas rewritten and names where a reference became
+  `#REF!` (`broken`, by the new address; `name:Local` for a defined name) and what went
+  with deleted cells (`removed`).
+- **Inserted lines take the format of the line before them** (above, or to the left):
+  height or width, style, outline, the cells' styles, validations and conditional formats;
+  never hiding. Rows inserted in a table get its calculated columns' formula.
+- **Refused before anything changes, as Excel refuses**: an array formula cut through, cells
+  pushed off the sheet, a table's header row deleted, a table's columns moved, rows moved out
+  of a table, rows through two tables side by side, part of a merged area moved. **Refused,
+  not measured yet** (`not_measured`): see ROADMAP.md, RC. Nothing is written half-updated.
+- **Regenerating a sheet each run**: clear it and write it again rather than delete its rows
+  and add new ones -- a deleted row's references are `#REF!` for good.
+- **Reading a sheet someone rearranged**: a dataset by header (`wb.dataset("t:...")`)
+  already ignores the order of columns; `rearrange_columns` is for giving a sheet back in a
+  template's order. `order` lists columns in the order they are to stand, in the places the
+  listed columns hold now (columns not listed stay); a mapping says the same as
+  `{"C": "A", "A": "B", "B": "C"}`; `drop` deletes columns first, named as before.

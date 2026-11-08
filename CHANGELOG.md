@@ -26,7 +26,7 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
-## 0.1.21 (unreleased) -- inserting, deleting and moving rows and columns
+## 0.1.22 (unreleased) -- inserting, deleting and moving rows and columns
 
 - `Workbook.insert_rows`, `insert_columns`, `delete_rows`, `delete_columns`, `move_rows`,
   `move_columns` (round 44, lane M; R52's `delete_rows`): Excel's own operations, one undoable
@@ -46,6 +46,46 @@ has the detail of every milestone. Why each dependency is needed at its version:
   (`tests/test_structure.py`); `pytest -m oracle tests/test_structure_oracle.py` asks Excel
   again and opens each result. The oracle drives Excel's own structural edits
   (`Session.operate`, `tools/excel_structure.applescript`). No tool added; host API only.
+
+## 0.1.21 (unreleased) -- sheets, merged cells, text XML cannot carry
+
+- **Sheets** (production round 44, R52; E5): `wb.add_sheet(name, index)`,
+  `wb.rename_sheet(sheet, name)`, `wb.delete_sheet(sheet, force=False)`,
+  `wb.clear_sheet(sheet, force=False)`, `wb.set_sheet_state(sheet, "visible" | "hidden" |
+  "veryHidden")` and `wb.sheet_referents(sheet)` (`xlsx_agent.edit.sheets`): each one
+  undoable step, refused before anything changes, as Excel does it (measured, Excel for Mac
+  16.106). A rename rewrites every formula, defined name, conditional format and data
+  validation (the `x14` ones too), chart series and title (`c:f`), pivot cache source and
+  table formula that names the sheet (`rewritten`, by kind and address); a hyperlink's
+  location, which Excel leaves, is listed (`not_rewritten`), and a sheet's name inside a
+  string is no reference. A delete is refused while anything refers to the sheet
+  (`referred`, `SheetError.referents` by address); `force` deletes it as Excel does: each
+  reference `#REF!`, a 3-D run ending at it shrunk inward, the names local to it gone, the
+  active tab moved. `clear_sheet` is Excel's Clear All on every cell -- cells, row and
+  column formats, merges, rules, validations, comments, hyperlinks, tables and pivot tables
+  go; widths, custom heights, views, print settings, drawings and every reference to the
+  sheet stay -- the way to regenerate a sheet (delete + add breaks every reference).
+  Hiding the active sheet moves the active tab right, else left; the last visible sheet is
+  never hidden. Names as Excel takes them (1-31 characters, none of `: \ / ? * [ ]`, no
+  `'` at an end, unique as Excel compares names); control characters refused. A locked
+  structure, a protected sheet (clear) and the host's policy (the sheet covered whole)
+  refuse.
+- **`xlsx_manage_sheets`** (deferred, `xlsx_edit`; non-strict): `action` add, rename,
+  clear, delete (refused with `details.referents`, or `force`), hide, unhide; a no-op is
+  `changed: false`; withheld sheets neither reached nor named. 280 estimated tokens (about
+  414 counted); the core unchanged.
+- **Merged cells** (R56): `wb.merge(range, drop=False)` gives every cell the first cell's
+  format, refused while other cells hold content (each listed) unless `drop`, which drops
+  them as Excel does (the first value moved into an empty first cell); an overlap with a
+  merge (with the union to merge), a table or an array formula is refused.
+  `wb.unmerge(range, fill=None | "anchor")`: every merge the range overlaps.
+- **Text XML cannot carry** (R63b): `set_cells` writes control characters, a carriage
+  return and text that reads as an escape (`_x0041_`) as Excel writes them, `_xHHHH_`
+  (`_x005F_x0041_`), in shared and inline strings, rich text and formulas, and names those
+  cells (`escaped`); before, it raised lxml's `ValueError`. A formula's string result
+  (`t="str"`) and its text are read decoded.
+- `xlsx_agent.formula.sheets`: sheet names in references renamed and deleted, structured
+  references to a removed table, names folded as Excel compares them.
 
 ## 0.1.20 (unreleased) -- new workbooks, tables written, rows appended
 
