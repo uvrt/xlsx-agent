@@ -47,6 +47,35 @@ def decode_xstring(text: str) -> str:
     return _ESCAPE.sub(lambda match: chr(int(match.group(1), 16)), text)
 
 
+#: What XML 1.0 cannot carry (its ``Char`` production: everything but tab, line feed and
+#: carriage return below U+0020, the surrogates, U+FFFE and U+FFFF), and the carriage
+#: return, which a parser reads as a line feed: each is written ``_xHHHH_``.
+_UNCARRIED = re.compile("[\x00-\x08\x0b\x0c\x0d\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+#: An underscore that would be read as the start of an escape (``_x0041_`` as text).
+_LOOKS_ESCAPED = re.compile(r"_(?=x[0-9A-Fa-f]{4}_)")
+
+
+def needs_xstring(text: str) -> bool:
+    """Whether ``text`` is written otherwise than as it is (:func:`encode_xstring`)."""
+    return bool(_UNCARRIED.search(text)) or ("_x" in text and bool(_LOOKS_ESCAPED.search(text)))
+
+
+def encode_xstring(text: str) -> str:
+    """``text`` as an ST_Xstring (ECMA-376 Part 1, §22.9.2.19) holds it, as Excel writes it
+    (measured, Excel for Mac 16.106, 2026-11-08: text typed into cells through its object
+    model and saved): each character XML 1.0 cannot carry, and the carriage return, as
+    ``_xHHHH_`` with upper-case hex (``a_x0001_b``, ``e_x000D_f``); the underscore of text
+    that would read as an escape as ``_x005F_`` (``_x0041_`` is written ``_x005F_x0041_``;
+    ``_xabcd_`` too, ``_X0041_`` and ``_x00`` are not).  Tab and line feed are written as
+    they are.  (In a sheet's name Excel writes the underscore's escape in lower case,
+    ``_x005f_``, measured the same day; a name that needs it is refused here.)
+    :func:`decode_xstring` gives ``text`` back."""
+    if not needs_xstring(text):
+        return text
+    text = _LOOKS_ESCAPED.sub("_x005F_", text)
+    return _UNCARRIED.sub(lambda match: f"_x{ord(match.group(0)):04X}_", text)
+
+
 def item_runs(node: Element) -> tuple[Run, ...]:
     """A string item's runs, decoded (:func:`decode_xstring`): its rich runs with their
     marks, or its text as one unmarked run."""

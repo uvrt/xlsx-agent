@@ -70,6 +70,7 @@ from ooxml_edit.sheets import Cell, Formula, RichText, date_serial
 from ooxml_edit.sheets import Workbook as CellWriter
 
 from ..address import format_cell
+from ..read.strings import decode_xstring
 from ..read.types import Problem
 from .report import MAX_ISSUES, EditReport, capped, compress
 from .structure import CODES as STRUCTURE_CODES
@@ -132,6 +133,22 @@ EDIT_CODES = {
     # a declared field derived from another (round 26, xlsx_agent.declare's from_field)
     "derived_column": "the column is read from another column's cells by the table's own "
                       "rules: write that column",
+    # sheets (E5, R52: xlsx_agent.edit.sheets)
+    "no_sheet": "the workbook has no such sheet",
+    "bad_sheet_name": "not a name Excel gives a sheet",
+    "sheet_exists": "another sheet has that name, as Excel compares names",
+    "bad_index": "not a place among the sheets",
+    "bad_state": "not a sheet's state",
+    "structure_locked": "the workbook's structure is protected",
+    "referred": "something refers to what the change would remove",
+    "last_sheet": "the workbook's last sheet",
+    "last_visible": "the workbook's last visible sheet",
+    # merged cells (R56: xlsx_agent.edit.merges)
+    "merge_range": "not a range of more than one cell on a sheet",
+    "merge_overlap": "the range overlaps a merged area",
+    "merge_table": "the range overlaps a table, whose cells Excel does not merge",
+    "merge_array": "the range overlaps an array formula",
+    "merge_content": "cells other than the range's first hold content, which a merge drops",
     # a table written, rows appended (round 44, xlsx_agent.edit.tables)
     "not_empty": "the cell holds a value or a formula, which a block is not written over "
                  "unless asked",
@@ -508,14 +525,14 @@ def _agrees(content: Any, value: Any) -> bool:
     if value.formula != formula:
         return False
     if formula and content.formula_type == "normal" and value.formula_text is not None \
-            and value.formula_text != content.formula:
+            and value.formula_text != decode_xstring(content.formula):
         return False
     kind = content.kind
     if kind == "blank":
         return value.t == "blank"
-    if kind == "text":
+    if kind == "text":       # the writer's as stored, an ST_Xstring; the reader's decoded
         return value.t in ("text", "list") and (value.original if value.cleaned
-                                                else value.v) == content.value
+                                                else value.v) == decode_xstring(content.value)
     if kind == "bool":
         return value.t == "bool" and value.v is content.value
     if kind == "error":
