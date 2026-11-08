@@ -136,6 +136,11 @@ Round 40, R43: the filters' ``contains_any`` (text holding any of ``values``) an
 estimated (about 6,970 online at the counted ratio, 6,854 / 4,844; the main session counts it), every
 definition 5,815 -> 5,896; the guards 4,845 -> 4,925 and 5,820 -> 5,900.  Neither tool is
 strict: the strict set is unchanged.
+Round 41: ``text_chars`` (the characters per text in a page) on ``xlsx_read`` and
+``xlsx_query``: ``xlsx_read`` 690 -> 713, ``xlsx_query`` 513 -> 537, the core 4,924 -> 4,972
+estimated (about 7,026 online at the counted ratio, 6,958 / 4,924; the main session counts
+it), every definition 5,896 -> 5,943; the guards 4,925 -> 4,975 and 5,900 -> 5,945.  Neither
+tool is strict: the strict set is unchanged.
 """
 
 from __future__ import annotations
@@ -160,8 +165,9 @@ CORE_COUNTED_BUDGET = 7000
 #: Round 35: the restored wording, 4,783 -> 4,829 and 5,754 -> 5,800; then fill's, join's,
 #: join.columns' and two cursors' wording, -> 4,844 and 5,816.
 #: Round 40, R43: contains_any and loose in the filters, -> 4,924 and 5,896.
-CORE_GUARD = 4925
-ALL_GUARD = 5900
+#: Round 41: text_chars on xlsx_read and xlsx_query, -> 4,972 and 5,943.
+CORE_GUARD = 4975
+ALL_GUARD = 5945
 
 
 @pytest.fixture(scope="module")

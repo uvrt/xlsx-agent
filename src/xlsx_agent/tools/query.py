@@ -13,7 +13,9 @@ it is read.  ``eq`` and ``in`` match text exactly (case counts); ``contains`` ig
 **Bounded and paged** as ``xlsx_read`` is (:mod:`.read`: its page, its cursor, its cuts):
 ``limit`` rows a page (by default ``Limits.max_list_items``, at most
 :data:`~.read.READ_ROWS`) within ``Limits.max_result_chars``, a row too wide for what is
-left split across pages, long text cut with its length.  ``total`` is the count of all
+left split across pages, text longer than ``text_chars`` (by default
+:data:`~.read.TEXT_SHOWN`) cut with its length, and ``cut.text`` giving the call that has
+it in full (:func:`~.read.text_cut`).  ``total`` is the count of all
 matching rows; ``cut.rows`` the matching rows not yet given; ``next_cursor``, passed back
 with the same query, the next page (a cursor of another query is refused).  ``types``
 gives the type each filtered or sorted column was taken as; ``not_compared``, per filtered
@@ -43,8 +45,9 @@ from ..address import TableAddress, parse_address
 from ..clean import UNMATCHED, unmatched_warning
 from ..query import LOOSENED, OPS, Matches, dataset_matches, matches, read_rows, select
 from .docformat import handler
-from .read import (_CUT_ROOM, _FIRST, _MARGIN, CALL_CURSOR, READ_ROWS, TEXT_SHOWN, _Annotations,
-                   _cursor, _forms, _page, _read_cursor, _sheet, _size, cleaned_count)
+from .read import (_MARGIN, CALL_CURSOR, READ_ROWS, TEXT_ALIASES, TEXT_CHARS, TEXT_SHOWN,
+                   _Annotations, _cursor, _forms, _page, _read_cursor, _sheet, _size, again,
+                   cleaned_count, cut_room, text_cut)
 
 #: How many queries' matches a workbook keeps for their next pages, the latest.
 KEPT = 4
@@ -80,12 +83,14 @@ SORT = array(obj({"column": string(), "desc": boolean(optional=True)}),
        "sort": SORT,
        "limit": integer(f"Rows per page. Default 50, at most {READ_ROWS}.", minimum=1,
                         maximum=READ_ROWS, optional=True),
+       "text_chars": TEXT_CHARS,
        "cursor": CALL_CURSOR},
-      group=CORE, datasets=("table",))
+      group=CORE, datasets=("table",), aliases=TEXT_ALIASES)
 @handler
 def xlsx_query(call: Any, table: str, doc: str | None = None, columns: list[str] | None = None,
                where: list[dict] | None = None, sort: list[dict] | None = None,
-               limit: int | None = None, cursor: str | None = None) -> Result:
+               limit: int | None = None, cursor: str | None = None,
+               text_chars: int | None = None) -> Result:
     """``xlsx_query``'s handler, for a workbook's table or region, or a dataset (see the
     module's notes)."""
     from .derive import workbook_of
@@ -93,7 +98,7 @@ def xlsx_query(call: Any, table: str, doc: str | None = None, columns: list[str]
     where = [{k: v for k, v in item.items() if v is not None} for item in where or ()]
     sort = [{k: v for k, v in item.items() if v is not None} for item in sort or ()]
     if isinstance(table, str) and table.startswith(DATASET_PREFIX):
-        return _query_dataset(call, table, columns, where, sort, limit, cursor)
+        return _query_dataset(call, table, columns, where, sort, limit, cursor, text_chars)
     workbook = workbook_of(call, doc)
     address = parse_address(table)
     if not isinstance(address, TableAddress) or not address.is_whole:
@@ -133,14 +138,14 @@ def xlsx_query(call: Any, table: str, doc: str | None = None, columns: list[str]
                       warnings=list(found.notes) + loosely)
 
     page = found.rows[start_row:start_row + rows_limit]
-    budget = chars - _MARGIN - _size({**data, "cut": _CUT_ROOM}) \
+    budget = chars - _MARGIN - _size({**data, "cut": cut_room(again(call))}) \
         - len(_summary(label, 1, total, total, region.rows, True))
     annotate = _Annotations(workbook, [], comments=False, hyperlinks=False)
     cleaned: list[str] = []
     unmatched: list[str] = []
     shown, cut_text, stop, full = _page(read_rows(workbook, region, names, page, kept=found.values), start_row,
-                                        start_column, budget, annotate, False, TEXT_SHOWN,
-                                        cleaned, unmatched)
+                                        start_column, budget, annotate, False,
+                                        text_chars or TEXT_SHOWN, cleaned, unmatched)
     if stop is None and start_row + len(page) < total:
         stop = (start_row + len(page), 0)
 
@@ -161,7 +166,7 @@ def xlsx_query(call: Any, table: str, doc: str | None = None, columns: list[str]
             cut["chars"] = True
         next_cursor = _cursor(key, *stop)
     if cut_text:
-        cut["text"] = {"count": len(cut_text), "first": cut_text[:_FIRST]}
+        cut["text"] = text_cut(cut_text, shown, again(call), chars, warnings)
     if names_cut:
         cut["column_names"] = names_cut
     if cut:
@@ -173,7 +178,7 @@ def xlsx_query(call: Any, table: str, doc: str | None = None, columns: list[str]
 
 
 def _query_dataset(call: Any, target: str, columns: list[str] | None, where: list, sort: list,
-                   limit: int | None, cursor: str | None) -> Result:
+                   limit: int | None, cursor: str | None, text_chars: int | None) -> Result:
     """``xlsx_query`` of a dataset (round 10, O5): its rows as a table's, filtered and
     sorted as a table's are (:func:`~xlsx_agent.query.dataset_matches`), each value with
     its ``d:`` address, paged as ``xlsx_read`` pages a dataset; ``dataset`` says where it
@@ -217,11 +222,11 @@ def _query_dataset(call: Any, target: str, columns: list[str] | None, where: lis
                       total=0, warnings=list(found.notes) + loosely)
 
     page = found.rows[start_row:start_row + rows_limit]
-    budget = chars - _MARGIN - _size({**data, "cut": _CUT_ROOM}) \
+    budget = chars - _MARGIN - _size({**data, "cut": cut_room(again(call))}) \
         - len(_summary(label, 1, total, total, dataset.rows, True))
     values = ([dataset.value(position, o) for o in offsets] for position in page)
     shown, cut_text, stop, full = _page(values, start_row, start_column, budget, _NONE, False,
-                                        _TEXT)
+                                        text_chars or _TEXT)
     if stop is None and start_row + len(page) < total:
         stop = (start_row + len(page), 0)
     data["rows"] = shown
@@ -234,8 +239,9 @@ def _query_dataset(call: Any, target: str, columns: list[str] | None, where: lis
         if full:
             cut["chars"] = True
         next_cursor = _cursor(key, *stop)
+    warnings = list(found.notes)
     if cut_text:
-        cut["text"] = {"count": len(cut_text), "first": cut_text[:_FIRST]}
+        cut["text"] = text_cut(cut_text, shown, again(call), chars, warnings)
     if names_cut:
         cut["column_names"] = names_cut
     if cut:
@@ -243,7 +249,7 @@ def _query_dataset(call: Any, target: str, columns: list[str] | None, where: lis
     summary = _summary(label, start_row + 1, start_row + len(shown), total, dataset.rows,
                        next_cursor is not None)
     return Result(summary=summary, data=data, total=total, next_cursor=next_cursor,
-                  warnings=list(found.notes))
+                  warnings=warnings)
 
 
 def _loosely(where: list, match: Any) -> list[str]:

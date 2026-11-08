@@ -53,7 +53,10 @@ table's (round 28, X7: in the order given, the address's own column first; a nam
 column of ``not_found``, with its columns; a cursor belongs to those columns), with
 ``sources`` adding each value's
 first :data:`SOURCES_SHOWN` units; one value with ``sources`` pages through all of its
-units instead, ``limit`` a page, a page's keys of one column written as one key set.  A dataset outlives its workbook: no ``doc`` is needed.  ``dataset`` says
+units instead, ``limit`` a page, a page's keys of one column written as one key set.
+Text longer than ``text_chars`` (by default :data:`_TEXT`; one value: as far as the page
+holds) is cut with its length, and ``cut.text`` gives the read that has it in full, as a
+table's read does (:func:`~.read.text_cut`); so does ``xlsx_derive``'s ``cut.text``.  A dataset outlives its workbook: no ``doc`` is needed.  ``dataset`` says
 where it came from and whether it is ``stale`` (its source has changed since, or it was
 computed from invalidated formula caches; it is never refreshed) or its source ``closed``,
 and its ``cache`` counts; the toolbox adds a warning when it is stale.
@@ -79,7 +82,8 @@ from ..derive import COERCIONS, FUNCTIONS, MAX_DIGITS, MAX_ROWS, derive
 from ..fill import FILL_TYPES
 from .docformat import KIND, handler
 from .query import WHERE
-from .read import _MARGIN, READ_ROWS, _Annotations, _cursor, _page, _read_cursor, _size
+from .read import (_MARGIN, READ_ROWS, _Annotations, _cursor, _page, _read_cursor, _size, again,
+                   cut_room, text_cut)
 
 #: The most source units (a range, or one key of a key set) a value shows in a result; the
 #: rest are counted (ROADMAP.md, "Design rules", 2).
@@ -90,7 +94,8 @@ SORT = array(obj({"column": string(), "desc": boolean(optional=True)}),
              "By output column (group_by, a measure's as), not input; first decides first. "
              "Blanks last.", optional=True)
 
-#: How long a text value in a page of a dataset may be before it is cut.
+#: How long a text value in a page of a dataset may be before it is cut (``xlsx_read``'s and
+#: ``xlsx_query``'s ``text_chars`` changes it).
 _TEXT = 2000
 
 
@@ -307,7 +312,8 @@ def _derived_result(call: Any, name: str, derived: Any, table: DatasetTable) -> 
         data["next"] = {"target": name, "sources": True,
                         "cursor": _cursor(name, stop[0], stop[1])}
     if cut_text:
-        cut["text"] = len(cut_text)
+        cut["text"] = text_cut(cut_text, shown, {"target": name},
+                               call.limits.max_result_chars, warnings)
     if cut:
         data["cut"] = cut
     summary = f"Derived {name} from {derived.address}: {total} rows"
@@ -342,8 +348,12 @@ def _values(table: DatasetTable, positions: Sequence[int], offsets: tuple[int, .
 #: A page needs no comments or links: a dataset has none.
 _NONE = _Annotations(None, [], comments=False, hyperlinks=False)
 
-#: A ``cut`` at its longest, to keep room for it.
-_CUT_ROOM = {"rows": 1000, "cells": 10000, "chars": True, "text": 100000}
+#: A ``cut`` at its longest, to keep room for it: its ``text.call`` reads the dataset
+#: (:func:`~.read.text_cut`).
+_CUT_ROOM = {"rows": 1000, "cells": 10000, "chars": True,
+             "text": {"count": 100000, "first": ["d:" + "x" * 40 + "/#100000/" + "x" * 40] * 3,
+                      "longest": 100000, "call": {"target": "d:" + "x" * 40,
+                                                  "text_chars": 100000}}}
 
 
 # -- xlsx_read of a dataset --------------------------------------------------------------------
@@ -351,9 +361,12 @@ _CUT_ROOM = {"rows": 1000, "cells": 10000, "chars": True, "text": 100000}
 
 def read_dataset(call: Any, target: str, *, sources: bool, limit: int | None,
                  max_chars: int | None, cursor: str | None,
-                 columns: list[str] | None = None, key: str | None = None) -> Result:
+                 columns: list[str] | None = None, key: str | None = None,
+                 text_chars: int | None = None) -> Result:
     """``xlsx_read`` of a ``d:`` target (see the module's notes); ``key`` the column
-    holding the keys of a row by key or a key set (:meth:`DatasetTable.select`)."""
+    holding the keys of a row by key or a key set (:meth:`DatasetTable.select`);
+    ``text_chars`` the length a text is cut at (by default :data:`_TEXT`; one value: as
+    far as the page holds)."""
     entry, address, table = _entry(call, target, "target")
     warnings: list[str] = []
     if key is not None and address.key is None and address.keys is None:
@@ -378,11 +391,11 @@ def read_dataset(call: Any, target: str, *, sources: bool, limit: int | None,
     if _size(data["columns"]) > chars // 4:
         data.pop("columns")
     data["rows"] = []
-    budget = chars - _MARGIN - _size({**data, "cut": _CUT_ROOM}) - 80
+    budget = chars - _MARGIN - _size({**data, "cut": cut_room(again(call))}) - 80
     order = selection.order
     page = order[start_row:start_row + rows_limit]
     values = _values(table, page, selection.offsets, SOURCES_SHOWN if sources else None)
-    cap = None if selection.kind == "value" else _TEXT
+    cap = text_chars or (None if selection.kind == "value" else _TEXT)
     shown, cut_text, stop, full = _page(values, start_row, start_column, budget, _NONE,
                                         False, cap)
     if stop is None and start_row + len(page) < len(order):
@@ -398,7 +411,8 @@ def read_dataset(call: Any, target: str, *, sources: bool, limit: int | None,
             cut["chars"] = True
         next_cursor = _cursor(token, *stop)
     if cut_text:
-        cut["text"] = len(cut_text)
+        cut["text"] = text_cut(cut_text, shown, again(call), call.limits.max_result_chars,
+                               warnings)
     if cut:
         data["cut"] = cut
     return Result(summary=_summary(selection.text, start_row + 1, start_row + len(shown),

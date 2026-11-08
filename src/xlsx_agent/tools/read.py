@@ -61,11 +61,16 @@ with ``cells_only`` gives them as stored.
 **Bounded.**  A page holds at most ``limit`` rows (by default ``Limits.max_list_items``, at
 most :data:`READ_ROWS`) and its whole result at most ``max_chars`` characters (by default,
 and at most, ``Limits.max_result_chars``); a row too wide for what is left is split, the
-rest of it starting the next page.  Text longer than :data:`TEXT_SHOWN` characters (a
-value, a formula, a comment, a link) is cut, with its ``length``; in a read of one cell, only
-as far as the page needs.  ``cut`` says what the page left out: ``rows`` not yet given
+rest of it starting the next page.  Text longer than ``text_chars`` characters (by
+default :data:`TEXT_SHOWN`; a value, a formula, a comment, a link) is cut, with its full
+``length``; in a read of one cell, by default only as far as the page needs.  A longer
+``text_chars`` (round 41) gives fewer cells a page, never a bigger page: the rows page as
+before.  ``cut`` says what the page left out: ``rows`` not yet given
 (the split row among them), ``cells`` of the split row, ``chars`` when the page was full
-before ``limit`` rows, ``text`` the values whose text was cut, ``column_names`` when a
+before ``limit`` rows, ``text`` the values whose text was cut (how many, the ``first``
+addresses, the ``longest`` one's full length, and ``call``: this call's arguments with
+``text_chars`` that long, which gives them in full, paged; a text longer than a page holds
+is cut to the page by any read, and a warning says so), ``column_names`` when a
 region's names would take more than a quarter of the page (``describe`` and
 ``xlsx_profile`` give them); ``next_cursor``, passed back as
 ``cursor`` with the same target, gives the next page.  ``total`` is the target's rows.
@@ -104,7 +109,8 @@ from .docformat import KIND, handler, tool_error
 #: The most rows a page of ``xlsx_read`` holds (ROADMAP.md, "Tools": "at most 500").
 READ_ROWS = 500
 
-#: Text longer than this, in a read of more than one cell, is cut, with its length.
+#: Text longer than this, in a read of more than one cell, is cut, with its length
+#: (``text_chars`` changes it: :data:`TEXT_CHARS`).
 TEXT_SHOWN = 2000
 
 #: Text in a profile (a value, an allowed value) is cut at this many characters.
@@ -124,9 +130,17 @@ _FIRST = 3
 
 DOC = string("Document id.")
 
+#: The characters a cell's text (a value, a formula, a comment, a link) may have in a page
+#: of ``xlsx_read`` or ``xlsx_query``, read or queried as a table or a dataset (round 41):
+#: by default :data:`TEXT_SHOWN` (a read of one cell: as far as the page holds).
+TEXT_CHARS = integer(f"Characters per text. Default {TEXT_SHOWN}.", minimum=1, optional=True)
+
+#: Names a model writes for ``text_chars``: the same per-text length.
+TEXT_ALIASES = {"max_text_chars": "text_chars", "text_length": "text_chars"}
+
 #: Names a model writes for ``xlsx_read``'s own: ``key_column`` (its name before round 7,
-#: L8) and ``row`` (a row by key is a target: ``t:Parts/BX-17``).
-ALIASES = {"key_column": "key", "row": "target"}
+#: L8) and ``row`` (a row by key is a target: ``t:Parts/BX-17``); and ``text_chars``'.
+ALIASES = {"key_column": "key", "row": "target", **TEXT_ALIASES}
 CURSOR = string("next_cursor of the previous page, with the same target.", optional=True)
 #: For a tool without a ``target`` (xlsx_compare, xlsx_validate_data, xlsx_query).
 CALL_CURSOR = string("next_cursor of the previous page, with the same call.", optional=True)
@@ -168,6 +182,7 @@ CALL_CURSOR = string("next_cursor of the previous page, with the same call.", op
                         maximum=READ_ROWS, optional=True),
        "max_chars": integer("Characters per page. Default and at most 24000.",
                             minimum=MIN_CHARS, optional=True),
+       "text_chars": TEXT_CHARS,
        "cursor": CURSOR},
       group=CORE, datasets=("target",), aliases=ALIASES)
 @handler
@@ -177,7 +192,7 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
               validations: bool = False, key: str | None = None,
               columns: list[str] | None = None, limit: int | None = None,
               max_chars: int | None = None, cursor: str | None = None,
-              cells_only: bool = False) -> Result:
+              cells_only: bool = False, text_chars: int | None = None) -> Result:
     """``xlsx_read``'s handler: a workbook's cells, or a dataset's values (see the
     module's notes)."""
     from .derive import read_dataset, workbook_of
@@ -185,7 +200,7 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     if isinstance(target, str) and target.startswith(DATASET_PREFIX):
         return read_dataset(call, target, sources=bool(sources), limit=limit,
                             max_chars=max_chars, cursor=cursor, columns=columns or None,
-                            key=key)
+                            key=key, text_chars=text_chars)
     if sources:
         raise ToolError("invalid_arguments", "sources works on a dataset (d:) only, where "
                         "each value lists the cells it came from; a t: or cell read gives "
@@ -268,9 +283,9 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
     # What lies over the page besides its cells, as wide as the page can be: its length is
     # kept out of the budget for the cells, and only shrinks once the page is known.
     extras = _extras(workbook, found.places(pages), merges)
-    budget = chars - _MARGIN - _size({**data, **extras, "cut": _CUT_ROOM}) \
+    budget = chars - _MARGIN - _size({**data, **extras, "cut": cut_room(again(call))}) \
         - len(_summary(found.label, 1, total, total, True))
-    cap = None if single else TEXT_SHOWN
+    cap = text_chars or (None if single else TEXT_SHOWN)
 
     cleaned: list[str] = []
     unmatched: list[str] = []
@@ -305,7 +320,8 @@ def xlsx_read(call: Any, target: str, doc: str | None = None, formats: bool = Fa
             cut["chars"] = True
         next_cursor = _cursor(found.token, *stop)
     if cut_text:
-        cut["text"] = {"count": len(cut_text), "first": cut_text[:_FIRST]}
+        cut["text"] = text_cut(cut_text, shown, again(call), call.limits.max_result_chars,
+                               notes)
     if names_cut:
         cut["column_names"] = names_cut
     if cut:
@@ -339,6 +355,40 @@ def _held(workbook: Any, target: str) -> "TableAddress | None":
 def cleaned_count(addresses: list[str]) -> dict:
     """The cells of a page a declared rule changed: how many, and the first."""
     return {"count": len(addresses), "first": addresses[:_FIRST]}
+
+
+def again(call: Any) -> dict[str, Any]:
+    """The call's own arguments as given (what ``cut.text.call`` repeats), ``None``s left
+    out."""
+    return {k: v for k, v in dict(call.arguments or {}).items() if v is not None}
+
+
+def text_cut(addresses: list[str], shown: list[list[dict]], call: dict[str, Any],
+             most: int, notes: list[str]) -> dict[str, Any]:
+    """``cut.text`` of a page whose texts at ``addresses`` were cut (rule 4): how many, the
+    first addresses, the ``longest`` text's full length, and ``call``: the call that gives
+    them in full -- ``call``'s arguments (the same page: its cursor, if any) with
+    ``text_chars`` that long, paged as any read (and without a ``max_chars`` too small for
+    it).  A text longer than a page holds (``most`` characters, its envelope aside) is cut
+    to the page by every read: ``notes`` says so."""
+    longest = max((_longest(cell) for row in shown for cell in row), default=0)
+    again = {**call, "text_chars": longest}
+    if again.get("max_chars") is not None and longest + 2 * _MARGIN > again["max_chars"]:
+        del again["max_chars"]
+    if longest + 2 * _MARGIN > most:
+        notes.append(f"a text of {longest} characters is longer than a page holds (at most "
+                     f"{most} characters): every read cuts it to the page")
+    return {"count": len(addresses), "first": addresses[:_FIRST], "longest": longest,
+            "call": again}
+
+
+def _longest(cell: dict) -> int:
+    """The full length of a cell's longest cut text (its value, formula, comment, link)."""
+    comment = cell.get("comment")
+    link = cell.get("link")
+    return max(cell.get("length", 0), cell.get("f_length", 0),
+               comment.get("length", 0) if isinstance(comment, dict) else 0,
+               link.get("url_length", 0) if isinstance(link, dict) else 0)
 
 
 def _page(rows: Iterable[Sequence[Value]], start_row: int, start_column: int, budget: int,
@@ -812,9 +862,19 @@ def _overlaps(one: Area, two: Area) -> bool:
                 or one.last.column < two.first.column or two.last.column < one.first.column)
 
 
-#: A ``cut`` at its longest, to keep room for it in a page.
+#: A ``cut`` at its longest, to keep room for it in a page: its ``text.call`` repeats the
+#: call's arguments (:func:`cut_room`).
+_TEXT_ROOM: dict[str, Any] = {"count": 100000, "first": ["'" + "x" * 31 + "'!XFD1048576"] * _FIRST,
+                              "longest": 100000}
 _CUT_ROOM = {"rows": 1048576, "cells": 16384, "chars": True,
-             "text": {"count": 100000, "first": ["'" + "x" * 31 + "'!XFD1048576"] * _FIRST}}
+             "text": {**_TEXT_ROOM, "call": {"text_chars": 100000}}}
+
+
+def cut_room(arguments: dict[str, Any]) -> dict[str, Any]:
+    """:data:`_CUT_ROOM` with its ``text.call`` as long as a call of ``arguments`` would
+    be: the room a page keeps for its ``cut``."""
+    return {**_CUT_ROOM, "text": {**_TEXT_ROOM,
+                                  "call": {**arguments, "text_chars": 100000}}}
 
 
 def _summary(target: str, first: int, last: int, total: int, more: bool) -> str:

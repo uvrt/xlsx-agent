@@ -324,7 +324,9 @@ def test_long_text_is_cut_with_its_length_and_reported(box):
     row = _read(box, session, target="Notes!A1:B1")
     first = row.data["rows"][0][0]
     assert len(first["v"]) == TEXT_SHOWN and first["length"] == LONG and first["at_limit"]
-    assert row.data["cut"] == {"text": {"count": 1, "first": ["Notes!A1"]}}
+    assert row.data["cut"] == {"text": {"count": 1, "first": ["Notes!A1"], "longest": LONG,
+                                        "call": {"doc": "d1", "target": "Notes!A1:B1",
+                                                 "text_chars": LONG}}}
     one = _read(box, session, target="Notes!A1")       # one cell: as much as the page holds
     cell = one.data["rows"][0][0]
     assert TEXT_SHOWN < len(cell["v"]) < LONG and cell["length"] == LONG
