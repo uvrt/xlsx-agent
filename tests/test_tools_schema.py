@@ -142,8 +142,12 @@ estimated, every definition 5,896 -> 5,943; counted online 7,024 (the main sessi
 2026-11-08), past the 7,000 budget.  So ``xlsx_query``'s description drops "A filter on a
 column of another type is refused, naming the type." (the refusal says so itself):
 ``xlsx_query`` 537 -> 518, the core 4,972 -> 4,953 (about 6,997 online at the counted ratio;
-the main session counts it again), every definition 5,943 -> 5,924; the guards 4,925 ->
-4,955 and 5,900 -> 5,925.  Neither tool is strict: the strict set is unchanged.
+the main session counts it again), every definition 5,943 -> 5,924; counted online 7,006.
+So ``xlsx_read``'s ``target`` drops "held_by names them (null: cells read as themselves)"
+(the result's ``held_by`` and its first such read's warning say so, and ``cells_only`` says
+how to read the cells): ``xlsx_read`` 713 -> 698, the core 4,953 -> 4,938 (about 6,985
+online), every definition 5,924 -> 5,909; the guards 4,925 -> 4,940 and 5,900 -> 5,910.
+Neither tool is strict: the strict set is unchanged.
 """
 
 from __future__ import annotations
@@ -169,9 +173,9 @@ CORE_COUNTED_BUDGET = 7000
 #: join.columns' and two cursors' wording, -> 4,844 and 5,816.
 #: Round 40, R43: contains_any and loose in the filters, -> 4,924 and 5,896.
 #: Round 41: text_chars on xlsx_read and xlsx_query, and xlsx_query's sentence on refused
-#: filters dropped, -> 4,953 and 5,924.
-CORE_GUARD = 4955
-ALL_GUARD = 5925
+#: filters dropped, and xlsx_read's target on held_by, -> 4,938 and 5,909.
+CORE_GUARD = 4940
+ALL_GUARD = 5910
 
 
 @pytest.fixture(scope="module")

@@ -373,8 +373,8 @@ def test_cleaning_changes_no_tool_definition():
 #: too (its parameter is table, not target; -2).
 #: Round 40, R43: the filters' contains_any and loose, in xlsx_query and xlsx_derive (+282).
 #: Round 41: text_chars on xlsx_read and xlsx_query (+166), and xlsx_query's sentence on
-#: refused filters dropped (-66).
-XLSX_CHARS = 13_176
+#: refused filters dropped (-66), and xlsx_read's target's clause on held_by (-53).
+XLSX_CHARS = 13_123
 
 
 def test_a_deck_table_from_a_cleaned_table_warns_in_the_tools_result():

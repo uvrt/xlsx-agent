@@ -48,7 +48,11 @@ has the detail of every milestone. Why each dependency is needed at its version:
   `xlsx_query`'s description no longer says "A filter on a column of another type is
   refused, naming the type." (the refusal says so itself, with the tests the type takes):
   `xlsx_query` 537 -> 518, the core 4,972 -> 4,953 (about 6,997 online at the counted
-  ratio), every definition 5,943 -> 5,924. **The online count must be checked again**
+  ratio), every definition 5,943 -> 5,924; counted online 7,006. So `xlsx_read`'s `target`
+  no longer says "held_by names them (null: cells read as themselves)" (the result's
+  `held_by`, the first such read's warning and `cells_only` say it): `xlsx_read` 713 -> 698,
+  the core 4,953 -> 4,938 (about 6,985 online), every definition 5,924 -> 5,909. **The
+  online count must be checked again**
   (`test_tools_online.py`, budget 7,000). Neither tool is strict. `xlsx_trace` is unchanged
   (its values are always whole).
 
