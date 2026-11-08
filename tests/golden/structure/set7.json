@@ -1,0 +1,42 @@
+{
+"book": "FormatBook",
+"cases": {
+"t1": {
+"excel": "refused",
+"steps": [
+"insert_rows|Fmt|4:4|"
+],
+"variant": {
+"totals": false
+}
+},
+"t2": {
+"excel": "refused",
+"steps": [
+"delete_rows|Fmt|3:3|"
+],
+"variant": {
+"totals": false
+}
+},
+"t3": {
+"excel": "refused",
+"steps": [
+"move|Fmt|8:8|3:3"
+],
+"variant": {
+"totals": false
+}
+},
+"t4": {
+"excel": "refused",
+"steps": [
+"insert_rows|Fmt|4:4|"
+],
+"variant": {
+"calculated": false,
+"totals": false
+}
+}
+}
+}
