@@ -26,6 +26,34 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.20 (unreleased) -- new workbooks, tables written, rows appended
+
+- **`Workbook.new()`** (production round 44, R51): a new workbook as Excel makes one, its
+  nine parts measured from what Excel for Mac 16.106 writes for a new workbook
+  (`xlsx_agent.edit.blank`); `sheets`, `author`, `title`. **`Workbook.from_tables({"Stock":
+  {"columns": [...], "rows": [...], "table": True}})`**: a sheet per entry, written by
+  `write_table` at A1, in one step.
+- **`wb.write_table(sheet, origin, headers, rows, as_table=False|name, style=,
+  overwrite=)`** (R54, E4): a block with `set_cells`' values, returning the range written;
+  `as_table` makes a real Excel table (its AutoFilter, the workbook's default style banded
+  by rows), its part as Excel writes it and its name checked by Excel's rules (measured).
+  Refused before anything changes, every problem listed: cells holding values (unless
+  `overwrite`), merges, other tables, a bad table name (with one that would do) or style.
+- **`wb.append_rows(target, rows)`** (R54): to a table (`t:Orders`: it grows, calculated
+  columns filled, the format above each new cell, a totals row moved below unless something
+  refers to it by address), or below the last row holding a value in a sheet's or region's
+  columns (a formatted empty row does not count).
+- A date written by these into a cell that shows no date gets the short date (`numFmtId`
+  14), as Excel formats a typed date (measured). A workbook without a shared-string table
+  gets one with its first text.
+- Tool **`xlsx_write_table`** in the deferred `xlsx_edit` group (`at` a cell, or `t:<table>`
+  to append; `headers`, `rows` of typed cells, `from: d:<id>`, `table`, `name`, `style`,
+  `overwrite`), non-strict: the core unchanged (4,938 estimated), every definition 5,909 ->
+  6,298. The shared `new_document`'s xlsx handler is `xlsx_agent.tools.NEW_DOCUMENT`, which
+  an application adds (in the core it would cost 225 estimated tokens, past the budget).
+- New edit codes: `not_empty`, `table_overlap`, `bad_table_name`, `bad_table_style`,
+  `totals_referenced`. Oracle (`tests/test_oracle_tables.py`): 8 of 8 open without a repair.
+
 ## 0.1.19 (unreleased) -- the length of a text in a page
 
 - **`text_chars`** (production round 41, R45) on `xlsx_read` and `xlsx_query`, of a table, a

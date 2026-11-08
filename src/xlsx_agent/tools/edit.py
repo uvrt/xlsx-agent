@@ -1,4 +1,5 @@
-"""The ``xlsx_edit`` group (0.2, deferred): ``xlsx_set_cells``.
+"""The ``xlsx_edit`` group (0.2, deferred): ``xlsx_set_cells`` and (round 44, E4)
+``xlsx_write_table``.
 
 **xlsx_set_cells** writes cells of an open workbook, typed and guarded, in one step
 (:meth:`Workbook.set_cells <xlsx_agent.Workbook.set_cells>`, :mod:`xlsx_agent.edit.cells`):
@@ -261,6 +262,144 @@ def _withheld(workbook: Any, items: list) -> None:
                         details={"code": "withheld", "addresses": refused[:20]})
 
 
-TOOLS = [xlsx_set_cells]
+# -- E4 xlsx_write_table (round 44) ---------------------------------------------------------------
 
-__all__ = ["GROUP", "MAX_CELLS", "TOOLS", "VALUE_FIELDS", "xlsx_set_cells"]
+_CELL = obj({
+    "text": string(optional=True),
+    "number": number(optional=True),
+    "bool": boolean(optional=True),
+    "date": string(optional=True),
+    "formula": string(optional=True),
+    "markdown": string(optional=True),
+    "blank": boolean(optional=True)})
+
+
+@tool("xlsx_write_table",
+      "Write headers and rows from a first cell (Stock!B2), or append rows to a table "
+      "(t:Orders: it grows, calculated columns and totals follow). One step; refused over "
+      "non-empty cells (unless overwrite), merges or tables. Returns the range written.",
+      {"doc": DOC,
+       "at": string("Stock!B2, or t:<table> to append."),
+       "headers": array(string(), "Column names: the first row.", optional=True),
+       "rows": array(array(_CELL), "Cells as in xlsx_set_cells; {} blank.", optional=True),
+       "from": string("d:<id>: a dataset's columns and rows instead.", optional=True),
+       "table": boolean("Make an Excel table: filters, banding.", optional=True),
+       "name": string("Table name.", optional=True),
+       "style": string("Table style; default the workbook's.", optional=True),
+       "overwrite": boolean("Write over non-empty cells.", optional=True)},
+      group=GROUP, kind=KIND, mutates=True, strict=False)
+@handler
+def xlsx_write_table(call: Any, doc: str, at: str, headers: list | None = None,
+                     rows: list | None = None, table: bool | None = None,
+                     name: str | None = None, style: str | None = None,
+                     overwrite: bool | None = None, **given: Any) -> Result:
+    """``xlsx_write_table``'s handler: :meth:`Workbook.write_table
+    <xlsx_agent.Workbook.write_table>` at a cell, :meth:`Workbook.append_rows
+    <xlsx_agent.Workbook.append_rows>` at ``t:<table>``
+    (:mod:`xlsx_agent.edit.tables`)."""
+    workbook = call.document
+    source = given.get("from")
+    notes: list[str] = []
+    if source:
+        if rows:
+            raise ToolError("invalid_arguments", "give rows or from, not both", field="from")
+        dataset = call.dataset(source, field="from").dataset
+        if headers and list(headers) != list(dataset.columns):
+            notes.append("headers replaced by the dataset's columns")
+        headers = list(dataset.columns)
+        values = [list(row) for row in dataset.rows]
+    else:
+        values = [[_cell(item, f"rows[{r}][{c}]") for c, item in enumerate(row or [])]
+                  for r, row in enumerate(rows or [])]
+    count = sum(len(row) for row in values) + len(headers or [])
+    if count > MAX_CELLS:
+        raise ToolError("limit", f"{count:,} cells; at most {MAX_CELLS:,} a call: send the "
+                        "rest in another (at t:<table> appends)", field="rows")
+    target = at.strip() if isinstance(at, str) else ""
+    try:
+        if target.startswith("t:"):
+            if headers:
+                notes.append("headers ignored: the table's columns name its cells")
+            if table or name or style or overwrite:
+                notes.append("table, name, style and overwrite are for a new block; "
+                             "ignored when appending")
+            _withheld_table(workbook, target)
+            done = workbook.append_rows(target, values)
+            summary = f"Appended {done.rows} row(s) to {done.table}: {done.range}"
+        else:
+            _withheld_block(workbook, target, len(headers or []) or max(
+                (len(row) for row in values), default=0), len(values) + bool(headers))
+            done = workbook.write_table(None, target, headers or None, values,
+                                        as_table=bool(table) or bool(name), name=name,
+                                        style=style, overwrite=bool(overwrite))
+            summary = f"Wrote {done.range}" + (f" as table {done.table}" if done.table else "")
+    except EditError as error:
+        details: dict[str, Any] = {"code": error.code, "addresses": list(error.addresses)}
+        if len(error.problems) > 1:
+            details["problems"] = [{"code": code, "a": address}
+                                   for code, address in error.problems]
+        raise ToolError("refused", str(error), field="at" if error.code in (
+            "bad_address", "not_empty", "table_overlap", "merged_cell") else "rows",
+            details=details) from None
+    data = done.as_dict(limit=call.limits.max_list_items)
+    written = done.written
+    return Result(summary=summary, data=data,
+                  changed=[doc] if written is None or written.changed or getattr(
+                      done, "table", None) else [], warnings=notes)
+
+
+def _cell(item: Any, where: str) -> Any:
+    """A row's cell as :meth:`Workbook.set_cells` takes it: one value field (none, or
+    ``blank``: a blank)."""
+    if not isinstance(item, dict):
+        raise ToolError("invalid_arguments", "a cell is an object with one of "
+                        f"{', '.join(VALUE_FIELDS)}", field=where)
+    given = [name for name in VALUE_FIELDS if item.get(name) is not None
+             and not (name == "blank" and item[name] is False)]
+    if not given or given == ["blank"]:
+        return None
+    if len(given) != 1:
+        raise ToolError("invalid_arguments", f"give one of {', '.join(VALUE_FIELDS)} "
+                        f"({len(given)} given)", field=where, valid_options=list(VALUE_FIELDS))
+    (name,) = given
+    if name in ("formula", "markdown", "date"):
+        return {name: item[name]}
+    if name == "number" and isinstance(item["number"], float) \
+            and item["number"].is_integer() and abs(item["number"]) <= 2 ** 53:
+        return int(item["number"])
+    return item[name]
+
+
+def _withheld_block(workbook: Any, at: str, width: int, height: int) -> None:
+    """Refuse a block that meets a column the application withholds from the model."""
+    try:
+        parsed = parse_address(at)
+        sheet = workbook.sheet_of(parsed)
+    except (AddressError, KeyError, ValueError):
+        return          # write_table refuses it, with its reason
+    if not isinstance(parsed, RangeAddress) or not width or not height:
+        return
+    first = parsed.area.first
+    for area in workbook.regions.withheld(sheet.name) if sheet.name else ():
+        if not (area.last.column < first.column or area.first.column > first.column + width - 1
+                or area.last.row < first.row or area.first.row > first.row + height - 1):
+            raise ToolError("refused", "the block meets columns withheld from you: they are "
+                            "not written here", field="at", details={"code": "withheld"})
+
+
+def _withheld_table(workbook: Any, target: str) -> None:
+    """Refuse appending to a table with a column the application withholds."""
+    for table in workbook._table_parts():
+        if table.name.casefold() != target[2:].strip().casefold() or table.area is None:
+            continue
+        for hidden in workbook.regions.withheld(table.sheet):
+            if not (hidden.last.column < table.area.first.column
+                    or hidden.first.column > table.area.last.column):
+                raise ToolError("refused", "the table has columns withheld from you: rows "
+                                "are not appended to it here", field="at",
+                                details={"code": "withheld"})
+
+
+TOOLS = [xlsx_set_cells, xlsx_write_table]
+
+__all__ = ["GROUP", "MAX_CELLS", "TOOLS", "VALUE_FIELDS", "xlsx_set_cells", "xlsx_write_table"]

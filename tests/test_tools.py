@@ -181,7 +181,7 @@ def test_the_tools_are_the_shared_ones_with_an_xlsx_describe(box):
                                        "read_blob", "read_batch", "describe", "find_text", "save_document",
                                        "xlsx_read", "xlsx_profile", "xlsx_query",
                                        "xlsx_derive", "xlsx_compare", "xlsx_validate_data",
-                                       "xlsx_set_cells", "xlsx_trace"]
+                                       "xlsx_set_cells", "xlsx_write_table", "xlsx_trace"]
     assert CORE_TOOLS == ["open_document", "undo", "batch", "read_batch", "describe", "find_text",
                           "save_document", "xlsx_read", "xlsx_profile", "xlsx_query",
                           "xlsx_derive", "xlsx_compare", "xlsx_validate_data"]
