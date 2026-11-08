@@ -663,7 +663,8 @@ class FormatBook:
         calc = "Calc[[#This Row],[Qty]]*Calc[[#This Row],[Price]]"
         for n in range(2, 6):
             rows[n] += [_cell(f"F{n}", n), _cell(f"G{n}", n + 0.5),
-                        _formula(f"H{n}", calc, n * (n + 0.5))]
+                        _formula(f"H{n}", calc, n * (n + 0.5)) if self.calc
+                        else _cell(f"H{n}", n * (n + 0.5))]
         if self.sums:
             rows[1] += [_cell("J1", "Name"), _cell("K1", "Amount")]
             for n in range(2, 6):

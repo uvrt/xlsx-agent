@@ -14,6 +14,7 @@ and xlsx-agent's formula lexer only.
 from __future__ import annotations
 
 import io
+import json
 import posixpath
 import re
 import zipfile
@@ -321,3 +322,59 @@ def differences(ours: dict, theirs: dict, path: str = "") -> list[str]:
     if ours != theirs:
         out.append(f"{path}: ours {ours!r} != theirs {theirs!r}")
     return out
+
+
+_WHOLE_COLUMN = re.compile(r"(\$?[A-Z]{1,3})\$?1:(\$?[A-Z]{1,3})\$?1048576(?![0-9])")
+_WHOLE_ROW = re.compile(r"\$?A(\$?[0-9]{1,7}):\$?XFD(\$?[0-9]{1,7})(?![0-9])")
+
+
+def excel_form(text: str | None) -> str | None:
+    """A formula as Excel writes it back: a range over every row is the whole column
+    (``B1:B1048576`` is ``B:B``), one over every column the whole row (measured)."""
+    if not text:
+        return text
+    text = _WHOLE_COLUMN.sub(lambda m: f"{m.group(1)}:{m.group(2)}", text)
+    return _WHOLE_ROW.sub(lambda m: f"{m.group(1)}:{m.group(2)}", text)
+
+
+def measured(found: dict) -> dict:
+    """The facts an operation is held to (no values: cached values are Excel's to
+    compute), formulas in Excel's written form; rules naming another sheet left out
+    (Excel drops such a main-namespace conditional format on open, measured)."""
+    out = {"names": {k: excel_form(v) for k, v in found["names"].items()},
+           "charts": found["charts"], "pivots": found["pivots"], "sheets": {}}
+    for name, sheet in found["sheets"].items():
+        arrays = [_bounds(c[0].rpartition("@")[2]) for c in sheet["cells"].values()
+                  if c[0] and c[0].startswith("{")]
+
+        def computed(ref: str) -> bool:
+            r, k = _split(ref)
+            return any(r1 <= r <= r2 and k1 <= k <= k2 for r1, k1, r2, k2 in arrays)
+
+        cells = {ref: [excel_form(c[0])] + ([None, None] if c[0] is not None or computed(ref)
+                                             else [c[1], c[2]]) + [c[3]]
+                 for ref, c in sheet["cells"].items()}
+        columns = {}
+        for col in sheet["cols"]:
+            for n in range(int(col["min"]), int(col["max"]) + 1):
+                columns[str(n)] = {k: (True if k == "width" else v) for k, v in col.items()
+                                   if k not in ("min", "max")}
+        out["sheets"][name] = {
+            "cells": cells, "rows": {str(k): v for k, v in sheet["rows"].items()},
+            # Excel writes widths again in its own measure on a save: a width is held to
+            # being there, not to its digits; columns one by one (Excel joins equal ones)
+            "cols": columns, "pane": sheet["pane"],
+            "validations": [list(v) for v in sheet["validations"]],
+            "formats": [[c, t, [excel_form(f) for f in fs]] for c, t, fs in sheet["formats"]
+                        if not any(f and "!" in f for f in fs)],
+            "links": [list(x) for x in sheet["links"]], "merges": sheet["merges"],
+            "tables": sorted(sheet["tables"], key=lambda t: t["name"]), "comments": [list(x) for x in sheet["comments"]],
+            "vml": [list(x) for x in sheet["vml"]], "autoFilter": sheet["autoFilter"]}
+    return json.loads(json.dumps(out, sort_keys=True))
+
+
+def _bounds(ref: str) -> tuple[int, int, int, int]:
+    first, _, last = ref.partition(":")
+    r1, k1 = _split(first)
+    r2, k2 = _split(last or first)
+    return r1, k1, r2, k2
