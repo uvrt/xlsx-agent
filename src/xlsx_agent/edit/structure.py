@@ -7,7 +7,18 @@ an edit is held to (every edit report carries it, :mod:`xlsx_agent.edit`) and th
 save repeats on the bytes it hands over.  Each issue is a
 :class:`~xlsx_agent.read.types.Problem`: a code, the first address it was met at and how
 many times; never a cell's text, a formula or a name's formula (ROADMAP.md, "Design rules",
-7).  Worksheets are streamed, never parsed whole.
+7).  A worksheet is streamed, never parsed whole -- or read from its tree when an edit's
+cell writer has parsed it already.
+
+**A step pays for what it touched** (round 44, lane P).  The check each edit step closes
+with reads, of a sheet whose cells alone were written, the cells of the rows written (and
+of its tables' header rows): every row is still checked as a row (its number and order),
+the ``dimension`` is held to the cells read and the calculation chain to their formulas.
+On those cells it finds what the whole check finds (``tests/test_structure_steps.py``
+compares them on random edits and on damage put where a step wrote); an issue in a cell
+of a row the step did not write is :meth:`Workbook.validate`'s, which stays the whole
+check.  A sheet changed otherwise (formatting, layout, rows or columns inserted, deleted or
+moved) is checked whole.
 
 The codes (:data:`CODES`):
 
@@ -41,12 +52,12 @@ A strict package (``purl.oclc.org`` namespaces) is checked alike.
 from __future__ import annotations
 
 import re
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator, Mapping
 
 from ooxml_edit.opc import rels_path_for
 from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell, column_index
 
-from ..read.strings import SharedStrings, item_text
+from ..read.strings import item_text
 from ..address import format_cell, format_range, format_sheet
 from ..read.types import Problem
 from ..xml import iterparse_xml
@@ -60,6 +71,7 @@ CODES = ("row_order", "cell_order", "cell_row", "bad_reference", "shared_string"
 NS_MAIN = ("http://schemas.openxmlformats.org/spreadsheetml/2006/main",
            "http://purl.oclc.org/ooxml/spreadsheetml/main")
 _CT = "{http://schemas.openxmlformats.org/package/2006/content-types}"
+_SI = frozenset(f"{{{ns}}}si" for ns in NS_MAIN)
 _CELL = re.compile(r"\$?([A-Za-z]{1,3})\$?(\d{1,7})$")
 _RANGE = re.compile(r"\$?([A-Za-z]{1,3})\$?(\d{1,7})(?::\$?([A-Za-z]{1,3})\$?(\d{1,7}))?$")
 
@@ -84,15 +96,22 @@ class _Found:
         return [Problem(code, address, count) for (code, _), (address, count) in items]
 
 
-def check_structure(workbook: Any, *, sheets: "Iterable[str | None] | None" = None
-                    ) -> list[Problem]:
+def check_structure(workbook: Any, *, sheets: "Iterable[str | None] | None" = None,
+                    rows: "Mapping[str, Iterable[int]] | None" = None) -> list[Problem]:
     """The structure issues of ``workbook`` (an :class:`xlsx_agent.Workbook`), each by
     code with its first address and count; empty when there are none.  ``sheets`` limits
     the worksheet checks (cells, dimension, tables' headers) to those sheet parts; the
-    workbook-wide checks always run."""
+    workbook-wide checks always run.
+
+    ``rows`` (sheet part: row numbers) narrows a sheet's cell checks further, to the cells
+    of those rows and of its tables' header rows: what an edit step wrote (see the
+    module).  Every row of such a sheet is still checked as a row (its number and
+    order), its ``dimension`` is held to the cells checked, and the calculation chain to the
+    formulas of those rows: on those cells it finds what the whole check finds
+    (``tests/test_structure_steps.py`` compares them)."""
     found = _Found()
     package = workbook.package
-    strings = _strings(workbook)
+    strings = _StringItems(workbook)
     styles = _style_count(workbook)
     every = [s for s in workbook._every_sheet if s.part is not None
              and s.type in ("worksheet", "macrosheet")]
@@ -105,18 +124,24 @@ def check_structure(workbook: Any, *, sheets: "Iterable[str | None] | None" = No
             for offset, name in enumerate(table.columns):
                 headers.setdefault(table.sheet, {})[(row, table.area.first.column + offset)] = name
     formulas: dict[str, set[tuple[int, int]]] = {}
+    checked: dict[str, "set[int] | None"] = {}
     uses = 0
     for sheet in chosen:
         label = _label(sheet)
-        cells, used = _sheet(package.read(sheet.part) or b"", label, found, strings, styles,
-                             headers.get(sheet.name, {}))
+        own = headers.get(sheet.name, {})
+        only = None
+        if rows is not None and sheet.part in rows:
+            only = set(rows[sheet.part]) | {row for row, _ in own}
+        checked[sheet.part] = only
+        cells, used = _sheet(_rows_of(package, sheet.part, only is not None), label, found,
+                             strings, styles, own, only)
         formulas[sheet.part] = cells
         uses += used
-    if strings is not None:
+    if strings.part is not None:
         _string_counts(workbook, found, uses if sheets is None else None)
     _names(workbook, found)
     _package(package, found)
-    _calc_chain(workbook, found, formulas, every)
+    _calc_chain(workbook, found, formulas, every, checked)
     return found.problems()
 
 
@@ -127,110 +152,219 @@ def _label(sheet: Any) -> str:
     return format_sheet(sheet.stored_name, sheet.id)
 
 
-def _sheet(data: bytes, label: str, found: _Found, strings: "SharedStrings | None",
-           styles: int | None, headers: dict[tuple[int, int], str]
-           ) -> tuple[set[tuple[int, int]], int]:
-    """Stream one worksheet: its rows' and cells' order and references, each cell's
-    shared string and style, the dimension against the cells, the tables' header cells.
-    Returns the positions of the formula cells and how many cells use a shared string."""
+_ROW = frozenset(f"{{{ns}}}row" for ns in NS_MAIN)
+_C = frozenset(f"{{{ns}}}c" for ns in NS_MAIN)
+_V = frozenset(f"{{{ns}}}v" for ns in NS_MAIN)
+_F = frozenset(f"{{{ns}}}f" for ns in NS_MAIN)
+_IS = frozenset(f"{{{ns}}}is" for ns in NS_MAIN)
+_DIMENSION = frozenset(f"{{{ns}}}dimension" for ns in NS_MAIN)
+_SHEET_DATA = frozenset(f"{{{ns}}}sheetData" for ns in NS_MAIN)
+
+
+def _rows_of(package: Any, part: str, live: bool) -> "Iterator[tuple[str, Any]]":
+    """A worksheet as the check reads it: ``("dimension", ref)`` for each ``dimension``,
+    then each child of ``sheetData`` (a row, or a cell outside one) as ``("data", node)``,
+    in the file's order.  From the part's tree when the package holds one (the cell writer
+    parsed it) or ``live`` asks for it; streamed from its bytes otherwise, a row at a time
+    (ROADMAP.md, "Design rules", 6)."""
+    trees = getattr(package, "_trees", None)    # ooxml-edit's parsed parts: read, not parsed
+    root = package.tree(part) if live else (trees.get(part) if isinstance(trees, dict)
+                                              else None)
+    if root is not None:
+        yield from _tree_rows(root)
+        return
+    data = package.read(part) or b""
+    if not data:
+        return
+    tags = tuple(_ROW | _DIMENSION | _SHEET_DATA)
+    for _, node in iterparse_xml(data, tag=tags):
+        tag = node.tag
+        if tag in _DIMENSION:
+            yield "dimension", node.get("ref")
+            continue
+        parent = node.getparent()
+        if tag in _SHEET_DATA:
+            # what is left: the cells after the last row, outside any
+            for child in node:
+                if child.tag in _C:
+                    yield "data", child
+            continue
+        if parent is None or parent.tag not in _SHEET_DATA:
+            continue
+        # The cells outside a row before this one, then the row; then everything before it
+        # dropped: one row is held at a time.
+        for child in list(parent):
+            if child is node:
+                break
+            if child.tag in _C:
+                yield "data", child
+        yield "data", node
+        node.clear()
+        while node.getprevious() is not None:
+            del parent[0]
+        del parent[0]
+
+
+def _tree_rows(root: Any) -> "Iterator[tuple[str, Any]]":
+    """:func:`_rows_of` from a parsed sheet."""
+    for child in root:
+        if child.tag in _DIMENSION:
+            yield "dimension", child.get("ref")
+            continue
+        if child.tag not in _SHEET_DATA:
+            continue
+        for node in child:
+            if node.tag in _ROW or node.tag in _C:
+                yield "data", node
+
+
+def _sheet(source: "Iterable[tuple[str, Any]]", label: str, found: _Found,
+           strings: "_StringItems", styles: int | None, headers: dict[tuple[int, int], str],
+           only: "set[int] | None" = None) -> tuple[set[tuple[int, int]], int]:
+    """Check one worksheet: its rows' and cells' order and references, each cell's shared
+    string and style, the dimension against the cells, the tables' header cells.  ``only``:
+    the cells of those rows alone (every row is still checked as a row).  Returns the
+    positions of the formula cells and how many cells use a shared string (of the cells
+    checked).
+
+    A sheet may hold a million rows, so the common cell -- a reference of its row, a
+    style that is a number -- is checked in line; anything else goes the long way
+    (:func:`_reference`, :func:`_number`), which gives the same answer."""
     formulas: set[tuple[int, int]] = set()
     uses = 0
     dimension: str | None = None
-    used: list[int] | None = None   # first row, first column, last row, last column
+    top = left = MAX_ROW + MAX_COLUMN
+    bottom = right = 0
     row_number = 0
     column = 0
-    in_data = False
-    for event, node in iterparse_xml(data, events=("start", "end")):
-        tag = node.tag
-        if not isinstance(tag, str):
+    letters = _LETTERS
+    cell_tags, row_tags, v_tags, f_tags, is_tags = _C, _ROW, _V, _F, _IS
+    count = len(strings) if strings.part is not None else -1
+    limit = styles if styles is not None else -1
+    for kind, node in source:
+        if kind == "dimension":
+            dimension = node
             continue
-        ns, _, local = tag[1:].partition("}")
-        if ns not in NS_MAIN:
-            continue
-        if event == "start":
-            if local == "sheetData":
-                in_data = True
-            elif local == "row" and in_data:
-                written = node.get("r")
-                number = _number(written) if written is not None else row_number + 1
-                if number is None or not 1 <= number <= MAX_ROW:
-                    found.add("bad_reference", f"{label}!{written}", label)
-                    number = row_number + 1
-                elif number <= row_number:
-                    found.add("row_order", format_range(label, Area(Cell(number, 1),
-                                                                  Cell(number, MAX_COLUMN)),
-                                                         "rows"), label)
-                row_number = max(row_number, number)
-                column = 0
-            continue
-        if local == "sheetData":
-            in_data = False
-        elif local == "dimension":
-            dimension = node.get("ref")
-        elif local == "c" and in_data:
+        if node.tag in row_tags:
             written = node.get("r")
-            row, col = row_number, column + 1
-            if written is not None:
-                match = _CELL.match(written)
-                if match is None or not 1 <= column_index(match.group(1).upper()) <= MAX_COLUMN \
-                        or not 1 <= int(match.group(2)) <= MAX_ROW:
-                    found.add("bad_reference", format_cell(label, row, col), label)
-                else:
-                    col = column_index(match.group(1).upper())
-                    if int(match.group(2)) != row_number:
-                        found.add("cell_row", format_cell(label, int(match.group(2)), col),
-                                  label)
-            address = format_cell(label, row, col)
+            if written is not None and written.isdigit() and written[0] != "0" \
+                    and int(written) <= MAX_ROW:
+                number: "int | None" = int(written)
+            else:
+                number = _number(written) if written is not None else row_number + 1
+            if number is None or not 1 <= number <= MAX_ROW:
+                found.add("bad_reference", f"{label}!{written}", label)
+                number = row_number + 1
+            elif number <= row_number:
+                found.add("row_order", format_range(label, Area(Cell(number, 1),
+                                                              Cell(number, MAX_COLUMN)),
+                                                     "rows"), label)
+            row_number = max(row_number, number)
+            column = 0
+            if only is not None and row_number not in only and number not in only:
+                continue
+            cells = node
+        else:       # a cell outside any row: of the row before it
+            if only is not None and row_number not in only:
+                continue
+            cells = (node,)
+        digits = str(row_number)
+        cut = -len(digits)
+        for cell in cells:
+            if cell.tag not in cell_tags:
+                continue
+            ref = cell.get("r")
+            if ref is None:
+                row, col = row_number, column + 1
+            elif ref.endswith(digits) and ref[:cut] in letters:
+                row, col = row_number, letters[ref[:cut]]
+            else:
+                row, col = _reference(ref, label, row_number, column, found)
             if col <= column:
-                found.add("cell_order", address, label)
-            column = max(column, col)
-            kind = node.get("t", "n")
-            raw = _child(node, "v")
-            has_formula = _child(node, "f") is not None
-            if has_formula:
+                found.add("cell_order", format_cell(label, row, col), label)
+            else:
+                column = col
+            raw = formula = inline = None
+            for child in cell:
+                tag = child.tag
+                if tag in v_tags:
+                    if raw is None:
+                        raw = child
+                elif tag in f_tags:
+                    if formula is None:
+                        formula = child
+                elif tag in is_tags and inline is None:
+                    inline = child
+            if formula is not None:
                 formulas.add((row, col))
-            style = node.get("s")
-            if style is not None and styles is not None:
+            style = cell.get("s")
+            if style is not None and limit >= 0 and not (style.isdigit()
+                                                         and int(style) < limit):
                 index = _number(style, zero=True)
-                if index is None or index >= styles:
-                    found.add("style", address, label)
-            text: str | None = None
+                if index is None or index >= limit:
+                    found.add("style", format_cell(label, row, col), label)
+            kind = cell.get("t", "n")
             if kind == "s":
                 uses += 1
-                index = _number(raw.text.strip() if raw is not None and raw.text else None,
-                                zero=True)
-                if strings is None or index is None or index >= len(strings):
-                    found.add("shared_string", address, label)
-                elif (row, col) in headers:
-                    text = strings[index]
-            elif kind == "inlineStr" and (row, col) in headers:
-                inline = _child(node, "is")
-                text = item_text(inline) if inline is not None else None
-            elif kind == "str" and (row, col) in headers and raw is not None:
-                text = raw.text or ""
-            if text is not None and text != headers[(row, col)]:
-                found.add("table_header", address, label)
-            if has_formula or raw is not None or kind == "inlineStr":
-                if used is None:
-                    used = [row, col, row, col]
-                else:
-                    used[0], used[1] = min(used[0], row), min(used[1], col)
-                    used[2], used[3] = max(used[2], row), max(used[3], col)
-            node.clear()
-        elif local == "row" and in_data:
-            node.clear()
-            parent = node.getparent()
-            while parent is not None and node.getprevious() is not None:
-                del parent[0]
-    if dimension is not None or used is not None:
+                text = raw.text if raw is not None else None
+                index = int(text) if text is not None and text.isdigit() else \
+                    _number(text.strip() if text else None, zero=True)
+                if count < 0 or index is None or index >= count:
+                    found.add("shared_string", format_cell(label, row, col), label)
+                elif headers and (row, col) in headers:
+                    _header(found, label, row, col, strings[index], headers)
+            elif headers and (row, col) in headers:
+                if kind == "inlineStr" and inline is not None:
+                    _header(found, label, row, col, item_text(inline), headers)
+                elif kind == "str" and raw is not None:
+                    _header(found, label, row, col, raw.text or "", headers)
+            if formula is not None or raw is not None or kind == "inlineStr":
+                if row < top:
+                    top = row
+                if row > bottom:
+                    bottom = row
+                if col < left:
+                    left = col
+                if col > right:
+                    right = col
+    if dimension is not None or bottom:
         area = _range(dimension) if dimension is not None else None
         if dimension is not None and area is None:
             found.add("dimension", format_range(label), label)
-        elif used is not None and (area is None or not (
-                area[0] <= used[0] and area[1] <= used[1]
-                and area[2] >= used[2] and area[3] >= used[3])):
+        elif bottom and (area is None or not (
+                area[0] <= top and area[1] <= left and area[2] >= bottom
+                and area[3] >= right)):
             found.add("dimension", format_range(label), label)
     return formulas, uses
+
+
+#: Column letters (upper case, as written) and their numbers, filled as met: the common
+#: reference is looked up rather than matched.
+_LETTERS: dict[str, int] = {}
+
+
+def _reference(ref: str, label: str, row_number: int, column: int,
+               found: _Found) -> tuple[int, int]:
+    """A cell's place from its reference (``r``), any but the common one: ``$``, lower
+    case, another row's, or none at all (the column after ``column``, noted)."""
+    row, col = row_number, column + 1
+    match = _CELL.match(ref)
+    if match is None or not 1 <= column_index(match.group(1).upper()) <= MAX_COLUMN \
+            or not 1 <= int(match.group(2)) <= MAX_ROW:
+        found.add("bad_reference", format_cell(label, row, col), label)
+        return row, col
+    col = column_index(match.group(1).upper())
+    if int(match.group(2)) != row_number:
+        found.add("cell_row", format_cell(label, int(match.group(2)), col), label)
+    elif match.group(1).isupper() and "$" not in ref and len(_LETTERS) < 20000:
+        _LETTERS[match.group(1)] = col
+    return row, col
+
+
+def _header(found: _Found, label: str, row: int, col: int, text: str,
+            headers: dict[tuple[int, int], str]) -> None:
+    if text != headers[(row, col)]:
+        found.add("table_header", format_cell(label, row, col), label)
 
 
 def _child(node: Any, local: str) -> Any:
@@ -262,11 +396,29 @@ def _range(text: str) -> tuple[int, int, int, int] | None:
 # -- shared strings and styles -----------------------------------------------------------------
 
 
-def _strings(workbook: Any) -> "SharedStrings | None":
-    """The shared strings as stored, without the workbook's redaction: compared, never
-    reported."""
-    part = workbook._related("sharedStrings")
-    return SharedStrings(workbook.package.read(part)) if part else None
+class _StringItems:
+    """The shared-string table as stored, without the workbook's redaction (compared,
+    never reported): how many items it has, and an item's text when a table's header cell
+    is compared with it -- read from the part's tree, item by item, only then."""
+
+    def __init__(self, workbook: Any) -> None:
+        self.part = workbook._related("sharedStrings")
+        self._package = workbook.package
+        self._items: list | None = None
+
+    @property
+    def items(self) -> list:
+        if self._items is None:
+            root = self._package.tree(self.part) if self.part else None
+            self._items = [] if root is None else [node for node in root
+                                                   if node.tag in _SI]
+        return self._items
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __getitem__(self, index: int) -> str:
+        return item_text(self.items[index])
 
 
 def _style_count(workbook: Any) -> int | None:
@@ -373,7 +525,7 @@ def _owner(rels: str) -> str:
 
 
 def _calc_chain(workbook: Any, found: _Found, formulas: dict[str, set[tuple[int, int]]],
-                every: list) -> None:
+                every: list, checked: "dict[str, set[int] | None]") -> None:
     part = workbook._related("calcChain")
     if part is None:
         return
@@ -391,6 +543,9 @@ def _calc_chain(workbook: Any, found: _Found, formulas: dict[str, set[tuple[int,
         if sheet is None or match is None or sheet.part not in formulas:
             continue    # a sheet not checked (or none): nothing to compare with
         position = (int(match.group(2)), column_index(match.group(1).upper()))
+        only = checked.get(sheet.part)
+        if only is not None and position[0] not in only:
+            continue    # a row the step's check did not read
         if position not in formulas[sheet.part]:
             found.add("calc_chain", format_cell(_label(sheet), position[0], position[1]),
                       sheet.part)

@@ -29,6 +29,14 @@ back through the writer at once; one that does not hold what was given refuses t
 (``readback``).  The shared strings' counts are brought up to date as each step closes
 (:meth:`ooxml_edit.sheets.Workbook.finish`).
 
+**Checked as it closes, for what it touched.**  Every step's report carries the structure
+check (:mod:`.structure`) of the sheets it wrote: on the rows whose cells it wrote
+(:attr:`Edit.rows`), or whole for a sheet it changed otherwise (:attr:`Edit.whole`:
+formatting, layout, rows and columns).  Its guards read a sheet's merges, array formulas
+and validation rules, and a block's cells, from the tree the cell writer works on, never
+typing the sheet's values (round 44, lane P): a step on a sheet of 50,000 rows costs what
+it touches.  The parts it changed are the history's own states compared.
+
 **History.**  :meth:`Editor.undo` and :meth:`Editor.redo` move one step; equal versions mean
 equal content, and undoing every step gives the bytes that were opened.  In a tool session a
 step can also be taken back by sheet (``undo``'s ``scope``: a sheet's name) or by caller,
@@ -219,6 +227,12 @@ class Edit:
     cells: dict[str, set[tuple[int, int]]] = field(default_factory=dict)
     #: The sheet parts written.
     sheets: set[str] = field(default_factory=set)
+    #: The rows of each sheet part whose cells were written (:meth:`Editor.write`,
+    #: :meth:`Editor.touched`): the cells the step's check reads.
+    rows: dict[str, set[int]] = field(default_factory=dict)
+    #: The sheet parts changed otherwise (formatting, layout, rows or columns inserted,
+    #: deleted or moved): checked whole.
+    whole: set[str] = field(default_factory=set)
     #: Why the batch must roll back: an error raised inside it, caught there.
     failed: str | None = None
 
@@ -291,10 +305,11 @@ class Editor:
             return
         edit = Edit()
         before = self.history.version
-        start = self.package.snapshot()
         self._edit, self._depth = edit, 1
         try:
-            with self.history.batch():
+            # The history's own states before and after the step say which parts it
+            # changed: no state of the package is taken twice.
+            with self.history.watch() as change, self.history.batch():
                 yield edit
                 if edit.failed is not None:
                     raise EditError("rolled_back", f"a {edit.failed} was caught inside it")
@@ -307,7 +322,7 @@ class Editor:
         finally:
             self._edit, self._depth = None, 0
         self.workbook._forget()
-        edit.report = self.last = self._report(edit, before, start)
+        edit.report = self.last = self._report(edit, before, change)
         if edit.report.changed:
             log.info("edit %d -> %d: %d cell(s), %d part(s), %d issue(s)", before,
                      edit.report.version, edit.report.cell_count, len(edit.report.parts),
@@ -327,14 +342,14 @@ class Editor:
         edit = self._edit
         assert edit is not None   # the open batch's
         cells = {sheet: set(found) for sheet, found in edit.cells.items()}
-
-        sheets = set(edit.sheets)
+        rows = {part: set(found) for part, found in edit.rows.items()}
+        sheets, whole = set(edit.sheets), set(edit.whole)
         self._savepoints += 1
         try:
             yield
         except Exception:
             self.package.restore(snapshot)
-            edit.cells, edit.sheets = cells, sheets
+            edit.cells, edit.sheets, edit.rows, edit.whole = cells, sheets, rows, whole
             self.workbook._forget()
             raise
         finally:
@@ -384,6 +399,7 @@ class Editor:
             self.cells.request_full_calculation()
             edit.cells.setdefault(label, set()).add((cell.row, cell.column))
             edit.sheets.add(sheet.part)
+            edit.rows.setdefault(sheet.part, set()).add(cell.row)
             self._written.setdefault(sheet.part, set()).add((cell.row, cell.column))
             if not _holds(writer.content(cell), value, self.cells.date1904):
                 raise EditError("readback", addresses=[address])
@@ -414,8 +430,10 @@ class Editor:
         if edit is None:
             raise RuntimeError("cells are recorded inside a batch")
         label = _label(sheet)
+        rows = edit.rows.setdefault(sheet.part, set())
         for cell in cells:
             edit.cells.setdefault(label, set()).add((cell.row, cell.column))
+            rows.add(cell.row)
             self._written.setdefault(sheet.part, set()).add((cell.row, cell.column))
         edit.sheets.add(sheet.part)
 
@@ -427,17 +445,22 @@ class Editor:
         if edit is None:
             raise RuntimeError("a sheet is recorded inside a batch")
         edit.sheets.add(sheet.part)
+        edit.whole.add(sheet.part)
 
     # -- reports -----------------------------------------------------------------------------
 
-    def _report(self, edit: Edit, before: int, start: Any) -> EditReport:
+    def _report(self, edit: Edit, before: int, change: Any) -> EditReport:
         version = self.history.version
         if version == before:
             return EditReport(before=before, version=version,
                               calculation=self.workbook.calculation_status)
-        parts = tuple(sorted(self.package.changed_between(start, self.package.snapshot())))
+        parts = tuple(sorted(change.parts))
         cells, cut, count = capped(edit.cells)
-        issues = check_structure(self.workbook, sheets=edit.sheets)
+        # The step's check: a sheet whose cells alone were written is checked on the rows
+        # written (structure.check_structure's ``rows``); one changed otherwise, whole.
+        rows = {part: edit.rows.get(part, set()) for part in edit.sheets
+                if part not in edit.whole}
+        issues = check_structure(self.workbook, sheets=edit.sheets, rows=rows)
         return EditReport(before=before, version=version, cells=cells, cell_count=count,
                           cells_cut=cut, parts=parts,
                           calculation="invalidated" if count
@@ -532,8 +555,13 @@ def verify(workbook: Any, data: bytes, kind: str) -> SaveReport:
             wrong.append(part)
             continue
         label = _label(sheet)
-        read = {(value.row, value.column): value for value in reopened.cells(sheet)
-                if (value.row, value.column) in positions}
+        # Only the cells written are typed (the pass places every cell, as a read does):
+        # a sheet of many rows is read back for what was written, not typed whole.
+        reader = reopened._reader(sheet)
+        read = {}
+        for row, column, hidden, node in reopened._stream(sheet, reader._walk):
+            if (row, column) in positions:
+                read[(row, column)] = reader.value(row, column, hidden, node)
         for row, column in sorted(positions):
             verified += 1
             if not _agrees(writer.content(Cell(row, column)), read.get((row, column))):

@@ -128,7 +128,7 @@ def merge(workbook: Any, address: Any, *, drop: bool = False) -> MergeChange:
         return MergeChange("merge", (shown,), changed=False,
                            note="one cell: there is nothing to merge")
     writer = _guards(workbook, sheet, area, label)
-    merges = workbook.merges(sheet)
+    merges = list(workbook._layout(sheet, edit=True).merges)
     if any(m.first == area.first and m.last == area.last for m in merges):
         return MergeChange("merge", (shown,), changed=False, note="the range is merged")
     clash = [format_range(label, m) for m in merges if _overlaps(m, area)]
@@ -140,7 +140,8 @@ def merge(workbook: Any, address: Any, *, drop: bool = False) -> MergeChange:
     if tables:
         raise EditError("merge_table", "Excel does not merge a table's cells",
                         addresses=[format_range(label, t.area) for t in tables])
-    arrays = [format_range(label, a) for a in workbook.arrays(sheet) if _overlaps(a, area)]
+    arrays = [format_range(label, a) for a in workbook._layout(sheet, edit=True).arrays
+              if _overlaps(a, area)]
     if arrays:
         raise EditError("merge_array", addresses=arrays)
     anchor = area.first
@@ -194,7 +195,7 @@ def unmerge(workbook: Any, address: Any, *, fill: str | None = None) -> MergeCha
     if fill not in (None, "anchor"):
         raise EditError("bad_value", 'fill is "anchor" or None')
     sheet, area, label = _target(workbook, address)
-    found = [m for m in workbook.merges(sheet) if _overlaps(m, area)]
+    found = [m for m in workbook._layout(sheet, edit=True).merges if _overlaps(m, area)]
     if not found:
         return MergeChange("unmerge", (format_range(label, area),), changed=False,
                            note="no merged area there")

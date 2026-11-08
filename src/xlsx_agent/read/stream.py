@@ -45,7 +45,7 @@ from ooxml_edit.markdown import Run
 from .strings import SharedStrings, decode_xstring, item_runs, item_text, text_markdown
 from .styles import DATE_KINDS, NumberFormat, Styles
 
-from ..address import format_cell
+from ..address import _letters, format_cell
 from .types import (TEXT_LIMIT, Problem, Value, looks_like_date, looks_like_number,
                     serial_text)
 
@@ -463,22 +463,11 @@ class SheetReader:
                     rel_id = next((node.get(a) for a in _R_ID if node.get(a)), None)
                     self.hyperlinks.append(Hyperlink(area, rel_id, node.get("location") or None))
             elif tag in _VALIDATION:
-                formula = next((child.text for child in node if child.tag in _FORMULA1), None)
-                second = next((child.text for child in node if child.tag in _FORMULA2), None)
-                self.validations.append(_validation(node, node.get("sqref"), formula, second,
-                                                    "standard"))
+                self.validations.append(_standard_validation(node))
             elif tag in _CONDITIONAL or tag in _X14_CONDITIONAL:
                 self.conditional_formats.append(_conditional(node, tag in _X14_CONDITIONAL))
             elif tag in _X14_VALIDATION:
-                formula = second = sqref = None
-                for child in node:
-                    if child.tag == _X14_FORMULA1:
-                        formula = next((f.text for f in child if f.tag == _XM_F), None)
-                    elif child.tag == _X14_FORMULA2:
-                        second = next((f.text for f in child if f.tag == _XM_F), None)
-                    elif child.tag == _XM_SQREF:
-                        sqref = child.text
-                self.validations.append(_validation(node, sqref, formula, second, "x14"))
+                self.validations.append(_x14_validation(node))
 
     def column_hidden(self, column: int) -> bool:
         spans = self.hidden_columns
@@ -754,6 +743,62 @@ def scan(reader: SheetReader) -> SheetScan:
     return result
 
 
+@dataclass(frozen=True)
+class SheetLayout:
+    """What a sheet holds besides its values, as a full :func:`scan` finds it: its merged
+    areas, the blocks its array formulas fill (in reading order) and its data-validation
+    rules (in the file's order)."""
+
+    merges: tuple[Area, ...] = ()
+    arrays: tuple[Area, ...] = ()
+    validations: tuple[Validation, ...] = ()
+
+    @classmethod
+    def of_scan(cls, found: SheetScan) -> "SheetLayout":
+        return cls(tuple(found.merges), tuple(found.arrays), tuple(found.validations))
+
+
+_LAYOUT_TAGS = tuple(_F | _MERGE | _VALIDATION | _X14_VALIDATION)
+
+
+def layout(root) -> "SheetLayout | None":
+    """A sheet's :class:`SheetLayout` from its parsed tree (an edit's, which the cell
+    writer holds): only the formulas, merges and rules are visited, never a value typed.
+    ``None`` when an array formula's cell has no reference to place it by, which only the
+    full pass places (as a cell without ``r`` is the one after the cell before it)."""
+    merges: list[Area] = []
+    arrays: list[Area] = []
+    validations: list[Validation] = []
+    for node in root.iter(*_LAYOUT_TAGS):
+        tag = node.tag
+        if tag in _F:
+            cell = node.getparent()
+            row = cell.getparent() if cell is not None else None
+            if cell is None or cell.tag not in _C or row is None or row.tag not in _ROW \
+                    or node.get("t") != "array" or node.getnext() is not None \
+                    and any(sibling.tag in _F for sibling in node.itersiblings()):
+                continue    # not a cell's formula, not an array, or not the one it reads
+            written = cell.get("r")
+            match = _REF.fullmatch(written) if written else None
+            if match is None:
+                return None
+            column, number = _column(match.group(1)), int(match.group(2))
+            if not (1 <= number <= MAX_ROW and 1 <= column <= MAX_COLUMN):
+                continue    # off the grid: the full pass skips the cell
+            block = _area(node.get("ref") or f"{_letters(column)}{number}")
+            if block is not None:
+                arrays.append(block)
+        elif tag in _MERGE:
+            area = _area(node.get("ref"))
+            if area is not None:
+                merges.append(area)
+        elif tag in _VALIDATION:
+            validations.append(_standard_validation(node))
+        else:
+            validations.append(_x14_validation(node))
+    return SheetLayout(tuple(merges), tuple(arrays), tuple(validations))
+
+
 def read_area(reader: SheetReader, area: Area, ordered: bool,
               index: RowIndex | None = None,
               columns: "set[int] | None" = None) -> Iterator[list[Value]]:
@@ -820,6 +865,26 @@ def _row(reader: SheetReader, row: int, left: int, width: int,
                           hidden=row_hidden or reader.column_hidden(column))
         out.append(value)
     return out
+
+
+def _standard_validation(node) -> Validation:
+    """A ``dataValidation`` of the worksheet's ``dataValidations``."""
+    formula = next((child.text for child in node if child.tag in _FORMULA1), None)
+    second = next((child.text for child in node if child.tag in _FORMULA2), None)
+    return _validation(node, node.get("sqref"), formula, second, "standard")
+
+
+def _x14_validation(node) -> Validation:
+    """An ``x14:dataValidation`` of the worksheet's ``extLst``."""
+    formula = second = sqref = None
+    for child in node:
+        if child.tag == _X14_FORMULA1:
+            formula = next((f.text for f in child if f.tag == _XM_F), None)
+        elif child.tag == _X14_FORMULA2:
+            second = next((f.text for f in child if f.tag == _XM_F), None)
+        elif child.tag == _XM_SQREF:
+            sqref = child.text
+    return _validation(node, sqref, formula, second, "x14")
 
 
 def _validation(node, sqref: str | None, formula: str | None, second: str | None,

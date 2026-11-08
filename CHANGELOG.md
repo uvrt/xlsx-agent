@@ -26,6 +26,35 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.24 (unreleased) -- edits on large sheets pay for what they touch
+
+- **Each edit step pays for what it touched** (production round 44, lane P: on a sheet of
+  50,000 rows by 4 columns with 5,000 formulas, writing one cell took 12 s, every step
+  10-36 s). Nothing changes what is written: the bytes after every step, and after undo,
+  are those 0.1.23 writes (compared on the test workbooks and the large sheet).
+  - The step's structure check (`check_structure(rows=)`) reads, of a sheet whose cells
+    alone were written, the cells of the rows written and of its tables' header rows;
+    every row is still checked as a row, the `dimension` against the cells read. A sheet
+    changed otherwise (formatting, layout, rows and columns) is checked whole, from the
+    tree the writer holds, in one in-line pass. `wb.validate()` stays the whole check
+    (and is 3-4x faster); an issue in a row a step did not write is validate's to find.
+  - The guards read merges, array formulas and validation rules from the sheet's tree
+    (`Workbook._layout`), and `write_table`/`append_rows` a block's cells from it
+    (`xlsx_agent.edit.content`), typing only the cells inside the block: no step streams
+    the sheet to type its values. A sheet's protection is read from its tree once parsed.
+  - The parts a step changed come from the history's own states (two fewer copies of
+    every edited part per step); the save's read-back types only the cells written.
+  - Formulas found directly when rows or columns move (`restructure._formula_cells`).
+  - Measured (best of 3, CPU s, before -> after, this machine; `tools/bench_edits.py`):
+    one cell 12.2 -> 1.5 (the next steps about 0.5 each), 1,000 cells 13.1 -> 1.4,
+    append 1,000 rows 32.7 -> 2.6, write_table 1,000 rows 10.9 -> 1.6, format a column
+    12.3 -> 3.4, insert/delete/move rows 10.1-10.7 -> 3.2-3.3, five one-cell steps
+    51.5 -> 3.4, `validate()` 5.4 -> 1.6, save 7.4 -> 2.8; undo 0.14, `to_bytes` 0.3
+    unchanged; peak memory unchanged (280-340 MB, the parsed sheet).
+  - With ooxml-edit 0.95.1 (its PR #112: the shared strings' index no longer counts the
+    table at every new string, columns looked up, the dimension measured in line); this
+    version works with 0.95.0, more slowly where strings are added.
+
 ## 0.1.23 (unreleased) -- formatting and layout from code
 
 - **`wb.format(target, font=, fill=, border=, alignment=, number_format=, protection=,

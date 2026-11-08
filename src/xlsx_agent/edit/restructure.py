@@ -1584,27 +1584,30 @@ def _formula_cells(data: Any) -> tuple[list[_Cell], dict[str, list[_Cell]]]:
     masters: dict[str, tuple[int, int, str]] = {}
     groups: dict[str, list[_Cell]] = {}
     pending: list[_Cell] = []
-    for row in rows:
-        for node in row.iterchildren(X + "c"):
-            f = node.find(X + "f")
-            if f is None:
-                continue
-            position = _position(node.get("r"))
-            if position is None:
-                continue
-            cell = _Cell(node, position[0], position[1])
-            if f.get("t") == "shared" and f.get("si") is not None:
-                si = f.get("si")
-                cell.group = si
-                groups.setdefault(si, []).append(cell)
-                if f.text:
-                    masters[si] = (position[0], position[1], f.text)
-                    cell.text = f.text
-                else:
-                    pending.append(cell)
+    # The formulas found directly (a sheet of many rows holds far fewer formulas than
+    # cells), in the order of the file, as the rows' cells would give them.
+    for f in data.iter(X + "f"):
+        node = f.getparent()
+        row = node.getparent() if node is not None else None
+        if node is None or node.tag != X + "c" or row is None or row.tag != X + "row" \
+                or row.getparent() is not data or node.find(X + "f") is not f:
+            continue    # not a cell's own (first) formula
+        position = _position(node.get("r"))
+        if position is None:
+            continue
+        cell = _Cell(node, position[0], position[1])
+        if f.get("t") == "shared" and f.get("si") is not None:
+            si = f.get("si")
+            cell.group = si
+            groups.setdefault(si, []).append(cell)
+            if f.text:
+                masters[si] = (position[0], position[1], f.text)
+                cell.text = f.text
             else:
-                cell.text = f.text if f.text is not None else None
-            cells.append(cell)
+                pending.append(cell)
+        else:
+            cell.text = f.text if f.text is not None else None
+        cells.append(cell)
     for cell in pending:
         master = masters.get(cell.group or "")
         if master is None:
@@ -2030,6 +2033,7 @@ def _bookkeeping(workbook: Any, editor: Any, edit: Any, sheet: Any, job: Job) ->
         edit.cells[label] = {new for new in (_moved_cell(p, change) for p in edit.cells[label])
                              if new is not None}
     edit.sheets.add(sheet.part)
+    edit.whole.add(sheet.part)      # every row after the change moved: checked whole
 
 
 __all__ = ["Job", "MAX_LISTED", "OPERATIONS", "Restructured", "line_span", "restructure"]

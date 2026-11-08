@@ -176,7 +176,7 @@ def inspect(workbook: "Workbook", sheets: "Iterable[Sheet] | None" = None) -> li
     for sheet in sheets if sheets is not None else workbook.sheets:
         if sheet.part is None or sheet.type not in ("worksheet", "macrosheet", "dialogsheet"):
             continue
-        rules = workbook.scan(sheet).validations
+        rules = workbook._layout(sheet).validations
         ordered = [r for r in rules if r.origin == "standard"] + \
             [r for r in rules if r.origin != "standard"]
         for index, rule in enumerate(ordered):
