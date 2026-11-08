@@ -97,6 +97,7 @@ from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell, Formula
 from ..address import AddressError, RangeAddress, format_range, format_sheet, parse_address
 from ..read.strings import encode_xstring
 from .cells import MAX_LISTED, Written
+from .content import with_content
 
 NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -498,7 +499,7 @@ def _block_problems(workbook: Any, sheet: Any, area: Area, label: str,
                 and _meets(table.area, area):
             problems.append(("table_overlap", format_range(label, table.area),
                              f"table {table.name} is there"))
-    for merged in workbook.merges(sheet):
+    for merged in workbook._layout(sheet, edit=True).merges:
         if _meets(merged, area):
             problems.append(("merged_cell", format_range(label, merged),
                              "a merged area is there: unmerge it first"))
@@ -510,16 +511,12 @@ def _block_problems(workbook: Any, sheet: Any, area: Area, label: str,
                          "it holds a value or a formula: overwrite=True writes over it"))
 
 
-def _cells_with_content(workbook: Any, sheet: Any, area: Area) -> list[tuple[int, int]]:
+def _cells_with_content(workbook: Any, sheet: Any, area: Area, *,
+                        last: bool = False) -> list[tuple[int, int]]:
     """The cells of ``area`` holding a value or a formula (a cell with only a format holds
-    neither), as ``(row, column)`` in order: one streamed pass over the sheet."""
-    out = []
-    first, last = area.first, area.last
-    for value in workbook.cells(sheet):
-        if first.row <= value.row <= last.row and first.column <= value.column <= last.column \
-                and (value.formula or value.t != "blank"):
-            out.append((value.row, value.column))
-    return sorted(out)
+    neither), as ``(row, column)`` in order (``last``: the last alone): from the sheet's
+    tree, only the cells inside ``area`` typed (:mod:`.content`)."""
+    return with_content(workbook, sheet, area, last=last)
 
 
 def _raise(problems: list) -> None:
@@ -935,7 +932,7 @@ def _append_sheet(workbook: Any, sheet: Any, region: Area | None,
     high = region.last.row if region is not None else MAX_ROW
     read = (first_column, region.last.column) if region is not None else columns
     scan = Area(Cell(low, read[0]), Cell(high, read[1]))
-    held = _cells_with_content(workbook, sheet, scan)
+    held = _cells_with_content(workbook, sheet, scan, last=True)
     start = (max(r for r, _ in held) + 1) if held else low
     count = len(body)
     if start + count - 1 > MAX_ROW:

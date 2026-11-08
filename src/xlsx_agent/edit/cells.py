@@ -684,7 +684,7 @@ class _SheetFacts:
     def __init__(self, workbook: Any, sheet: Any, writer: Any) -> None:
         self.workbook = workbook
         self.writer = writer
-        found = workbook.scan(sheet)
+        found = workbook._layout(sheet, edit=True)   # never the values: a guard asks none
         self.merges = list(found.merges)
         self.arrays = list(found.arrays)
         #: The masters of shared formula groups the call writes, with their groups.

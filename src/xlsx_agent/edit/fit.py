@@ -48,7 +48,7 @@ def fit_columns(workbook: Any, found: list[Target], digit: int,
     for item in found:
         writer = editor.cells.sheet(item.sheet.stored_name)
         label = _label(item.sheet)
-        merged = workbook.merges(item.sheet)
+        merged = list(workbook._layout(item.sheet, edit=True).merges)
         area = item.area
         for cell in writer.cells_in(area):
             read += 1

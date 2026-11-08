@@ -96,7 +96,8 @@ from .read.names import DefinedName, read_names
 from .schema import ValidationReport, validate
 from .read.regions import Region, RegionError, Regions, Selection, UnclearRegion, _overlaps
 from .read.comments import Comment, read_comments
-from .read.stream import Hyperlink, SheetReader, SheetScan, _area, read_area, scan
+from .read.stream import (Hyperlink, SheetLayout, SheetReader, SheetScan, _area, layout,
+                          read_area, scan)
 from .read.strings import SharedStrings
 from .read.styles import NumberFormat, Styles
 from .read.tables import TablePart, read_table
@@ -120,6 +121,7 @@ if TYPE_CHECKING:
 #: SpreadsheetML's main namespace, transitional and strict.
 NS_MAIN = ("http://schemas.openxmlformats.org/spreadsheetml/2006/main",
            "http://purl.oclc.org/ooxml/spreadsheetml/main")
+_SI_TAGS = tuple(f"{{{ns}}}si" for ns in NS_MAIN)
 #: The relationships namespace of ``r:id``, transitional and strict.
 NS_R = ("http://schemas.openxmlformats.org/officeDocument/2006/relationships",
         "http://purl.oclc.org/ooxml/officeDocument/relationships")
@@ -196,6 +198,9 @@ class Workbook:
         self._strings: SharedStrings | None = None
         self._styles: Styles | None = None
         self._scans: dict[str, SheetScan] = {}
+        #: Each sheet's merges, array blocks and validation rules read from the tree an
+        #: edit parsed (:meth:`_layout`), by part.
+        self._layouts: dict[str, SheetLayout] = {}
         self._comments: dict[str, list[Comment]] = {}
         self._table_parts_read: list[TablePart] | None = None
         self._catalogue: tuple | None = None   # what the catalogue is made from, gathered
@@ -800,6 +805,7 @@ class Workbook:
         self._strings = None
         self._styles = None
         self._scans.clear()
+        self._layouts.clear()
         self._comments.clear()
         self._table_parts_read = None
         self._catalogue = None
@@ -881,6 +887,7 @@ class Workbook:
         self._strings = None
         self._styles = None
         self._scans.clear()
+        self._layouts.clear()
         self._comments.clear()
         self._table_parts_read = None
         self._catalogue = None
@@ -1380,6 +1387,15 @@ class Workbook:
                 return rel.target_part
         return None
 
+    def _string_count(self) -> int:
+        """How many items the shared-string table has: counted in its tree (an edit's cell
+        writer parses it), without reading their text."""
+        if self._strings is not None and self._strings._items is not None:
+            return len(self._strings)
+        part = self._related("sharedStrings")
+        root = _parsed(part, lambda: self.package.tree(part)) if part else None
+        return 0 if root is None else sum(1 for node in root.iterchildren(*_SI_TAGS))
+
     @property
     def strings(self) -> SharedStrings:
         """The shared-string table, read (streamed) the first time a cell needs it; each
@@ -1419,8 +1435,11 @@ class Workbook:
         return found
 
     def _reader(self, sheet: Sheet, *, formats: bool = False,
-                markdown: bool = False) -> SheetReader:
-        data = self.package.read(sheet.part) if sheet.part is not None else None
+                markdown: bool = False, data: bytes | None = None) -> SheetReader:
+        """A reader of ``sheet``'s cells; ``data``: other bytes than the part's (``b""``
+        for one that types cells it is handed, never passes over the sheet)."""
+        if data is None:
+            data = self.package.read(sheet.part) if sheet.part is not None else None
         name = format_sheet(sheet.name, sheet.id)
         return SheetReader(data or b"", sheet=name, hidden=not sheet.visible,
                            strings=self.strings, styles=self.styles, date1904=self.date1904,
@@ -1452,12 +1471,34 @@ class Workbook:
 
     def merges(self, sheet: "Sheet | str | SheetRef") -> list[Area]:
         """The sheet's merged areas, in the order the file gives them."""
-        return list(self.scan(sheet).merges)
+        return list(self._layout(sheet).merges)
 
     def arrays(self, sheet: "Sheet | str | SheetRef") -> list[Area]:
         """The blocks the sheet's array formulas fill (a dynamic array's spill among them),
         each as its formula gives it, in reading order."""
-        return list(self.scan(sheet).arrays)
+        return list(self._layout(sheet).arrays)
+
+    def _layout(self, sheet: "Sheet | str | SheetRef", *, edit: bool = False) -> SheetLayout:
+        """The sheet's merges, array blocks and data-validation rules, as its
+        :meth:`scan` finds them: from the scan when one is kept; from the sheet's tree when
+        an edit's cell writer has parsed it, or ``edit`` (an edit's guard, before the write
+        that parses it) -- no value typed, on a sheet of any size; from a scan otherwise
+        (a read never parses a sheet whole)."""
+        sheet = self._cell_sheet(sheet)
+        key = sheet.part or f"#{sheet.id}"
+        found = self._layouts.get(key)
+        if found is not None:
+            return found
+        if key not in self._scans and sheet.part is not None:
+            trees = getattr(self.package, "_trees", None)   # ooxml-edit's parsed parts
+            root = trees.get(sheet.part) if isinstance(trees, dict) else None
+            if root is None and edit:
+                root = _parsed(sheet.part, lambda: self.package.tree(sheet.part))
+            found = layout(root) if root is not None else None
+            if found is not None:
+                self._layouts[key] = found
+                return found
+        return SheetLayout.of_scan(self.scan(sheet))
 
     def hyperlinks(self, sheet: "Sheet | str | SheetRef") -> list[Hyperlink]:
         """The sheet's hyperlinks, in the file's order, each with the cells it covers and
@@ -1680,7 +1721,15 @@ class Workbook:
 
     def _protected(self, part: str, kind: str | None) -> bool:
         """Whether the sheet part's ``sheetProtection`` turns protection on, streamed: the
-        element follows the cells, and a sheet is never parsed whole."""
+        element follows the cells, and a sheet is never parsed whole -- read from the
+        sheet's tree when an edit has parsed it (a dirty part's bytes are its tree written
+        out, which a sheet of many rows pays for)."""
+        trees = getattr(self.package, "_trees", None)   # ooxml-edit's parsed parts
+        root = trees.get(part) if isinstance(trees, dict) else None
+        if root is not None:
+            node = next(root.iter(*_PROTECTION), None)
+            return node is not None and _true(node.get("content" if kind == "chartsheet"
+                                                       else "sheet"))
         data = self.package.read(part) or b""
         if data[:2] not in (b"\xff\xfe", b"\xfe\xff") and b"\x00" not in data[:64] \
                 and b"sheetProtection" not in data:
