@@ -138,9 +138,12 @@ definition 5,815 -> 5,896; the guards 4,845 -> 4,925 and 5,820 -> 5,900.  Neithe
 strict: the strict set is unchanged.
 Round 41: ``text_chars`` (the characters per text in a page) on ``xlsx_read`` and
 ``xlsx_query``: ``xlsx_read`` 690 -> 713, ``xlsx_query`` 513 -> 537, the core 4,924 -> 4,972
-estimated (about 7,026 online at the counted ratio, 6,958 / 4,924; the main session counts
-it), every definition 5,896 -> 5,943; the guards 4,925 -> 4,975 and 5,900 -> 5,945.  Neither
-tool is strict: the strict set is unchanged.
+estimated, every definition 5,896 -> 5,943; counted online 7,024 (the main session,
+2026-11-08), past the 7,000 budget.  So ``xlsx_query``'s description drops "A filter on a
+column of another type is refused, naming the type." (the refusal says so itself):
+``xlsx_query`` 537 -> 518, the core 4,972 -> 4,953 (about 6,997 online at the counted ratio;
+the main session counts it again), every definition 5,943 -> 5,924; the guards 4,925 ->
+4,955 and 5,900 -> 5,925.  Neither tool is strict: the strict set is unchanged.
 """
 
 from __future__ import annotations
@@ -165,9 +168,10 @@ CORE_COUNTED_BUDGET = 7000
 #: Round 35: the restored wording, 4,783 -> 4,829 and 5,754 -> 5,800; then fill's, join's,
 #: join.columns' and two cursors' wording, -> 4,844 and 5,816.
 #: Round 40, R43: contains_any and loose in the filters, -> 4,924 and 5,896.
-#: Round 41: text_chars on xlsx_read and xlsx_query, -> 4,972 and 5,943.
-CORE_GUARD = 4975
-ALL_GUARD = 5945
+#: Round 41: text_chars on xlsx_read and xlsx_query, and xlsx_query's sentence on refused
+#: filters dropped, -> 4,953 and 5,924.
+CORE_GUARD = 4955
+ALL_GUARD = 5925
 
 
 @pytest.fixture(scope="module")

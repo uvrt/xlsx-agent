@@ -74,8 +74,7 @@ SORT = array(obj({"column": string(), "desc": boolean(optional=True)}),
 
 @tool("xlsx_query",
       "Rows of a table, region or dataset that meet every filter, sorted, each cell typed "
-      "with its address; total is the count of all matches. A filter on a column of another "
-      "type is refused, naming the type. Paged as xlsx_read.",
+      "with its address; total is the count of all matches. Paged as xlsx_read.",
       {"doc": string("Document id; not needed for a dataset (d:).", optional=True),
        "table": string("A table or region (t:Products, t:Stock!A1) or dataset (d:by_region)."),
        "columns": array(string(), "Columns to give, by name. Default all.", optional=True),

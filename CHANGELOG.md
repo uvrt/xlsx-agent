@@ -44,8 +44,13 @@ has the detail of every milestone. Why each dependency is needed at its version:
   `xlsx_derive`'s were a count: they are now this object, `xlsx_derive`'s `call` the
   `xlsx_read` of the new dataset.
 - Definitions: `xlsx_read` 690 -> 713 estimated, `xlsx_query` 513 -> 537, the core 4,924 ->
-  4,972 (about 7,026 online at the counted ratio), every definition 5,896 -> 5,943; neither
-  tool is strict. `xlsx_trace` is unchanged (its values are always whole).
+  4,972, every definition 5,896 -> 5,943: counted online 7,024, past the 7,000 budget. So
+  `xlsx_query`'s description no longer says "A filter on a column of another type is
+  refused, naming the type." (the refusal says so itself, with the tests the type takes):
+  `xlsx_query` 537 -> 518, the core 4,972 -> 4,953 (about 6,997 online at the counted
+  ratio), every definition 5,943 -> 5,924. **The online count must be checked again**
+  (`test_tools_online.py`, budget 7,000). Neither tool is strict. `xlsx_trace` is unchanged
+  (its values are always whole).
 
 ## 0.1.18 (unreleased) -- key sets on datasets, any of a list, loose text
 
