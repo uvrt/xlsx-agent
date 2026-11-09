@@ -9,7 +9,9 @@ The VML drawing that shows a comment is presentation only and is not read.
 
 Excel's threaded comments (Microsoft's [MS-XLSX] extension, a ``threadedComments`` part)
 are written beside a comment in this part too, which carries the thread as text; that is
-what is read here.
+what is read here, and such a comment is marked ``threaded`` (its cell is in the sheet's
+threaded comments part).  Notes are written by :mod:`xlsx_agent.edit.notes`; threaded
+comments are not.
 
 A comment's author and text are content: returned by a read when asked for, never in a
 message (ROADMAP.md, "Design rules", 7), and kept off the repr.
@@ -40,16 +42,20 @@ _LIST, _COMMENT, _TEXT = _tags("commentList"), _tags("comment"), _tags("text")
 @dataclass(frozen=True)
 class Comment:
     """One comment: ``cell`` the cell it is on, ``author`` its author's name (``None`` when
-    the part names none), ``text`` its text, rich runs flattened."""
+    the part names none), ``text`` its text, rich runs flattened; ``threaded`` when it is
+    the plain form of a threaded comment (whose thread is in the threaded comments part)."""
 
     cell: Cell
     author: str | None = field(default=None, repr=False)
     text: str = field(default="", repr=False)
+    threaded: bool = False
 
 
-def read_comments(root: Element | None) -> list[Comment]:
+def read_comments(root: Element | None, threaded: "frozenset[Cell]" = frozenset()
+                  ) -> list[Comment]:
     """The comments of a comments part's root, in the file's order; a comment whose
-    ``ref`` is not one cell (or a range's first cell) is left out."""
+    ``ref`` is not one cell (or a range's first cell) is left out.  ``threaded``: the cells
+    of the sheet's threaded comments."""
     if root is None:
         return []
     authors: list[str] = []
@@ -68,7 +74,7 @@ def read_comments(root: Element | None) -> list[Comment]:
                 text = next((item_text(t) for t in node if t.tag in _TEXT), "")
                 out.append(Comment(area.first, authors[author]
                                    if author is not None and author < len(authors) else None,
-                                   text))
+                                   text, area.first in threaded))
     return out
 
 

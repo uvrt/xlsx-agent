@@ -114,6 +114,8 @@ if TYPE_CHECKING:
     from .edit.rearrange import Rearranged
     from .edit.restructure import Restructured
     from .edit.merges import MergeChange
+    from .edit.notes import NoteChange
+    from .edit.properties import Properties, PropertiesChange
     from .edit.pivots import PivotCacheChange
     from .edit.policy import Allowed, WritePolicy
     from .edit.sheets import Referent, SheetChange
@@ -722,6 +724,47 @@ class Workbook:
         from .edit.merges import unmerge
 
         return unmerge(self, address, fill=fill)
+
+    def set_comment(self, cell: str, text: str, *, author: str | None = None) -> "NoteChange":
+        """Give a cell (``Stock!B3``) a note, as Excel writes one (its shape and anchor
+        measured), or replace its note's text; ``author`` replaces the author, ``None``
+        keeps it (:mod:`xlsx_agent.edit.notes`).  A cell with a threaded comment is
+        refused."""
+        from .edit.notes import set_comments
+
+        return set_comments(self, [(cell, text)], author=author)
+
+    def set_comments(self, notes: "Mapping[str, str] | Sequence[tuple[str, str]]", *,
+                     author: str | None = None) -> "NoteChange":
+        """Many cells' notes in one step (``{"Stock!B3": "Check count", ...}``), as
+        :meth:`set_comment` writes each."""
+        from .edit.notes import set_comments
+
+        return set_comments(self, notes, author=author)
+
+    def remove_comment(self, target: "str | Sequence[str]") -> "NoteChange":
+        """Take away a cell's note, or every note in a range (``Stock!A1:D20``,
+        ``Stock!B:B``, ``Stock!``); none there: ``changed`` false
+        (:mod:`xlsx_agent.edit.notes`)."""
+        from .edit.notes import remove_comments
+
+        return remove_comments(self, target)
+
+    def properties(self) -> "Properties":
+        """The workbook's core and custom document properties
+        (:mod:`xlsx_agent.edit.properties`)."""
+        from .edit.properties import properties
+
+        return properties(self)
+
+    def set_properties(self, *, custom: "Mapping[str, Any] | None" = None,
+                       **core: Any) -> "PropertiesChange":
+        """Set core properties by name (``title="Stock list"``; ``None`` removes one) and
+        custom ones (``custom={"Run": 42}``) in one step; the modified date only when given
+        (:mod:`xlsx_agent.edit.properties`)."""
+        from .edit.properties import set_properties
+
+        return set_properties(self, core, custom)
     # -- filters, hidden rows and columns, pivot refresh (round 44, R55, R61) -------------
 
     def set_autofilter(self, target: str, ref: str | None = None,
@@ -1595,13 +1638,24 @@ class Workbook:
         if key not in self._comments:
             found: list[Comment] = []
             if sheet.part is not None:
-                for rel in self.package.relationships(sheet.part).values():
+                rels = self.package.relationships(sheet.part).values()
+                threaded: set[Cell] = set()
+                for rel in rels:
+                    if not rel.is_external and rel.type.rpartition("/")[2] == "threadedComment" \
+                            and rel.target_part and self.package.has_part(rel.target_part):
+                        tree = self.package.tree(rel.target_part)
+                        for node in (tree if tree is not None else []):
+                            area = _area(node.get("ref")) if isinstance(node.tag, str) else None
+                            if area is not None:
+                                threaded.add(area.first)
+                for rel in rels:
                     if rel.is_external or rel.type.rpartition("/")[2] != "comments" \
                             or rel.target_part is None \
                             or not self.package.has_part(rel.target_part):
                         continue
                     part = rel.target_part
-                    found = read_comments(_parsed(part, lambda: self.package.tree(part)))
+                    found = read_comments(_parsed(part, lambda: self.package.tree(part)),
+                                          frozenset(threaded))
                     if self._redaction is not None:
                         found = [replace(c, text=self._redacted(c.text),
                                          author=self._redacted(c.author) if c.author
