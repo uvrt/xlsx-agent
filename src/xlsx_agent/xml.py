@@ -10,9 +10,10 @@ Until ooxml-edit has its own ``iterparse_xml`` (ROADMAP.md, O6) they are kept he
 from __future__ import annotations
 
 import io
-from typing import TYPE_CHECKING, Iterable, Iterator
+from typing import TYPE_CHECKING, Any, Iterable, Iterator
 
 from lxml import etree
+from ooxml_common.zipparts import ZipPart
 
 #: ``parse_xml``'s parser options, as ``iterparse`` takes them.
 SAFE_OPTIONS = {"remove_blank_text": False, "resolve_entities": False, "huge_tree": False,
@@ -23,10 +24,16 @@ if TYPE_CHECKING:  # pragma: no cover
     from _typeshed import SupportsRead
 
 
-def iterparse_xml(data: "bytes | SupportsRead[bytes]", events:
+def iterparse_xml(data: "bytes | ZipPart | SupportsRead[bytes]", events:
  Iterable[str] = ("end",),
                   tag: "str | Iterable[str] | None" = None) -> Iterator[tuple[str, etree._Element]]:
-    """``lxml.etree.iterparse`` over a part's bytes (or a binary file of them, read as it
-    goes) with :data:`SAFE_OPTIONS`."""
-    source = io.BytesIO(data) if isinstance(data, (bytes, bytearray)) else data
+    """``lxml.etree.iterparse`` over a part's bytes (or a binary file of them, or its
+    compressed entry, read as it goes) with :data:`SAFE_OPTIONS`."""
+    source: Any
+    if isinstance(data, (bytes, bytearray)):
+        source = io.BytesIO(data)
+    elif isinstance(data, ZipPart):
+        source = data.open()
+    else:
+        source = data
     return etree.iterparse(source, events=tuple(events), tag=tag, **SAFE_OPTIONS)

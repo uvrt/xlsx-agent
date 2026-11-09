@@ -28,6 +28,7 @@ from ooxml_edit.markdown import Run, merge, plain
 from ooxml_edit.sheets import rich_runs
 from ooxml_edit.xml import Element
 
+from ooxml_common.zipparts import ZipPart
 from ..xml import iterparse_xml
 
 NS_MAIN = ("http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -122,8 +123,9 @@ class SharedStrings:
     function of a text) is applied to each item as it is read: the workbook's redaction
     (:mod:`xlsx_agent.redact`), so that no reader sees the text as stored."""
 
-    def __init__(self, data: bytes | None, redact=None) -> None:
-        self._data = data
+    def __init__(self, data: "bytes | ZipPart | None", redact=None) -> None:
+        #: The part's bytes, or its compressed entry: streamed by each read either way.
+        self._data = data if not isinstance(data, ZipPart) or data.size else b""
         self._redact = redact
         self._items: list[str] | None = None
         #: Each rich item's runs (``None`` for a plain one), read on the first Markdown

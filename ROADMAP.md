@@ -1253,6 +1253,21 @@ keeps those overlapping a range. `tests/test_skim.py` compares every call with t
 way (every row parsed, every cell typed) on generated sheets that trip it, through windows
 and pieces small enough to split rows anywhere. Timings (0.1.31): see CHANGELOG.
 
+*A sheet never held whole* (round 46, lane Z, 2026-11-09). ooxml-edit (0.100.0) keeps every
+part it has not edited as its compressed ZIP entry, so a pass reads a sheet from the entry
+(`read.stream.SheetBytes`), inflating it a piece at a time: what it holds is a window of
+the part (64 KB, refilled once fewer than 16 KB are left ahead), never the part. What a
+pass must know of the whole part before it starts (`_Facts`: the plan's conditions, the
+header, where `sheetData` closes, a `mergeCell` among the rows) is found by one streamed
+look over it, kept per part as the plans were; the row index's tags are found the same way
+(a tag cut by a piece's end carried into the next), and a read from a checkpoint starts at
+the inflater's last note before it (ooxml-common's `ZipPart.open(offset)`). A row cut by
+the window's end is parsed, the same cells as read from the bytes. Open streams each sheet
+for its protection; shared strings are streamed too. A sheet an edit has parsed is read
+from its tree's bytes as before. `tests/test_streamed_parts.py` compares every read
+streamed with the part held whole, through pieces and windows small enough to cut a row,
+a tag or the closing tag anywhere.
+
 *Banners and merged data cells* (production feedback, round 46, R74). `find_regions`: a
 merged area of one row and two or more columns holding text, with nothing beside it in
 its row, is a banner; over a header row (directly or one blank row above) and covering its
