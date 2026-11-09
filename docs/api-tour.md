@@ -931,6 +931,34 @@ wb.rearrange_columns("Stock", ["C", "A", "B"], drop=["E"])   # one step, R59
   listed columns hold now (columns not listed stay); a mapping says the same as
   `{"C": "A", "A": "B", "B": "C"}`; `drop` deletes columns first, named as before.
 
+## AutoFilters, hidden rows and pivot refresh (round 44: R55, R61)
+
+```python
+wb.set_autofilter("Stock", "A1:F8", {"Item": ["Lamp", "Desk"], "Shelf": [None]})
+wb.set_autofilter("t:Orders", criteria={"Item": "Lamp"})    # a table's own filter
+change = wb.set_autofilter("Stock!A1:F8", criteria={"Qty": [3, 12]})
+change.as_dict()
+# {'action': 'set_autofilter', 'target': 'Stock', 'range': 'Stock!A1:F8', 'changed': True,
+#  'criteria': {'Qty': ['12', '3']}, 'hidden': ['4:8'], 'hidden_by': 'xlsx-agent',
+#  'calculation': 'cached_unverified', 'notes': ['Excel does not apply a saved filter ...']}
+wb.clear_autofilter("Stock")                 # the filter off; keep=True: Excel's Clear
+wb.hide_rows("Meta", "1:3"); wb.show_rows("Meta", [2]); wb.hide_columns("Meta", "C:D")
+wb.refresh_pivots_on_load(True)              # opt-in; pivots=["Totals"] for some
+```
+
+- **Written as Excel writes it** (measured, `xlsx_agent.edit.filters`): one filter per
+  sheet with its hidden `_xlnm._FilterDatabase` name and `filterMode`; a table's in its
+  part. Values are matched as Excel's filter matches them: text without regard to case,
+  numbers by their shown text in the workbook's locale, formulas by their cached values.
+- **The rows are hidden here**: Excel does not apply a saved filter when it opens a file
+  (measured), so the rows a filter excludes are hidden by this call (`hidden_by`). A date,
+  boolean or error in a filtered column, and a formula column after any write, are refused
+  (`filter_unmeasured`, `filter_formulas`); `hide=False` writes the criteria only, for
+  Excel's Reapply.
+- **Pivot refresh on open** sets `refreshOnLoad` on the cache definitions, a targeted edit
+  of their bytes. Excel for Mac kept the flag but did not refresh on open (measured): a
+  host that needs current pivots refreshes them in Excel.
+
 ## Formatting and layout (round 44: R53, E7)
 
 Formats from code, each call one step (undone with `wb.undo()`), refused before anything

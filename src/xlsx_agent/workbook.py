@@ -109,10 +109,12 @@ if TYPE_CHECKING:
     from .trace import TraceResult
     from .edit import Editor, EditReport, SaveReport
     from .edit.cells import Written
+    from .edit.filters import FilterChange, HiddenChange
     from .edit.format import Formatted
     from .edit.rearrange import Rearranged
     from .edit.restructure import Restructured
     from .edit.merges import MergeChange
+    from .edit.pivots import PivotCacheChange
     from .edit.policy import Allowed, WritePolicy
     from .edit.sheets import Referent, SheetChange
     from .edit.tables import Appended, TableWritten
@@ -720,6 +722,64 @@ class Workbook:
         from .edit.merges import unmerge
 
         return unmerge(self, address, fill=fill)
+    # -- filters, hidden rows and columns, pivot refresh (round 44, R55, R61) -------------
+
+    def set_autofilter(self, target: str, ref: str | None = None,
+                       criteria: "Mapping[Any, Any] | None" = None, *,
+                       hide: bool = True) -> "FilterChange":
+        """Set the AutoFilter of a sheet (``"Stock"`` with ``ref`` ``"A1:F8"``, or
+        ``"Stock!A1:F8"``; one per sheet, as Excel) or a table (``"t:Orders"``), with
+        value lists by column header or letters (``{"Item": ["Lamp", "Desk"], "Shelf":
+        [None]}``: ``None`` keeps blank cells).  The rows it excludes are hidden here --
+        Excel does not apply a saved filter when it opens a file (measured) -- unless
+        ``hide`` is false, which writes the criteria only.  Literal values, and formulas'
+        cached values only while they hold (:mod:`xlsx_agent.edit.filters`).  One step."""
+        from .edit.filters import set_autofilter
+
+        return set_autofilter(self, target, ref, criteria, hide=hide)
+
+    def clear_autofilter(self, target: str, *, keep: bool = False) -> "FilterChange":
+        """Turn a sheet's filter off (every row of its range shown), or with ``keep`` clear
+        its criteria and keep its buttons; a table's criteria cleared."""
+        from .edit.filters import clear_autofilter
+
+        return clear_autofilter(self, target, keep=keep)
+
+    def hide_rows(self, sheet: Any, rows: Any) -> "HiddenChange":
+        """Hide rows (``5``, ``"5:7"`` or a list of them) of a sheet."""
+        from .edit.filters import set_rows_hidden
+
+        return set_rows_hidden(self, sheet, rows, True)
+
+    def show_rows(self, sheet: Any, rows: Any) -> "HiddenChange":
+        """Show hidden rows (``5``, ``"5:7"`` or a list of them) of a sheet."""
+        from .edit.filters import set_rows_hidden
+
+        return set_rows_hidden(self, sheet, rows, False)
+
+    def hide_columns(self, sheet: Any, columns: Any) -> "HiddenChange":
+        """Hide columns (``"C"``, ``"C:D"``, ``3`` or a list of them) of a sheet."""
+        from .edit.filters import set_columns_hidden
+
+        return set_columns_hidden(self, sheet, columns, True)
+
+    def show_columns(self, sheet: Any, columns: Any) -> "HiddenChange":
+        """Show hidden columns (``"C"``, ``"C:D"``, ``3`` or a list of them) of a sheet."""
+        from .edit.filters import set_columns_hidden
+
+        return set_columns_hidden(self, sheet, columns, False)
+
+    def refresh_pivots_on_load(self, on: bool = True, *,
+                               pivots: "Sequence[Any] | None" = None) -> "PivotCacheChange":
+        """Ask the application to refresh pivot caches when it opens the workbook
+        (``refreshOnLoad``): every cache, or those of ``pivots`` (pivot table names or
+        cache ids); ``False`` takes the flag away.  Opt-in, a targeted edit of each cache
+        definition's bytes (:mod:`xlsx_agent.edit.pivots`).  Excel for Mac kept the flag
+        but did not refresh on open (measured)."""
+        from .edit.pivots import refresh_pivots_on_load
+
+        return refresh_pivots_on_load(self, on, pivots=pivots)
+
     def write_table(self, sheet: "str | Sheet | None", origin: str,
                     headers: "Sequence[str] | None", rows: "Sequence[Any]", *,
                     as_table: "bool | str" = False, name: str | None = None,

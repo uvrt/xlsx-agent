@@ -26,6 +26,41 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.26 (unreleased) -- AutoFilters, hidden rows and columns, pivot refresh on open
+
+- **AutoFilters** (production round 44, lane A, R55): `wb.set_autofilter(target, ref=None,
+  criteria={column: values}, hide=True)` and `wb.clear_autofilter(target, keep=False)`
+  (`xlsx_agent.edit.filters`). A sheet's filter (one per sheet: `"Stock"` with `ref`, or
+  `"Stock!A1:F8"`) or a table's own (`"t:Orders"`); value lists by header text or column
+  letters, `None` for blank cells. Written as Excel for Mac 16.106 wrote the same filters
+  (measured through its object model, 2026-11-08): `autoFilter` with `filterColumn`/`filters`
+  (values sorted as text, `blank="1"`), `sheetPr filterMode="1"` while there are criteria,
+  the hidden `_xlnm._FilterDatabase` name local to the sheet; a table's filter in its part,
+  with no name nor `filterMode`. Matching as Excel's: text without regard to case, a number
+  by its shown text in the workbook's locale, a formula by its cached value. **Excel does not
+  apply a saved filter when it opens a file** (measured, sheet and table filters), so the rows
+  a filter excludes are hidden here and the result says so (`hidden_by: "xlsx-agent"`); the
+  range's other rows are shown, rows hidden by hand among them, as Excel shows them.
+  Refused: a date, boolean or error cell in a filtered column (`filter_unmeasured`: Excel's
+  text for them is the region's and language's, not measured), a formula column once any cell
+  was written or the file asks to be recalculated (`filter_formulas`); `hide=False` writes the
+  criteria and leaves hiding to Excel. Turning a filter off shows the range's rows and drops
+  `autoFilter` and `filterMode` (the name stays, as Excel leaves it); `keep=True` is Excel's
+  Clear. Hiding or showing rows asks for a recalculation on open when a `SUBTOTAL`,
+  `AGGREGATE` or table totals row could read them.
+- **Rows and columns hidden by hand**: `wb.hide_rows(sheet, rows)`, `show_rows`,
+  `hide_columns(sheet, columns)`, `show_columns` (`5`, `"5:7"`, `"C:D"` or lists); a row made
+  for the flag is removed again when shown, a column keeps no width hiding gave it.
+- **Pivot caches refreshed on open, opt-in** (R61): `wb.refresh_pivots_on_load(True|False,
+  pivots=None)` (`xlsx_agent.edit.pivots`) sets or takes away `refreshOnLoad` on the cache
+  definitions (all, or those of the pivot tables or cache ids named) as a targeted edit of
+  the part's bytes: every other byte is kept. Measured: Excel for Mac kept the flag but did
+  **not** refresh the pivot on open (object-model open, Launch Services open, 8 s waited,
+  records left out); a refresh by hand did. Excel for Windows not measured.
+- New edit codes: `filter_range`, `filter_column`, `filter_table`, `filter_unmeasured`,
+  `filter_formulas`, `no_pivot`, `pivot_part`. No agent tool (the core is at its budget).
+  The oracle's `Session.operate` takes another script (`tools/excel_filter.applescript`).
+
 ## 0.1.25 (unreleased) -- Aptos Narrow fitted, one sheet-name rule, dates into General cells
 
 - **Fitted widths in Aptos Narrow**, Excel's default body face (production round 44, wave
