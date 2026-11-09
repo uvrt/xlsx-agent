@@ -26,6 +26,31 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.33 (unreleased) -- a sheet read from its compressed entry, never held whole
+
+- **Memory per workbook** (production round 46, lane Z): ooxml-edit 0.99.0 keeps every
+  part it has not edited as its compressed ZIP entry, and every pass over a sheet
+  (`cells`, `values_only`, `scan`, `used_range`, `merges`, `read`, `find_text`...) now reads
+  the sheet from it, inflating a piece at a time (`read.stream.SheetBytes`): a pass holds
+  a 64 KB window of the part, never the part. What a pass needs of the whole part before
+  it starts (`read.stream._Facts`, kept per part as the plans were) is found by one
+  streamed look at open (with the sheet's protection) and kept; a pass from the top counts
+  the row index's tags as it goes; a read from a checkpoint inflates from ooxml-common's
+  last note before it. So the first pass after open inflates the sheet once (a
+  damaged sheet is still refused at open, `damaged`, naming the part). Shared strings are
+  streamed too; a part whose compressed data a later read finds damaged is refused as
+  `damaged` with the part's name. Results identical to the part held whole for every
+  read (`tests/test_streamed_parts.py`). Peak memory and CPU seconds per fresh process on
+  the made-up 200,000 x 19 sheet formatted to row 1,048,576 (534 MB of sheet XML, 70 MB
+  file; a loaded machine; 0.1.31's reading with every part inflated -> this):
+  `cells(values_only=True)` 1,248 -> 118 MB at 76 -> 75 s, `cells()` 1,247 -> 118 MB at
+  118 -> 117 s, `merges()` 1,248 -> 113 MB at 6.7 -> 4.1 s, `used_range()` 1,248 -> 118 MB
+  at 73 -> 73 s, values + merges + used 1,248 -> 118 MB at 75 -> 63 s, open 1,248 -> 112
+  MB at 2.8 -> 4.1 s (the sheet is looked at once there now, for what a pass needs).
+  openpyxl read-only on the same: 133 MB, 139 s. An edit still parses the whole sheet
+  (one `set_cells` on a 200,000-row sheet without style-only rows: 5.6 GB either way).
+- No tool definition changed.
+
 ## 0.1.32 (unreleased) -- a rule's formula after inserting, deleting or moving columns
 
 - **A data validation's or conditional format's formula is rewritten as Excel rewrites
@@ -1546,7 +1571,7 @@ each earlier version added is in that package's CHANGELOG. `pyproject.toml`'s ve
 the one this file's top version section names, and `xlsx_agent.__version__` the same
 (`tools/check_version.py`, run by CI's `build` job).
 
-- `ooxml-edit>=0.96.0`: the format-neutral editing core the siblings share (the OPC
+- `ooxml-edit>=0.99.0`: the format-neutral editing core the siblings share (the OPC
   package with parts as their original bytes, the safe parser, the history, the tool
   layer with workbooks a kind of the shared tools, the session's locale and datasets, the
   sources resolver hook, and `ooxml_edit.sheets`, the lossless cell writer the edits and
@@ -1560,12 +1585,14 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   `Dataset.formats`; round 36, R28); 0.95.0 a cell's format and a row's height and format
   set on their own (`Worksheet.set_style`, `set_row_height`, `set_row_style`, `cells_in`,
   `Styles.add_format`; round 44, R53); 0.96.0 the shared document properties
-  (`ooxml_edit.properties`; round 44, R62) -- the floor.
-- `ooxml-common>=0.42.0`: standard library only, named for what is imported from it
+  (`ooxml_edit.properties`; round 44, R62); 0.99.0 parts kept as their compressed ZIP
+  entries until edited (`OpcPackage.part_entry`; round 46) -- the floor.
+- `ooxml-common>=0.44.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
   widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, from
   0.29.0 the shared reading of a number format code (`numfmt`), and from 0.42.0 a face's
-  own advance widths (`text.fontmap.own_metrics`) with Aptos Narrow's -- the floor.
+  own advance widths (`text.fontmap.own_metrics`) with Aptos Narrow's, and from 0.44.0 a
+  part's compressed entry read whole or streamed (`zipparts.ZipPart`) -- the floor.
 - `lxml>=4.9`: the XML tree every part is read and written in.
 - `pptx-agent` and `pptx2svg>=0.2.0` (`test` extra only): a deck filled from a workbook's
   table in one session (`tests/test_sources_deck.py`), and a deck's text checked against a

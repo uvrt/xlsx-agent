@@ -71,12 +71,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import zipfile
 from collections import OrderedDict
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, BinaryIO, Iterator, Mapping, Sequence
 
 from lxml import etree
 from ooxml_edit.sheets import Area, Cell
+from ooxml_common.zipparts import ZipPart
 from ooxml_edit.opc import OpcPackage
 from ooxml_edit.tools import Dataset
 from ooxml_edit.tools.limits import Limits
@@ -98,8 +100,8 @@ from .schema import ValidationReport, validate
 from .read.regions import (Region, RegionError, Regions, Selection, UnclearRegion, _overlaps,
                            filled)
 from .read.comments import Comment, read_comments
-from .read.stream import (Hyperlink, SheetLayout, SheetReader, SheetScan, _area, layout,
-                          merges_only, read_area, scan, scanning)
+from .read.stream import (Hyperlink, SheetBytes, SheetLayout, SheetReader, SheetScan, _area,
+                          _Facts, layout, merges_only, read_area, scan, scanning)
 from .read.strings import SharedStrings
 from .read.styles import NumberFormat, Styles
 from .read.tables import TablePart, read_table
@@ -205,8 +207,9 @@ class Workbook:
         self._strings: SharedStrings | None = None
         self._styles: Styles | None = None
         self._scans: dict[str, SheetScan] = {}
-        #: Where each sheet part's rows lie (:class:`~xlsx_agent.read.stream._Plan`), by
-        #: part: found once per state of the package.
+        #: What a pass needs to know of each sheet part before it starts -- where its rows
+        #: lie (:class:`~xlsx_agent.read.stream._Facts`) -- by part: found once per state
+        #: of the package.
         self._plans: dict[str, Any] = {}
         #: Each sheet's merges, array blocks and validation rules read from the tree an
         #: edit parsed (:meth:`_layout`), by part.
@@ -1542,7 +1545,7 @@ class Workbook:
         item redacted (:meth:`redact`)."""
         if self._strings is None:
             part = self._related("sharedStrings")
-            self._strings = SharedStrings(self.package.read(part) if part else None,
+            self._strings = SharedStrings(self._part_bytes(part) if part else None,
                                           redact=self._redaction.text
                                           if self._redaction is not None else None)
         return self._strings
@@ -1579,10 +1582,11 @@ class Workbook:
         """A reader of ``sheet``'s cells; ``data``: other bytes than the part's (``b""``
         for one that types cells it is handed, never passes over the sheet)."""
         given = data
+        source: "bytes | ZipPart | None" = data
         if data is None:
-            data = self.package.read(sheet.part) if sheet.part is not None else None
+            source = self._part_bytes(sheet.part) if sheet.part is not None else None
         name = format_sheet(sheet.name, sheet.id)
-        reader = SheetReader(data or b"", sheet=name, hidden=not sheet.visible,
+        reader = SheetReader(source or b"", sheet=name, hidden=not sheet.visible,
                              strings=self.strings, styles=self.styles, date1904=self.date1904,
                              locale=self.locale, formats=formats, grouping=self.grouping,
                              local_dates=self.local_dates, redaction=self._redaction,
@@ -1591,6 +1595,13 @@ class Workbook:
         if sheet.part is not None and given is None:   # the part's own bytes
             reader.plans = (self._plans, sheet.part)
         return reader
+
+    def _part_bytes(self, part: str) -> "bytes | ZipPart | None":
+        """A part as a pass reads it: its compressed entry while it is untouched (inflated a
+        piece at a time by each pass, never held whole), else its bytes."""
+        entry = getattr(self.package, "part_entry", None)   # ooxml-edit 0.99.0 on
+        found = entry(part) if entry is not None else None
+        return found if found is not None else self.package.read(part)
 
     def _stream(self, sheet: Sheet, run):
         """``run()`` over a sheet's part, with the parser's refusal turned into
@@ -1976,12 +1987,16 @@ class Workbook:
             node = next(root.iter(*_PROTECTION), None)
             return node is not None and _true(node.get("content" if kind == "chartsheet"
                                                        else "sheet"))
-        data = self.package.read(part) or b""
-        if data[:2] not in (b"\xff\xfe", b"\xfe\xff") and b"\x00" not in data[:64] \
-                and b"sheetProtection" not in data:
+        source = SheetBytes(self._part_bytes(part))
+        # One streamed look at the part: what a pass will need of it is kept (by part, as a
+        # reader would keep it), so the first pass need not look again.
+        facts = self._plans.get(part)
+        if facts is None:
+            facts = self._plans[part] = _parsed(part, lambda: _Facts.of(source))
+        if not facts.protection:
             return False  # the element's name is spelt out in any 8-bit encoding
         attribute = "content" if kind == "chartsheet" else "sheet"
-        return _parsed(part, lambda: _scan_protection(data, attribute))
+        return _parsed(part, lambda: _scan_protection(source.stream(), attribute))
 
 
 def _as_markdown(value: Value) -> Value:
@@ -2035,9 +2050,15 @@ def _guarded(part: str, run) -> Iterator:
         yield from run()
     except etree.XMLSyntaxError:
         raise OpenError("damaged", f"{part} cannot be parsed as safe, well-formed XML") from None
+    except zipfile.BadZipFile:
+        raise OpenError("damaged", _UNREADABLE.format(part=part)) from None
 
 
-def _scan_protection(data: bytes, attribute: str) -> bool:
+#: A part kept compressed whose data a read found damaged (it is checked as it is read).
+_UNREADABLE = "{part}'s compressed data is damaged"
+
+
+def _scan_protection(data, attribute: str) -> bool:
     for _, node in iterparse_xml(data, tag=_PROTECTION + _ROWS):
         if node.tag in _PROTECTION:
             return _true(node.get(attribute))
@@ -2054,6 +2075,8 @@ def _parsed(part: str, parse):
         return parse()
     except etree.XMLSyntaxError:
         raise OpenError("damaged", f"{part} cannot be parsed as safe, well-formed XML") from None
+    except zipfile.BadZipFile:
+        raise OpenError("damaged", _UNREADABLE.format(part=part)) from None
 
 
 def _true(value: str | None) -> bool:
