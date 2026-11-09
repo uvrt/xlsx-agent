@@ -38,8 +38,9 @@ not been measured from Excel yet.  Nothing is ever written half-updated.
 * *Merged cells, data validations, conditional formats, hyperlinks, comments, filters,
   tables, print areas and titles, frozen panes, page breaks* move, grow and shrink with
   their cells; what is wholly deleted goes (a merge left one cell goes too).  A
-  conditional format's or validation's formula keeps its meaning for every cell it covers
-  (Excel splits a block whose cells would no longer share one formula; so does this).
+  conditional format's or validation's formula is rewritten for the first cell of each
+  part its cells move as, the part's other cells reading relative to it -- not cell by
+  cell (measured, round 46: Excel splits a rule only where its cells part).
 * *Tables*: inserting columns inside a table adds table columns (``Column1``, the first
   free such name, as an English Excel names them); deleting a table's columns removes
   them, and deleting all of them the table.  Deleting every data row of a table keeps one
@@ -605,24 +606,6 @@ def area_cells(area: Area, change: Change, *, linked: bool = False) -> list[Area
             for x, y in change.pieces(a, b, area.across(change.axis))]
 
 
-def _relative_offsets(text: str, axis: str) -> set[int]:
-    """The positions along ``axis`` a formula's relative references name (as written at
-    its anchor): where the cells it is copied to may fall on either side of a change."""
-    found: set[int] = set()
-    for token in tokens(text):
-        if token.kind != "ref" or token.book:
-            continue
-        for piece in token.body.split(":"):
-            part = _parse_part(piece)
-            if part is None:
-                continue
-            if axis == ROW and part.row is not None and not part.row_anchor:
-                found.add(part.row)
-            if axis == COLUMN and part.column is not None and not part.column_anchor:
-                found.add(part.column)
-    return found
-
-
 def _breaks(change: Change) -> list[int]:
     """The lines at which a change's behaviour changes along its axis."""
     if change.kind == "insert":
@@ -636,8 +619,12 @@ def anchored(areas: list[Area], formulas: list[str], change: Change, rewriter: R
              home: str, *, linked: bool = True) -> list[tuple[list[Area], list[str]]]:
     """A rule over ``areas`` whose ``formulas`` are written for the top-left cell of the
     areas' bounding box, through ``change``: groups of ``(areas, formulas)``, each group's
-    formulas written for its own top-left cell -- one group when every cell keeps one
-    formula, as many as the cells' formulas now differ (Excel splits such a rule)."""
+    formulas written for its own top-left cell.  Each area is cut only where its cells part
+    (a move's edges); each piece's formula is the one written for its first cell, rewritten,
+    and the piece's other cells read relative to it -- as Excel does (measured, round 46:
+    over C3:D6 reading ``C3>A3``, moving A before F gives ``B3>E3`` and ``C3>F3``, not
+    ``C3>A3``; inserting or deleting column B likewise).  Pieces that read alike again are
+    one group."""
     axis = change.axis
     top = min(a.r1 for a in areas), min(a.c1 for a in areas)
     pieces: list[tuple[Area, list[str]]] = []
@@ -651,15 +638,6 @@ def anchored(areas: list[Area], formulas: list[str], change: Change, rewriter: R
         whole = linked and _linked_move(area, change)
         if change.kind == "move" and not whole:   # the cells part at a move's edges
             cuts |= {line for line in breaks if lo < line <= hi}
-        for text in ([] if whole else local):
-            if not text:
-                continue
-            for position in _relative_offsets(text, axis):
-                offset = position - anchor
-                for line in breaks:
-                    cut = line - offset
-                    if lo < cut <= hi:
-                        cuts.add(cut)
         edges = sorted(cuts) + [hi + 1]
         for start, end in zip(edges, edges[1:]):
             piece = area.with_along(axis, start, end - 1)
