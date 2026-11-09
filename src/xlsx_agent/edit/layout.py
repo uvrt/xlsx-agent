@@ -51,7 +51,7 @@ a word with accented letters (up to 4 px in Arial, 1 px in Aptos Narrow) and Apt
 "Stock level by warehouse", 14 px -- 2.3 characters -- on 40 letters; 11 and 13 points
 exact).
 Fonts are measured with ooxml-common's advance widths of the face itself
-(:func:`ooxml_common.text.fontmap.own_metrics`, ooxml-common 0.41): its own table or a
+(:func:`ooxml_common.text.fontmap.own_metrics`, ooxml-common 0.42): its own table or a
 clone's with the same widths (Calibri, Arial, Helvetica, Times New Roman, Courier New,
 Cambria, Aptos, Aptos Narrow, Aptos Display and the others :func:`measurable` accepts).  A
 cell in another font -- or in one measured with a near face's widths, such as Calibri Light

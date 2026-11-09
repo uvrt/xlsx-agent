@@ -30,7 +30,7 @@ has the detail of every milestone. Why each dependency is needed at its version:
 
 - **Fitted widths in Aptos Narrow**, Excel's default body face (production round 44, wave
   2): a fit refused it (`unmeasured_font`). It is measured now with its own advance widths,
-  which ooxml-common 0.41.0 adds (`own_metrics`, generated from the face Office installs,
+  which ooxml-common 0.42.0 adds (`own_metrics`, generated from the face Office installs,
   as Aptos's are; no font file anywhere). Fonts are looked up with `own_metrics`, the very
   face's widths: Calibri Light and Aptos Light, which the renderers measure with a near
   face's widths, now refuse a fit instead of being fitted 1.3% or more off. A workbook
@@ -61,7 +61,7 @@ has the detail of every milestone. Why each dependency is needed at its version:
   formats (Excel for Mac 16.106, 2026-11-09). `xlsx_set_cells`' description says so:
   519 -> 525 estimated tokens (deferred group; the core unchanged at 4,938; every
   definition 7,076 -> 7,082).
-- Needs ooxml-common 0.41.0 (`own_metrics`, Aptos Narrow's table).
+- Needs ooxml-common 0.42.0 (`own_metrics`, Aptos Narrow's table).
 
 ## 0.1.24 (unreleased) -- edits on large sheets pay for what they touch
 
@@ -1346,10 +1346,10 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   `Dataset.formats`; round 36, R28); 0.95.0 a cell's format and a row's height and format
   set on their own (`Worksheet.set_style`, `set_row_height`, `set_row_style`, `cells_in`,
   `Styles.add_format`; round 44, R53) -- the floor.
-- `ooxml-common>=0.41.0`: standard library only, named for what is imported from it
+- `ooxml-common>=0.42.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
   widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, from
-  0.29.0 the shared reading of a number format code (`numfmt`), and from 0.41.0 a face's
+  0.29.0 the shared reading of a number format code (`numfmt`), and from 0.42.0 a face's
   own advance widths (`text.fontmap.own_metrics`) with Aptos Narrow's -- the floor.
 - `lxml>=4.9`: the XML tree every part is read and written in.
 - `pptx-agent` and `pptx2svg>=0.2.0` (`test` extra only): a deck filled from a workbook's
