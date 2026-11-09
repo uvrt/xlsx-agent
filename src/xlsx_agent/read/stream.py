@@ -171,6 +171,9 @@ class _Plan:
     #: A row's start with its number first (``<row r="9"``), and its end tag.
     head: "re.Pattern[bytes]"
     end_tag: bytes
+    #: Whether the part has a row that holds only styles: a part with none is parsed
+    #: whole, as before (``iterparse``); its plan still serves :func:`merges_only`.
+    skims: bool = True
 
     @classmethod
     def of(cls, data: bytes) -> "_Plan | None":
@@ -199,7 +202,8 @@ class _Plan:
         return cls(start.end(), end.start(), row, following, cell,
                    frozenset(name for name, _ in bound if name) | {b"xml"},
                    re.compile(rb"<" + re.escape(prefix) + rb'row r="([1-9][0-9]{0,6})"'),
-                   b"</" + prefix + b"row>")
+                   b"</" + prefix + b"row>",
+                   row.search(data, start.end(), end.start()) is not None)
 
 
 def _row_attributes(written: bytes, prefixes: frozenset[bytes]) -> "dict[bytes, bytes] | None":
@@ -565,7 +569,8 @@ class SheetReader:
         its cells' bytes or ``None``)."""
         data = self.data
         plan = self.plan()
-        if plan is None or (start is not None and len(start[0].header) != plan.begin):
+        if plan is None or not plan.skims \
+                or (start is not None and len(start[0].header) != plan.begin):
             source: "bytes | _Resumed" = data if start is None else \
                 _Resumed(start[0].header, data, start[1].offset)
             for _, node in iterparse_xml(source, tag=_STREAMED):
