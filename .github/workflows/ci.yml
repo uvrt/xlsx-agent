@@ -55,7 +55,7 @@ jobs:
         # They are @main, so a sibling change this repository depends on lands there first.
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@r44-aptos-narrow"
+          python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@main"
           python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@main"
           # Test only: a deck filled from a workbook's table (tests/test_sources_deck.py).
           python -m pip install "pptx2svg @ git+https://github.com/uvrt/pptx2svg@main"
@@ -93,7 +93,7 @@ jobs:
       # test job installs them, so their types are used where they ship py.typed.
       - name: Type check (mypy)
         run: |
-          python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@r44-aptos-narrow"
+          python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@main"
           python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@main"
           python -m pip install "mypy==2.4.0"
           mypy
