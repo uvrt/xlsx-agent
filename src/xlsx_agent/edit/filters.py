@@ -11,7 +11,11 @@
     wb.hide_columns("Stock", "C:D"); wb.show_columns("Stock", "C")
 
 Each is one undoable step (or part of the open batch), every problem refused before
-anything changes, and changes no value.
+anything changes, and changes no value.  ``set_autofilter`` sets the filter whole: its
+``criteria`` replace those of every column of the range or table, so the columns to filter
+are passed together in one call (Excel's own object model sets one column per call and
+keeps the others' -- round 44's two-column probe -- which a mapping of columns does not
+need).
 
 **What Excel does, measured** (Excel for Mac 16.106, region Dutch (Belgium), 2026-11-08:
 its object model's ``autofilter range`` with ``operator filter by value``, ``autofilter
@@ -221,10 +225,9 @@ def _locate(workbook: Any, target: Any, ref: Any) -> _Filter:
                 and parsed.span == "cells":
             sheet = workbook.sheet_of(parsed)
             return _sheet_filter(workbook, sheet, parsed.area)
-        text = text.rstrip("!")
-        if text.startswith("'") and text.endswith("'"):
-            text = text[1:-1].replace("''", "'")
-    sheet = find_sheet(workbook, text)
+    # A sheet is found by its name as given, spaces too (a sheet may be called "Stock "),
+    # or as an address writes it ('Stock '!).
+    sheet = find_sheet(workbook, target)
     area = None
     if ref is not None:
         if not isinstance(ref, str):

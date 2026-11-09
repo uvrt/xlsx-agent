@@ -58,6 +58,79 @@ has the detail of every milestone. Why each dependency is needed at its version:
   move whose block passed one of its ends: `SUM(A1:C1)` with C put first is `SUM(B1:C1)`,
   as in Excel), at most 50 with `reshaped_count` all; `as_dict` carries them only when there
   are any. No tool definition changed.
+## 0.1.29 (unreleased) -- unlocked cells of protected sheets, dates and times
+
+- **Protected sheets** (production round 46, R71; `xlsx_agent.edit.protection`): a
+  protected sheet's unlocked cells are written by `set_cells`, `write_table` and
+  `append_rows`, as Excel lets them be typed into, and its `sheetProtection` -- hash,
+  salt, spin count, options -- is never touched; a locked cell is refused (`protected`),
+  every one named, with the sheet's unlocked cells listed and the way out. A cell is
+  unlocked by its own format's `<protection locked="0"/>`, else by its row's
+  (`customFormat`) or its column's format; `applyProtection` and the cell style it is
+  based on change nothing. No override: a locked cell needs the sheet unprotected. The
+  other calls follow the protection's options as Excel does: notes by `objects` (left out
+  is allowed), rows and columns inserted by `insertRows`/`insertColumns`, deleted by
+  `deleteRows`/`deleteColumns` and only when every cell of them is unlocked (naming the
+  first locked one); no table made or grown, nothing merged, nothing moved (each refusal
+  saying so); formatting as before by `formatCells`/`formatColumns`/`formatRows`. A date,
+  time or line break gives an unlocked cell its format there, as Excel did on a sheet that
+  allows no formatting. Measured, Excel for Mac 16.106, 2026-11-09, through its object
+  model on made-up sheets protected with Excel's defaults and with every option allowed:
+  values, formulas, clearing, bold, number formats, notes, hyperlinks, merges, inserting
+  and deleting rows, columns and cells, tables made, grown and resized. Oracle: a
+  protected sheet written in its unlocked cells opens unprompted, and Excel's re-save
+  keeps the values, the protection and its hash.
+- **Dates and times** (production round 46, R72; `xlsx_agent.edit.cells`): `set_cells`,
+  `write_table` and `append_rows` take a date and time (a Python `datetime`, `{"date":
+  dt}`, `{"date": "2026-01-05 14:30"}`, ISO with `T`, or the locale's date order with a
+  clock) and a time of day alone (`time`, `{"date": "14:30"}`), written as the serials
+  Excel stores when they are typed, in either date system, kept to the millisecond and
+  rounded half up as Excel rounds; a midnight `datetime` is its date; a time zone and a
+  duration (`timedelta`, an hour past 23) are refused with the way out. A General cell
+  and the built-in formats Excel replaces get Excel's format: `m/d/yyyy h:mm` (22) for a
+  date and time, `h:mm` (20) or `h:mm:ss` (21) for a time, listed in the result's new
+  `time_format`; a date format keeps a date and time (its day shown), a time format a
+  time; a number format, text, a time-only code for a date and time, or a day-showing
+  custom code for a time refuses unless `format` is given, which is checked against the
+  value and honoured. `write_table` and `append_rows` give such cells Excel's format
+  instead, through `set_cells` itself (`typed`), so protection and policy are asked once.
+  Measured, Excel for Mac 16.106, 2026-11-09: 23 texts typed into 33 formats, 1900 and
+  1904. Excel gives text typed with a fraction of a second `mm:ss.0` (47), hiding hour and
+  day; 22/21 are given here, the fraction kept in the value. Tool `xlsx_set_cells`' `date`
+  says so: 525 -> 535 estimated, every definition 7,082 -> 7,092 (guard 7,085 -> 7,095),
+  the core unchanged.
+
+## 0.1.28 (unreleased) -- sheet names with outer spaces, column widths read, Windows defaults
+
+- **A sheet's name is taken exactly, spaces too** (production round 46, R69): a sheet called
+  `Stock ` (or ` Stock`) is reached by every call that takes a sheet or an address --
+  `rename_sheet`, `delete_sheet`, `clear_sheet`, `set_sheet_state`, `sheet_referents`, the
+  row and column edits, `merge`/`unmerge`, `set_comment(s)`/`remove_comment`,
+  `freeze_panes`, `set_gridlines`, `protect_sheet`, `set_autofilter`/`clear_autofilter`,
+  `hide_*`/`show_*`, `write_table`, `append_rows`, the reads -- bare (`"Stock "`) and as an
+  address writes it (`"'Stock '!A1"`); before, the bare name lost its spaces and the call
+  said "no sheet". Measured (Excel for Mac 16.106, 2026-11-09): Excel keeps leading and
+  trailing spaces, and `Stock` and `Stock ` are two sheets of one workbook. One rule for
+  every lookup (`xlsx_agent.formula.sheets.pick_sheet`): the name as given (as Excel
+  compares names), else the one sheet equal to it with outer spaces aside (rule 1); two such
+  sheets are refused naming both (rule 2). `tests/test_sheet_spaces.py` sweeps every call
+  against three spaced names beside their twin `Stock`.
+- **`wb.column_widths("Stock!A:H")`** (R76; `xlsx_agent.read.widths`): each column's width
+  as Excel's Column Width shows it -- the unit `set_column_widths` takes -- with the stored
+  width or `default` (the sheet's), and `hidden`; also one column (`Stock!C`), a range's
+  columns, or a sheet alone (up to its last used or sized column). Measured in Excel under
+  four default fonts: a stored `w` shows as `(round(w * digit) - 5) / digit`; the default is
+  `defaultColWidth` so shown, else `baseColWidth` (8 when not given); a hidden column keeps
+  its width. `limit` (256, up to 16,384) with `more` and `next` (rule 4).
+- **`Workbook.new()` is Excel for Windows' new workbook** (round 46 decision): Aptos Narrow
+  11, `defaultRowHeight="15" x14ac:dyDescent="0.25"`, no `baseColWidth`; widths given and
+  fitted count in the 11 pt default. Excel for Mac opens it unprompted; its re-save keeps
+  the font, the row height and the widths (writing its own descent and base 10 with the same
+  8-character default).
+- `set_autofilter`'s docstring says each call sets every column's criteria of its range or
+  table: pass the columns to filter together.
+- Works with ooxml-edit 0.97 and with 0.99's stricter `column_index` (R77) alike: the
+  address parser counts a column past `XFD` itself and refuses it in its own words.
 
 ## 0.1.27 (unreleased) -- notes on cells, document properties
 
