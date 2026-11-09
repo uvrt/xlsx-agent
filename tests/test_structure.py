@@ -174,10 +174,10 @@ def test_rearrange_by_mapping_and_no_op():
     assert not again.changed
 
 
-def test_rearrange_refuses_a_table_and_a_bad_order():
+def test_rearrange_refuses_a_tables_edge_and_a_bad_order():
     wb = _book()
     with pytest.raises(EditError) as raised:
-        wb.rearrange_columns("Stock", ["B", "A"])
+        wb.rearrange_columns("Stock", ["J", "A"])        # into and out of t:Goods
     assert raised.value.code == "table_move" and wb.version == 0
     for order, drop in ((["J", "J"], ()), ({"J": "A"}, ()), (["J"], ["J"]), (None, ())):
         with pytest.raises(EditError) as raised:
