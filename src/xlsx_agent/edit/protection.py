@@ -74,7 +74,9 @@ class Locks:
         self.workbook = workbook
         self._locked: dict[int, bool] = {}
         styles = workbook.editor.cells.styles
-        self._xfs = styles._xfs() if styles is not None else []
+        root = workbook.package.tree(styles.part) if styles is not None else None
+        container = root.find(_X + "cellXfs") if root is not None else None
+        self._xfs = container.findall(_X + "xf") if container is not None else []
 
     def style_locked(self, style: int) -> bool:
         """Whether cell format ``style`` locks its cells (see the module)."""
