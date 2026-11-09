@@ -26,7 +26,7 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
-## 0.1.28 (unreleased) -- rearranging columns fixed; a table's columns reordered
+## 0.1.30 (unreleased) -- rearranging columns fixed; a table's columns reordered
 
 - **`rearrange_columns` puts columns that are not next to each other where they were asked
   to go** (production round 46, R70): `{"C": "A", "A": "C"}` gave c, a, b and `["K", "I"]`
