@@ -26,6 +26,38 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.30 (unreleased) -- rearranging columns fixed; a table's columns reordered
+
+- **`rearrange_columns` puts columns that are not next to each other where they were asked
+  to go** (production round 46, R70): `{"C": "A", "A": "C"}` gave c, a, b and `["K", "I"]`
+  put I at J, while the result reported the swap. Each listed column now takes the place of
+  the listed column as many from the left, the others staying; the call makes the fewest
+  Cut + "Insert Cut Cells" moves (the longest run of columns already in order stays, each
+  other column, with its neighbours in the order when they stand together, is placed before
+  the next column that stays), and the result's `columns` is read from the steps made
+  (every listed column, and every other column whose letters changed), checked against the
+  order before the step closes. Held to a pure model on random sheets, orders, mappings and
+  drops (cells, formulas in cells, on other sheets, in names, rules and chart series,
+  merged areas, widths); Excel makes the same of the same moves (oracle).
+- **A table's columns are reordered as Excel's drag of a table column does** (R75):
+  `rearrange_columns` on columns of a table moves them within the table's rows (Cut of the
+  table column's cells and "Insert Cut Cells", measured in Excel for Mac 16.106 on 25 made-up
+  cases, `tests/golden/table_columns.json`): the table keeps its name, range, style, totals
+  row and calculated columns, each column its id, name and formulas; the filter's criteria
+  follow their columns (a moved column's own go, as in Excel), the sort state's keys too (a
+  key on a moved column goes); references follow the table's cells (a whole column, or a
+  range reaching past the table's rows, stays, except as Excel trims one in the columns the
+  cut cells were taken from and put before); rules, hyperlinks and notes follow their cells,
+  and a moved column takes the rules covering its new neighbour's data rows and a data
+  format as Excel does. Column widths and the cells above and below the table stay (the
+  result says so). An order that would move a column into or out of a table is refused
+  (`table_move`, naming the table and its columns); `move_columns` still refuses whole
+  columns of a table, and now says to use `rearrange_columns`.
+- **`reshaped`**: every insert, delete or move report (`Restructured`) and the
+  rearrangement's result list where a range now covers other cells than it did, moved (a
+  move whose block passed one of its ends: `SUM(A1:C1)` with C put first is `SUM(B1:C1)`,
+  as in Excel), at most 50 with `reshaped_count` all; `as_dict` carries them only when there
+  are any. No tool definition changed.
 ## 0.1.29 (unreleased) -- unlocked cells of protected sheets, dates and times
 
 - **Protected sheets** (production round 46, R71; `xlsx_agent.edit.protection`): a

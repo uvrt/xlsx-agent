@@ -49,7 +49,8 @@ not been measured from Excel yet.  Nothing is ever written half-updated.
 
 **Refused, as Excel refuses**: cutting through an array formula (inserting inside it,
 deleting or moving part of it); pushing cells that hold something off the grid; deleting a
-table's header row; moving columns of a table.  **Refused, not measured yet**: a data
+table's header row; moving whole columns of a table (a table's columns are reordered in its
+rows by :func:`~xlsx_agent.edit.rearrange.rearrange_columns`, :mod:`.table_columns`).  **Refused, not measured yet**: a data
 table, a pivot table the change would cut through, a structured reference to a column
 range a deletion reaches, a defined name with a mixed reference to the sheet, a moved
 block that cuts through a merged area or crosses a table's edge, a table's totals row,
@@ -329,13 +330,28 @@ class Tables:
 
 class Rewriter:
     """Rewrites references to one sheet (:attr:`target`, case folded) through a
-    :class:`Change`."""
+    :class:`Change`.
 
-    def __init__(self, change: Change, target: str, tables: Tables | None = None) -> None:
+    ``band`` (rows ``first, last``): a column move of only those rows' cells -- a table's
+    columns reordered (round 46, :mod:`.table_columns`).  A reference whose rows all lie
+    in the band changes as for a move of whole columns; any other (a whole column, a cell
+    or range reaching past the band's rows) stays as it is -- except a range in one of the
+    ``trim`` columns (where the cut cells were taken out and put in) that runs from inside
+    the band out of one end of it: it loses its rows in the band (``D5:D12`` with the band
+    3:10 is ``D11:D12``; measured, Excel for Mac 16.106).  :attr:`reshaped` counts the ranges a column or row move gave other cells
+    than those they covered, moved (``SUM(A1:C1)`` with C cut and inserted before A is
+    ``SUM(B1:C1)``, as Excel makes it)."""
+
+    def __init__(self, change: Change, target: str, tables: Tables | None = None, *,
+                 band: "tuple[int, int] | None" = None, trim: "frozenset[int]" = frozenset()
+                 ) -> None:
         self.change = change
         self.target = sheet_key(target)
         self.name = target
         self.tables = tables or Tables()
+        self.band = band
+        self.trim = trim
+        self.reshaped = 0
         self._needles = {target.casefold(), target.replace("'", "''").casefold()}
 
     def mentions(self, text: str) -> bool:
@@ -391,6 +407,11 @@ class Rewriter:
             else:
                 part.column = value
 
+        band = self.band
+        if band is not None:
+            rows = [part.row for part in parts if part is not None]
+            if any(row is None or not band[0] <= row <= band[1] for row in rows):
+                return self._trimmed(parts, band)   # past the band's rows: as it is, or
         if len(parts) == 1:
             part = parts[0]
             assert part is not None
@@ -421,8 +442,35 @@ class Rewriter:
         span = change.span(a, b, across)
         if span is None:
             return REF
+        if change.kind == "move" and a != b and _reshaped(change, a, b, span):
+            self.reshaped += 1
         set_along(first, span[0])
         set_along(second, span[1])
+        return f"{first.text()}:{second.text()}"
+
+    def _trimmed(self, parts: list, band: tuple[int, int]) -> str:
+        """A reference reaching past the band's rows: as it is, unless it is a range in a
+        ``trim`` column that runs out of one end of the band (see the class)."""
+        text = ":".join(part.text() for part in parts)
+        if len(parts) != 2 or not self.trim:
+            return text
+        first, second = parts
+        if first.column is None or first.column != second.column \
+                or first.column not in self.trim or first.row is None or second.row is None:
+            return text
+        top, bottom = sorted((first.row, second.row))
+        lo, hi = band
+        if lo <= top <= hi < bottom:           # from inside the band down past it
+            top = hi + 1
+        elif top < lo <= bottom <= hi:         # from above the band into it
+            bottom = lo - 1
+        else:
+            return text
+        self.reshaped += 1
+        if first.row <= second.row:
+            first.row, second.row = top, bottom
+        else:
+            first.row, second.row = bottom, top
         return f"{first.text()}:{second.text()}"
 
     def _structured(self, text: str, table: str | None) -> str:
@@ -439,6 +487,17 @@ class Rewriter:
             raise NotDone("not_measured", text[:cut] or "a table",
                           "a structured reference to a range of columns, one of them deleted")
         return REF if hit else text
+
+
+def _reshaped(change: Change, a: int, b: int, span: tuple[int, int]) -> bool:
+    """Whether the range of lines ``a`` .. ``b`` became ``span`` other than by its own
+    lines moving: the lines it covers now are not the ones it covered."""
+    covered = 0
+    for x, y in change.pieces(a, b):
+        if x < span[0] or y > span[1]:
+            return True
+        covered += y - x + 1
+    return covered != span[1] - span[0] + 1
 
 
 def _structured_columns(text: str) -> tuple[list[str], bool]:

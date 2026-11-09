@@ -658,7 +658,9 @@ class Workbook:
     def move_columns(self, sheet: "Sheet | str | SheetRef", source: "int | str",
                      before: "int | str", *, revision: int | None = None) -> "Restructured":
         """Move columns ``source`` (``"E"`` or ``"E:F"``) to before column ``before``:
-        see :meth:`move_rows`.  Excel refuses to move a table's columns; so does this."""
+        see :meth:`move_rows`.  Excel refuses to move whole columns of a table; so does
+        this (:meth:`rearrange_columns` reorders a table's columns in its rows, as Excel's
+        drag of a table column does)."""
         from .edit.restructure import restructure
 
         return restructure(self, sheet, "move_columns", source, None, before,
@@ -668,8 +670,10 @@ class Workbook:
                           drop: "Sequence[str | int]" = (), revision: int | None = None
                           ) -> "Rearranged":
         """Put a sheet's columns in an order, and drop some, in one step: a composition of
-        :meth:`move_columns` and :meth:`delete_columns`, every reference remapped through
-        it (:mod:`xlsx_agent.edit.rearrange`)."""
+        :meth:`delete_columns` and the fewest :meth:`move_columns`, every reference
+        remapped through it; a table's columns reordered within the table's rows, as
+        Excel's drag of a table column (:mod:`xlsx_agent.edit.rearrange`).  ``["K", "I"]``
+        swaps K and I (J stays); ``{"C": "A", "A": "C"}`` likewise."""
         from .edit.rearrange import rearrange_columns
 
         return rearrange_columns(self, sheet, order, drop=drop, revision=revision)

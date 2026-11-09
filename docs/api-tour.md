@@ -954,8 +954,29 @@ wb.rearrange_columns("Stock", ["C", "A", "B"], drop=["E"])   # one step, R59
 - **Reading a sheet someone rearranged**: a dataset by header (`wb.dataset("t:...")`)
   already ignores the order of columns; `rearrange_columns` is for giving a sheet back in a
   template's order. `order` lists columns in the order they are to stand, in the places the
-  listed columns hold now (columns not listed stay); a mapping says the same as
-  `{"C": "A", "A": "B", "B": "C"}`; `drop` deletes columns first, named as before.
+  listed columns hold now (columns not listed stay: `["K", "I"]` swaps K and I and leaves
+  J); a mapping says the same as `{"C": "A", "A": "C"}`; `drop` deletes columns first,
+  named as before. It makes the fewest moves (the longest run already in order stays) and
+  reports where each column went (`columns`, read from the steps it made).
+- **A table's columns** (round 46, R75) are reordered within the table's rows, as Excel
+  does when a table column is dragged: the table keeps its name, style, filter, totals row
+  and calculated columns, each column its id and name; the sheet's column widths and the
+  cells above and below the table stay (a note says so). An order that would move a column
+  into or out of a table is refused (`table_move`, naming the table and its columns);
+  `move_columns` still refuses whole columns of a table, as Excel does.
+- **Ranges across moved columns** change as Excel's moves change them, which can leave one
+  covering other cells (`SUM(A1:C1)` with C put first is `SUM(B1:C1)` in Excel too): each
+  such place is listed in `reshaped` (at most 50, `reshaped_count` all), on every step's
+  report and on the call's.
+
+```python
+done = wb.rearrange_columns("Shop", ["F", "C", "D", "E"])   # t:Lines' Note before Qty
+done.as_dict()
+# {'sheet': 'Shop', 'changed': True, 'columns': {'C': 'D', 'D': 'E', 'E': 'F', 'F': 'C'},
+#  'dropped': [], 'steps': [{'operation': 'move_table_columns', ...}], 'formulas': 13,
+#  'broken_count': 0, 'notes': ["t:Lines: its columns were reordered within the table's
+#  rows, as Excel does when a table column is dragged; ..."]}
+```
 
 ## AutoFilters, hidden rows and pivot refresh (round 44: R55, R61)
 
