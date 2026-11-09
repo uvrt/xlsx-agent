@@ -239,3 +239,21 @@ def test_a_deletion_takes_lines_whose_every_cell_is_unlocked():
         error = _refused(wb, call, "Rota", at)
         assert error.code == "protected" and f"{cell} is locked" in str(error), (at, str(error))
     assert _refused(wb, wb.move_rows, "Rota", 6, before=2).code == "protected"
+
+
+def test_the_unlocked_cells_a_refusal_lists_are_capped_and_say_so():
+    from xlsx_agent.edit.protection import MAX_HINTS
+
+    book = WorkbookBuilder()
+    sheet = book.sheet("Grid")
+    for n in range(1, 30, 2):          # unlocked cells on every other row: no block forms
+        sheet.cell(f"B{n}", n)
+    parts = book.parts()
+    parts["xl/styles.xml"] = STYLES
+    text = parts["xl/worksheets/sheet1.xml"].decode().replace("<c r=\"B", "<c s=\"1\" r=\"B")
+    parts["xl/worksheets/sheet1.xml"] = text.replace(
+        "</sheetData>", "</sheetData>" + GUARD.format(extra="")).encode()
+    wb = Workbook.open(zip_parts(parts))
+    message = str(_refused(wb, wb.set_cells, {"Grid!A1": 1}))
+    listed = re.findall(r"Grid!B\d+", message)
+    assert len(listed) == MAX_HINTS and "and more" in message
