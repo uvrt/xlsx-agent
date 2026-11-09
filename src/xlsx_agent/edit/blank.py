@@ -14,10 +14,10 @@ made a new workbook through its AppleScript (``make new workbook``) and saved it
 * ``xl/_rels/workbook.xml.rels`` (styles ``rId3``, theme ``rId2``, sheets from ``rId1``:
   a sheet beyond the first takes the next free id);
 * ``xl/worksheets/sheetN.xml``: ``dimension ref="A1"``, a ``sheetView`` (the first sheet
-  ``tabSelected``), ``sheetFormatPr baseColWidth="10" defaultRowHeight="16"`` with its
-  ``x14ac:dyDescent``, an empty ``sheetData``, the page margins (0.7, 0.7, 0.75, 0.75,
-  0.3, 0.3);
-* ``xl/styles.xml``: the one font (the theme's minor font, Aptos Narrow, 12 pt, colour
+  ``tabSelected``), ``sheetFormatPr`` (the platform's, below), an empty ``sheetData``,
+  the page margins (0.7, 0.7, 0.75, 0.75, 0.3, 0.3);
+* ``xl/styles.xml``: the one font (the theme's minor font, Aptos Narrow, at the platform's
+  size, below; colour
   ``theme="1"``, family 2, scheme minor), the two fills (``none``, ``gray125``), one empty
   border, one cell style format and one cell format, the Normal cell style
   (``builtinId="0"``), no ``dxfs`` and ``tableStyles`` with ``TableStyleMedium2`` and
@@ -39,10 +39,19 @@ sheet and the view; ``Application`` names this library, as docx-agent and pptx-a
 ``Blad1``), the cell style ``Normal`` (``Standaard``), the theme ``Office Theme``
 (``Kantoorthema``) and ``Worksheets`` in ``app.xml`` (``Werkbladen``).
 
-**What depends on the platform.**  Excel for Mac's Normal font is 12 pt, its row 16 points
-and its base column width 10; Excel for Windows makes a new workbook in 11 pt (not
-measured here: there is no Windows Excel on the test machine).  :data:`FONT_SIZE`,
-:data:`ROW_HEIGHT` and :data:`BASE_COLUMN_WIDTH` hold the measured Mac values in one place.
+**What depends on the platform: Excel for Windows' is written** (production round 46: the
+team and its readers use Excel for Windows, Microsoft 365, ``AppVersion`` 16.0300, and read
+its empty workbook for us): the Normal font **Aptos Narrow 11 pt**, ``sheetFormatPr
+defaultRowHeight="15" x14ac:dyDescent="0.25"`` and **no** ``baseColWidth`` (the default
+base, 8 characters).  Excel for Mac's own new workbook differs (measured, above): 12 pt,
+``baseColWidth="10" defaultRowHeight="16" x14ac:dyDescent="0.2"``.  Excel for Mac opens the
+Windows defaults without a repair and its re-save keeps the font and the row height; it
+writes its own descent (``0.2``) and the width it shows as its own ``baseColWidth="10"
+defaultColWidth="8.83203125"`` -- the same 8 characters (measured, 2026-11-09,
+tests/test_format_oracle.py).  :data:`FONT_SIZE`, :data:`ROW_HEIGHT`,
+:data:`BASE_COLUMN_WIDTH` (``None``: not written) and :data:`DY_DESCENT` hold them in one
+place.  Widths given or fitted in a new workbook are measured in its 11 pt default
+(:mod:`xlsx_agent.edit.layout`).
 
 No shared-strings part: Excel writes none until a cell holds text, and a text written into
 the new workbook adds one (:func:`xlsx_agent.edit.tables.ensure_shared_strings`).
@@ -84,12 +93,13 @@ CT_APP = "application/vnd.openxmlformats-officedocument.extended-properties+xml"
 APPLICATION = "xlsx-agent"
 
 #: The Normal font's size in points, the default row height in points and the base column
-#: width in characters: Excel for Mac's, measured (see the module).
-FONT_SIZE = 12
-ROW_HEIGHT = 16
-BASE_COLUMN_WIDTH = 10
-#: ``x14ac:dyDescent`` of the sheet format, as measured.
-DY_DESCENT = "0.2"
+#: width in characters (``None``: not written, Excel's default of 8): Excel for Windows'
+#: (see the module).
+FONT_SIZE = 11
+ROW_HEIGHT = 15
+BASE_COLUMN_WIDTH: int | None = None
+#: ``x14ac:dyDescent`` of the sheet format, as Excel for Windows writes it.
+DY_DESCENT = "0.25"
 
 #: The theme's body (minor) face in Excel; its headings face is PowerPoint's.
 MINOR_FONT = "Aptos Narrow"
@@ -148,7 +158,9 @@ def worksheet_xml(selected: bool) -> str:
     return (_DECL + f'<worksheet xmlns="{NS_MAIN}" xmlns:r="{NS_R}" xmlns:mc="{_MC}" '
             f'mc:Ignorable="x14ac" xmlns:x14ac="{_X14AC}">'
             f'<dimension ref="A1"/><sheetViews>{view}</sheetViews>'
-            f'<sheetFormatPr baseColWidth="{BASE_COLUMN_WIDTH}" defaultRowHeight="{ROW_HEIGHT}" '
+            '<sheetFormatPr'
+            + (f' baseColWidth="{BASE_COLUMN_WIDTH}"' if BASE_COLUMN_WIDTH is not None else "")
+            + f' defaultRowHeight="{ROW_HEIGHT}" '
             f'x14ac:dyDescent="{DY_DESCENT}"/><sheetData/>'
             '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" '
             'footer="0.3"/></worksheet>')

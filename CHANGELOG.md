@@ -26,6 +26,38 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.28 (unreleased) -- sheet names with outer spaces, column widths read, Windows defaults
+
+- **A sheet's name is taken exactly, spaces too** (production round 46, R69): a sheet called
+  `Stock ` (or ` Stock`) is reached by every call that takes a sheet or an address --
+  `rename_sheet`, `delete_sheet`, `clear_sheet`, `set_sheet_state`, `sheet_referents`, the
+  row and column edits, `merge`/`unmerge`, `set_comment(s)`/`remove_comment`,
+  `freeze_panes`, `set_gridlines`, `protect_sheet`, `set_autofilter`/`clear_autofilter`,
+  `hide_*`/`show_*`, `write_table`, `append_rows`, the reads -- bare (`"Stock "`) and as an
+  address writes it (`"'Stock '!A1"`); before, the bare name lost its spaces and the call
+  said "no sheet". Measured (Excel for Mac 16.106, 2026-11-09): Excel keeps leading and
+  trailing spaces, and `Stock` and `Stock ` are two sheets of one workbook. One rule for
+  every lookup (`xlsx_agent.formula.sheets.pick_sheet`): the name as given (as Excel
+  compares names), else the one sheet equal to it with outer spaces aside (rule 1); two such
+  sheets are refused naming both (rule 2). `tests/test_sheet_spaces.py` sweeps every call
+  against three spaced names beside their twin `Stock`.
+- **`wb.column_widths("Stock!A:H")`** (R76; `xlsx_agent.read.widths`): each column's width
+  as Excel's Column Width shows it -- the unit `set_column_widths` takes -- with the stored
+  width or `default` (the sheet's), and `hidden`; also one column (`Stock!C`), a range's
+  columns, or a sheet alone (up to its last used or sized column). Measured in Excel under
+  four default fonts: a stored `w` shows as `(round(w * digit) - 5) / digit`; the default is
+  `defaultColWidth` so shown, else `baseColWidth` (8 when not given); a hidden column keeps
+  its width. `limit` (256, up to 16,384) with `more` and `next` (rule 4).
+- **`Workbook.new()` is Excel for Windows' new workbook** (round 46 decision): Aptos Narrow
+  11, `defaultRowHeight="15" x14ac:dyDescent="0.25"`, no `baseColWidth`; widths given and
+  fitted count in the 11 pt default. Excel for Mac opens it unprompted; its re-save keeps
+  the font, the row height and the widths (writing its own descent and base 10 with the same
+  8-character default).
+- `set_autofilter`'s docstring says each call sets every column's criteria of its range or
+  table: pass the columns to filter together.
+- Works with ooxml-edit 0.97 and with 0.99's stricter `column_index` (R77) alike: the
+  address parser counts a column past `XFD` itself and refuses it in its own words.
+
 ## 0.1.27 (unreleased) -- notes on cells, document properties
 
 - **Notes** (production round 44, R57; `xlsx_agent.edit.notes`): `wb.set_comment(cell, text,

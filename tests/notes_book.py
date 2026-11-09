@@ -44,8 +44,24 @@ PERSON = "{6C9A1F2E-0B3D-4E5A-9C7B-1D2E3F4A5B6C}"
 THREAD = "{1A2B3C4D-5E6F-4A1B-8C2D-3E4F5A6B7C8D}"
 
 
+def mac_new(sheets) -> bytes:
+    """A new workbook with Excel for Mac's own defaults (Aptos Narrow 12, base width 10,
+    rows of 16 points), as the workbook Excel put its notes on had: ``Workbook.new`` writes
+    Excel for Windows' since round 46."""
+    def change(parts):
+        parts["xl/styles.xml"] = parts["xl/styles.xml"].replace(b'<sz val="11"/>',
+                                                                b'<sz val="12"/>', 1)
+        for name in list(parts):
+            if name.startswith("xl/worksheets/sheet"):
+                parts[name] = parts[name].replace(
+                    b'<sheetFormatPr defaultRowHeight="15" x14ac:dyDescent="0.25"/>',
+                    b'<sheetFormatPr baseColWidth="10" defaultRowHeight="16" '
+                    b'x14ac:dyDescent="0.2"/>')
+    return _edit(Workbook.new(sheets).to_bytes(), change)
+
+
 def plain() -> bytes:
-    wb = Workbook.new(["Stock", "Orders"])
+    wb = Workbook.open(mac_new(["Stock", "Orders"]))
     wb.set_cells({"Stock!A1": "Item", "Stock!B1": "Count", "Stock!A2": "Bolts",
                   "Stock!B2": 40, "Stock!A3": "Nuts", "Stock!B3": 12, "Orders!A1": "Order",
                   "Orders!B4": 7})
