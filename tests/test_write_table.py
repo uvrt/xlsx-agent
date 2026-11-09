@@ -114,11 +114,38 @@ def test_workbook_new_opens_unchanged_with_its_sheets():
     assert "<vt:lpstr>Stock</vt:lpstr><vt:lpstr>Notes</vt:lpstr>" in app
 
 
-@pytest.mark.parametrize("names", [["A", "a"], [""], ["x" * 32], ["a/b"], ["'x"]])
+@pytest.mark.parametrize("names", [["A", "a"], [""], ["x" * 32], ["a/b"], ["'x"],
+                                   ["Stock\nlist"], ["_x0041_"], ["Ａ1", "A1"], [3]])
 def test_a_new_workbook_refuses_names_excel_refuses(names):
     with pytest.raises(EditError) as refused:
         Workbook.new(names)
     assert refused.value.code == "bad_value"
+    assert "sheets[" in str(refused.value)
+
+
+@pytest.mark.parametrize("names", [[" "], ["History"], ["x" * 31], ["Stock (2)", "Notes"]])
+def test_a_new_workbook_takes_names_excel_takes(names):
+    assert [s.name for s in Workbook.new(names).sheets] == names
+
+
+NAMES = ["Stock", "stock", "STOCK", "Ｓtock", "x" * 31, "x" * 32, "a:b", "a]b", "'q", "q'",
+         "a'b", "Tab\there", "_x0041_", "_x41_", "History", " ", "Sheet1", "sheet1", "",
+         "Stock\u00adlist", "Stocklist"]
+
+
+def test_a_new_workbook_names_sheets_by_the_rules_add_sheet_applies():
+    """One rule for a sheet's name: Workbook.new refuses what add_sheet and rename_sheet
+    refuse (edit.sheets.name_problems, measured in Excel), and takes what they take."""
+    from xlsx_agent.edit.blank import sheet_name_problems
+
+    for name in NAMES:
+        wb = Workbook.new(["Sheet1"])
+        try:
+            wb.add_sheet(name)
+            added = True
+        except EditError:
+            added = False
+        assert (not sheet_name_problems(["Sheet1", name])) is added, name
 
 
 def test_from_tables_writes_typed_rows_on_new_sheets():

@@ -271,32 +271,27 @@ def app_xml(sheets: Sequence[str]) -> str:
             "<AppVersion>16.0300</AppVersion></Properties>")
 
 
-#: What a sheet's name may not hold: the characters Excel's sheet-name rule refuses.
-_NOT_IN_SHEET_NAMES = "[]:*?/\\"
-#: The longest sheet name Excel takes.
+#: The longest sheet name Excel takes (:data:`xlsx_agent.edit.sheets.MAX_NAME`, measured).
 MAX_SHEET_NAME = 31
 
 
 def sheet_name_problems(names: Sequence[str]) -> list[str]:
-    """Why each of ``names`` cannot name a new workbook's sheet: not text, empty, longer
-    than :data:`MAX_SHEET_NAME`, holding one of ``[]:*?/\\``, starting or ending with an
-    apostrophe, or the same as another (case aside).  Conservative: Excel's rule as its
-    rename refuses, the characters and the length not measured in this round."""
+    """Why each of ``names`` cannot name a new workbook's sheet, each ``sheets[n]: why``:
+    the rules :meth:`Workbook.add_sheet <xlsx_agent.Workbook.add_sheet>` and
+    :meth:`~xlsx_agent.Workbook.rename_sheet` apply, measured in Excel
+    (:func:`xlsx_agent.edit.sheets.name_problems`) -- a sheet's name is 1 to 31
+    characters, none of ``: \\ / ? * [ ]``, no control characters, not starting or ending
+    with ``'``, not reading as an ``_xHHHH_`` escape, and not the same as an earlier one
+    as Excel compares names (case aside, compatibility forms as their plain ones)."""
+    from .sheets import name_problems
+
     out: list[str] = []
-    seen: set[str] = set()
+    taken: list[str] = []
     for n, name in enumerate(names):
-        if not isinstance(name, str) or not name.strip():
-            out.append(f"sheets[{n}]: a sheet's name is text that is not empty")
-            continue
-        if len(name) > MAX_SHEET_NAME:
-            out.append(f"sheets[{n}]: longer than {MAX_SHEET_NAME} characters")
-        if any(char in _NOT_IN_SHEET_NAMES for char in name):
-            out.append(f"sheets[{n}]: holds one of [ ] : * ? / \\")
-        if name.startswith("'") or name.endswith("'"):
-            out.append(f"sheets[{n}]: starts or ends with an apostrophe")
-        if name.casefold() in seen:
-            out.append(f"sheets[{n}]: the same name as an earlier sheet (case aside)")
-        seen.add(name.casefold())
+        out.extend(f"sheets[{n}]: {problem}"
+                   for problem in name_problems(None, name, taken=taken))
+        if isinstance(name, str):
+            taken.append(name)
     return out
 
 

@@ -35,19 +35,28 @@ repeated 1 to 40 times shows the rule): a text's width ``T`` in pixels is the su
 characters' advance widths at the font's size in points, each rounded to whole pixels (the
 face's bold widths for bold); Excel then adds ``max(0, T // (5 * digit) - 2)`` pixels (none
 up to fifteen widest digits, then one more per five); a number is as wide as its
-shown text has characters, each the widest digit; then 7 px of padding, over the widest
+shown text has characters, each the widest digit; then the padding, over the widest
 digit, truncated to 1/256, written with ``bestFit``.  A column's width is its widest cell's.
-On the probe this is exact for Calibri, Arial, Times New Roman, Courier New, Cambria and
-Aptos at 10 to 16 points; at 8 points Excel's width was 2 px narrower and at 20 points 2 px
-wider (0.33 of a character), and a word with accented letters up to 4 px off in Arial.
-Fonts are measured with ooxml-common's advance widths
-(:func:`ooxml_common.text.fontmap.metrics_for`): a face is measured when its table is its
-own or a clone's with the same widths (Calibri, Arial, Helvetica, Times New Roman, Courier
-New, Cambria, Aptos, Aptos Display and the others :func:`measurable` accepts).  A cell in
-another font refuses the fit (``unmeasured_font``, naming the font and the fonts that are
-measured): Aptos Narrow, which has no table of its own, measured 15% narrower than Aptos's
-widths on average (a 40-letter word 163 px against 200). Cells a fit does not measure are
-listed apart (``skipped``) and leave the width to the others: merged cells, wrapped,
+The padding is the cell font's (:func:`fit_padding`): 7 px where its own widest digit is 5
+to 8 px (9 to 14 points in Calibri, Aptos and Aptos Narrow), 2 px less below, and 2 px more
+for every 4 px of digit above (9 px at 18 to 24 points in Calibri, 11 at 28; measured in
+the oracle, 2026-11-09: Calibri and Aptos at 6 to 36 points under Calibri 11 and Aptos 11
+defaults, 578 columns exact).  On the probes this is exact for Calibri, Arial, Times New
+Roman, Courier New, Cambria and Aptos at 10 to 16 points, for Calibri and Aptos at 6 to 36,
+and for Aptos Narrow -- Excel's default body face -- regular at 8 to 24 points and bold at
+9 to 18 (2026-11-09: 319 of 324 columns under Aptos Narrow 11 and 12 defaults, and 255 of
+258 in bold Aptos Narrow, Aptos and Calibri at 9 to 18 points); off are
+a word with accented letters (up to 4 px in Arial, 1 px in Aptos Narrow) and Aptos Narrow
+**bold 12**, which Excel measured unrounded (two of eight texts wider than here, 3 px on
+"Stock level by warehouse", 14 px -- 2.3 characters -- on 40 letters; 11 and 13 points
+exact).
+Fonts are measured with ooxml-common's advance widths of the face itself
+(:func:`ooxml_common.text.fontmap.own_metrics`, ooxml-common 0.41): its own table or a
+clone's with the same widths (Calibri, Arial, Helvetica, Times New Roman, Courier New,
+Cambria, Aptos, Aptos Narrow, Aptos Display and the others :func:`measurable` accepts).  A
+cell in another font -- or in one measured with a near face's widths, such as Calibri Light
+or Aptos Light -- refuses the fit (``unmeasured_font``, naming the font and the fonts that
+are measured).  Cells a fit does not measure are listed apart (``skipped``) and leave the width to the others: merged cells, wrapped,
 rotated or indented text, text with a line break, booleans and errors (shown in the
 application's language), dates and other numbers whose shown text is not measured
 (:func:`xlsx_agent.shown.shown_text`), and formulas without a cached value.  A column with
@@ -99,7 +108,9 @@ SHEET_ORDER = ("sheetPr", "dimension", "sheetViews", "sheetFormatPr", "cols", "s
                "legacyDrawing", "legacyDrawingHF", "picture", "oleObjects",
                "webPublishItems", "tableParts", "extLst")
 
-#: Excel's padding of a column width set by hand, and of a fitted one, in pixels (measured).
+#: Excel's padding of a column width set by hand, and of a fitted one in a font whose widest
+#: digit is 5 to 8 pixels (Calibri, Aptos and Aptos Narrow at 9 to 14 points), in pixels
+#: (measured; :func:`fit_padding` gives it for every size).
 PADDING = 5
 FIT_PADDING = 7
 #: A sheet's base column width, in characters, when its ``sheetFormatPr`` gives none
@@ -129,26 +140,24 @@ class Face:
 
 def measurable(name: str) -> bool:
     """Whether ``name``'s advance widths are known: ooxml-common has a table of its own,
-    or of a clone with the same widths (Carlito for Calibri)."""
-    from ooxml_common.text.fontmap import metrics_for, substitution_for
+    or of a clone with the same widths (Carlito for Calibri;
+    :func:`ooxml_common.text.fontmap.own_metrics`)."""
+    from ooxml_common.text.fontmap import own_metrics
 
-    if metrics_for(name) is None:
-        return False
-    found = substitution_for(name)
-    if found is None:
-        return True
-    return found.metric_compatible or found.metrics.casefold() == found.office.casefold()
+    return own_metrics(name) is not None
 
 
 MEASURED_FONTS = ("Calibri", "Arial", "Helvetica", "Times New Roman", "Courier New",
-                  "Cambria", "Aptos", "Aptos Display")
+                  "Cambria", "Aptos", "Aptos Narrow", "Aptos Display")
 
 
-def _advances(face: Face, text: str) -> list[float]:
-    """Each character's advance width in points (= pixels at 72 per inch)."""
-    from ooxml_common.text.fontmap import metrics_for
+def _advances(face: Face, text: str, *, near: bool = False) -> list[float]:
+    """Each character's advance width in points (= pixels at 72 per inch): the face's own
+    widths (:func:`measurable`), or with ``near`` the ones ooxml-common measures it with
+    when it has none of its own (a workbook's default font's digits)."""
+    from ooxml_common.text.fontmap import metrics_for, own_metrics
 
-    metrics = metrics_for(face.name)
+    metrics = own_metrics(face.name) or (metrics_for(face.name) if near else None)
     assert metrics is not None
     bold = face.bold and bool(metrics.bold_widths)
     table = metrics.bold_widths if bold else metrics.widths
@@ -158,8 +167,16 @@ def _advances(face: Face, text: str) -> list[float]:
 
 
 def digit_width(face: Face) -> int:
-    """The widest digit's width in whole pixels (at least 1)."""
-    return max(1, max(_round(width) for width in _advances(face, "0123456789")))
+    """The widest digit's width in whole pixels (at least 1): of the face's own widths, or
+    the ones ooxml-common measures it with (Calibri Light's are Calibri's clone's)."""
+    return max(1, max(_round(width) for width in _advances(face, "0123456789", near=True)))
+
+
+def digit_known(face: Face) -> bool:
+    """Whether :func:`digit_width` can answer for ``face``."""
+    from ooxml_common.text.fontmap import metrics_for
+
+    return metrics_for(face.name) is not None
 
 
 def _round(value: float) -> int:
@@ -172,9 +189,20 @@ def text_pixels(face: Face, text: str, digit: int) -> int:
     return total + max(0, total // (5 * digit) - 2)
 
 
-def fitted_width(pixels: int, digit: int) -> float:
-    """A fitted column's width, in the file's unit, for content ``pixels`` wide."""
-    return math.floor((pixels + FIT_PADDING) / digit * 256) / 256
+def fit_padding(face: Face) -> int:
+    """The pixels AutoFit adds to a text in ``face``: 5, and 2 more for every 4 pixels of
+    the face's own widest digit past the first (regular weight, rounded as
+    :func:`digit_width`): 5 up to a 4-pixel digit, 7 from 5 to 8 (:data:`FIT_PADDING`),
+    9 from 9 to 12, 11 from 13 to 16, 13 from 17 to 20 (measured: Calibri and Aptos at 6
+    to 36 points, Aptos Narrow at 8 to 24, every text exact)."""
+    own = digit_width(Face(face.name, face.size))
+    return 5 + 2 * ((own - 1) // 4)
+
+
+def fitted_width(pixels: int, digit: int, padding: int = FIT_PADDING) -> float:
+    """A fitted column's width, in the file's unit, for content ``pixels`` wide and the
+    cell font's ``padding`` (:func:`fit_padding`)."""
+    return math.floor((pixels + padding) / digit * 256) / 256
 
 
 def stored_width(characters: float, digit: int) -> float:
@@ -387,7 +415,16 @@ def set_column_widths(workbook: Any, target: Any, width: Any) -> Formatted:
     if editor.cells.styles is None and width is not None:
         problems.add("bad_format", "width", "the workbook has no stylesheet: its default "
                      "font, which widths are measured in, is not known")
-    digit = digit_width(default_face(workbook)) if width is not None else 1
+    digit = 1
+    if width is not None and editor.cells.styles is not None:
+        face = default_face(workbook)
+        if digit_known(face):
+            digit = digit_width(face)
+        else:
+            problems.add("unmeasured_font", "width", f"the workbook's default font, "
+                         f"{face.name}, has no measured widths: its widest digit, the unit "
+                         "a column's width is counted in, is not known; fonts that are: "
+                         + ", ".join(MEASURED_FONTS))
     fits: dict[tuple[str, int], float] = {}
     skipped: dict[str, list[str]] = {}
     notes: list[str] = []
