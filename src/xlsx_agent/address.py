@@ -172,7 +172,7 @@ import unicodedata
 from dataclasses import dataclass, replace
 from typing import Iterable, Mapping, NoReturn, Union
 
-from ooxml_edit.sheets import (MAX_COLUMN, MAX_ROW, Area, Cell, column_index,
+from ooxml_edit.sheets import (MAX_COLUMN, MAX_ROW, Area, Cell,
                                         column_letters)
 from ooxml_edit.tools import DATASET_ID, REF
 
@@ -355,8 +355,18 @@ def is_address_name(name: object) -> bool:
 def _on_grid(text: str) -> bool:
     """``text`` is an A1 reference to a cell on Excel's grid (``$`` allowed)."""
     match = re.fullmatch(r"\$?([A-Za-z]{1,3})\$?([0-9]{1,7})", text)
-    return match is not None and column_index(match.group(1)) <= MAX_COLUMN \
+    return match is not None and _column_number(match.group(1)) <= MAX_COLUMN \
         and 1 <= int(match.group(2)) <= MAX_ROW
+
+
+def _column_number(letters: str) -> int:
+    """One to three letters' column number, past :data:`MAX_COLUMN` too (``XFE`` is
+    16385): ooxml-edit's ``column_index`` refuses a column past the grid, and the
+    callers here say why in their own words."""
+    value = 0
+    for letter in letters.upper():
+        value = value * 26 + ord(letter) - 64
+    return value
 
 
 # ------------------------------------------------------------------------------------------
@@ -1035,7 +1045,7 @@ class _Parser:
         self.fail("not a cell or range: A1, A1:H40, A:C or 2:5", at)
 
     def column(self, letters: str, at: int) -> int:
-        index = column_index(letters)
+        index = _column_number(letters)
         if index > MAX_COLUMN:
             self.fail(f"column {letters.upper()} is past the last column, "
                       f"{column_letters(MAX_COLUMN)}", at)

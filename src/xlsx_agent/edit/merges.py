@@ -29,7 +29,9 @@ Each is one undoable step (or part of the open batch), refused before anything c
   unmerge first), and so is a range overlapping a table (Excel does not merge a table's
   cells) or an array formula.  A range already merged: ``changed`` false.
 
-The host's write policy must cover every cell of the area; a protected sheet refuses it.
+The host's write policy must cover every cell of the area; a protected sheet refuses it
+(measured, Excel for Mac 16.106, 2026-11-09: Excel refused to merge unlocked and locked
+cells alike on a protected sheet, also one whose protection allows formatting cells).
 """
 
 from __future__ import annotations
@@ -101,7 +103,9 @@ def _guards(workbook: Any, sheet: Any, area: Area, label: str) -> Any:
     if workbook.strict:
         raise EditError("strict")
     if sheet.protected:
-        raise EditError("protected", addresses=[format_range(label, area)])
+        raise EditError("protected", "Excel merges no cells on a protected sheet, "
+                        "whatever its protection allows (measured; unmerging is refused "
+                        "alike): unprotect it first (wb.unprotect_sheet)", addresses=[format_range(label, area)])
     allowed = workbook._allowed()
     if allowed is not None:
         refused = [format_cell(label, c.row, c.column) for c in area.cells()

@@ -697,9 +697,10 @@ wb.set_cells({"Stock!F10": 50}, replace_formulas=True)   # over a formula: only 
   text over 32,767 characters (never cut), a number that is not finite or a whole number
   past 2^53, empty text (write `None`), a date before the date system's first day, a date
   string that is not ISO 8601 or the locale's order with a four-digit year
-  (`wb.locale`: `3/4/2026` is 3 April under nl-BE, 4 March under en-US), a time zone or a
-  time of day (times come later), a date into a cell of a number format (`0.00`, `#,##0`,
-  text, a custom code that shows no day: it would show the serial) without `"format"`,
+  (`wb.locale`: `3/4/2026` is 3 April under nl-BE, 4 March under en-US; a time may follow,
+  `2026-01-05 14:30`, or stand alone, `14:30`), a time zone or a duration, a date into a
+  cell of a number format (`0.00`, `#,##0`, text, a custom code that shows no day: it would
+  show the serial) without `"format"`,
   a formula over a formula cell without `replace_formulas`, a cell of an
   array formula or a data table, a merged area's cell other than its first, a table's
   header cell, a cell named twice, a shared group's master whose formula the lexer cannot
@@ -745,7 +746,8 @@ wb.undo(); wb.undo(); wb.cell("Totals!B1").cache    # 'cached_unverified' again
 
 - **Guards** (X4). The host says where the workbook may be written, once, at open
   (`policy=`: cells, ranges, whole sheets, a table's columns; `{"cells": []}` writes
-  nothing), and may only narrow it; a protected sheet is never written; a value by key
+  nothing), and may only narrow it; a protected sheet's locked cells are never written (its
+  unlocked ones are, as Excel lets them be typed into: R71); a value by key
   is the row holding the key, and keys are values the application supplies (a key column
   of formulas is refused, `formula_key`); a new row goes only into the free row of a
   declared table's empty `capacity` that the host allocates to its key (X6, `allocate`); an
@@ -891,9 +893,10 @@ wb.append_rows("Log!B4:D200", [["late", 2]])                 # within a region's
 ```
 
 - **A new workbook** has the nine parts Excel for Mac writes for one (measured: `make new
-  workbook`, saved): its theme (Aptos Narrow body, Excel's script faces), styles (12 pt, the
+  workbook`, saved): its theme (Aptos Narrow body, Excel's script faces), styles (the
   Normal style, `TableStyleMedium2` as the default table style), one sheet with its view and
-  margins, `calcPr calcId`, the document properties. Excel's re-save changes only its own:
+  margins, `calcPr calcId`, the document properties -- with Excel for Windows' defaults
+  (Aptos Narrow 11, rows of 15 points, no base column width), as its readers use it. Excel's re-save changes only its own:
   the application's name, its user, localised names, the folder saved in, ids.
 - **Values** are `set_cells`' (text literal, numbers, booleans, dates, `{"formula": ...}`,
   `{"markdown": ...}`, `None`), `""` a blank; a row is a list, or a mapping by header. A
@@ -951,8 +954,29 @@ wb.rearrange_columns("Stock", ["C", "A", "B"], drop=["E"])   # one step, R59
 - **Reading a sheet someone rearranged**: a dataset by header (`wb.dataset("t:...")`)
   already ignores the order of columns; `rearrange_columns` is for giving a sheet back in a
   template's order. `order` lists columns in the order they are to stand, in the places the
-  listed columns hold now (columns not listed stay); a mapping says the same as
-  `{"C": "A", "A": "B", "B": "C"}`; `drop` deletes columns first, named as before.
+  listed columns hold now (columns not listed stay: `["K", "I"]` swaps K and I and leaves
+  J); a mapping says the same as `{"C": "A", "A": "C"}`; `drop` deletes columns first,
+  named as before. It makes the fewest moves (the longest run already in order stays) and
+  reports where each column went (`columns`, read from the steps it made).
+- **A table's columns** (round 46, R75) are reordered within the table's rows, as Excel
+  does when a table column is dragged: the table keeps its name, style, filter, totals row
+  and calculated columns, each column its id and name; the sheet's column widths and the
+  cells above and below the table stay (a note says so). An order that would move a column
+  into or out of a table is refused (`table_move`, naming the table and its columns);
+  `move_columns` still refuses whole columns of a table, as Excel does.
+- **Ranges across moved columns** change as Excel's moves change them, which can leave one
+  covering other cells (`SUM(A1:C1)` with C put first is `SUM(B1:C1)` in Excel too): each
+  such place is listed in `reshaped` (at most 50, `reshaped_count` all), on every step's
+  report and on the call's.
+
+```python
+done = wb.rearrange_columns("Shop", ["F", "C", "D", "E"])   # t:Lines' Note before Qty
+done.as_dict()
+# {'sheet': 'Shop', 'changed': True, 'columns': {'C': 'D', 'D': 'E', 'E': 'F', 'F': 'C'},
+#  'dropped': [], 'steps': [{'operation': 'move_table_columns', ...}], 'formulas': 13,
+#  'broken_count': 0, 'notes': ["t:Lines: its columns were reordered within the table's
+#  rows, as Excel does when a table column is dragged; ..."]}
+```
 
 ## AutoFilters, hidden rows and pivot refresh (round 44: R55, R61)
 
@@ -998,6 +1022,7 @@ wb.format("Stock!A1:H1", style="Heading 1")          # a cell style of the workb
 wb.format("Stock!E:E", protection={"locked": False}) # whole columns (and rows: "Stock!3:3")
 wb.set_column_widths("Stock!A:H", "fit")             # Excel's AutoFit, measured
 wb.set_column_widths("Stock!J:J", 14)                # characters, as Excel's Column Width
+wb.column_widths("Stock!A:K")                        # read back: width, stored or default, hidden
 wb.set_row_heights("Stock!1:1", 30)                  # points; None fits the text again
 wb.freeze_panes("Stock", rows=1, columns=1)          # or at="B2"; rows=0, columns=0 unfreezes
 wb.set_gridlines("Stock", False)

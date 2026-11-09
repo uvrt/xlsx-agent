@@ -61,8 +61,11 @@ comment Excel writes beside each) are not written: a cell holding one is refused
 Inserting, deleting and moving rows and columns move notes, shapes and anchors with their
 cells (:mod:`.restructure`).
 
-The host's write policy must allow the cell (a note is written on it, as a value is); a
-protected sheet refuses it.
+The host's write policy must allow the cell (a note is written on it, as a value is).  A
+protected sheet refuses it unless its protection leaves objects open (``objects`` ``0`` or
+left out): measured, Excel for Mac 16.106, 2026-11-09, Excel added a note to a locked and
+an unlocked cell of a sheet protected with ``objects="0"`` and refused both under Excel's
+default ``objects="1"`` -- the cell's own lock does not matter.
 """
 
 from __future__ import annotations
@@ -78,6 +81,7 @@ from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell, column_letters
 from ..address import AddressError, RangeAddress, format_cell, format_range, parse_address
 from ..read.strings import encode_xstring, needs_xstring
 from . import EditError
+from .format import protection_allows
 from .sheets import R, X, _X, find_sheet, placed
 
 #: The most cells listed in a refusal or a result.
@@ -662,9 +666,10 @@ def _cell(ref: str | None) -> Cell | None:
 
 def _guard(workbook: Any, sheet: Any, cells: Iterable[Cell], problems: _Problems) -> None:
     label = sheet.stored_name
-    if sheet.protected:
+    if sheet.protected and not protection_allows(workbook, sheet, "objects"):
         problems.add("protected", format_cell(label, *_first(cells)), "the sheet is "
-                     "protected: unprotect it to change its notes")
+                     "protected with its objects (sheetProtection objects), notes among them: "
+                     "unprotect it to change its notes, or protect it allowing objects")
         return
     allowed = workbook._allowed()
     if allowed is not None:

@@ -260,18 +260,19 @@ def test_date_strings_are_iso_or_in_the_locale_s_order():
     us.set_cells({"Stock!H10": {"date": "3/4/2026"}})
     assert us.cell("Stock!H10").v == "2026-03-04"          # en-US: month first
     for text in ("3/4/26", "13/13/2026", "2026-02-30", "20 October 2026",
-                 "2026-10-20T10:00", "tomorrow"):
+                 "2026-10-20T25:00", "2026-10-20 10:60", "tomorrow"):
         assert _refused(wb, {"Stock!H12": {"date": text}}).code == "bad_date", text
 
 
-def test_a_time_zone_or_a_time_of_day_is_never_dropped():
+def test_a_time_zone_or_a_duration_is_refused_and_never_dropped():
     _, wb = _open()
     aware = dt.datetime(2026, 10, 20, tzinfo=dt.timezone.utc)
     assert _refused(wb, {"Stock!H10": aware}).code == "date_time"
-    assert _refused(wb, {"Stock!H10": dt.datetime(2026, 10, 20, 9, 30)}).code == "date_time"
-    assert _refused(wb, {"Stock!H10": dt.time(9, 30)}).code == "date_time"
+    assert _refused(wb, {"Stock!H10": dt.time(9, 30, tzinfo=dt.timezone.utc)}).code \
+        == "date_time"
     assert _refused(wb, {"Stock!H10": dt.timedelta(hours=2)}).code == "date_time"
-    assert _refused(wb, {"Stock!H10": {"date": aware}}).code == "date_time"
+    error = _refused(wb, {"Stock!H10": {"date": aware}})
+    assert error.code == "date_time" and "drop the tzinfo" in str(error)
 
 
 # -- formulas -----------------------------------------------------------------------------------

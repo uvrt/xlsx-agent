@@ -53,8 +53,11 @@ class Restructured:
     reference became ``#REF!`` (cells by address, ``name:X``, ``chart:part``; at most
     :data:`MAX_LISTED`, ``broken_count`` all); ``removed`` what went with deleted cells, by
     kind (merges, validations, conditional_formats, hyperlinks, comments, table_columns,
-    tables); ``notes`` what the caller should know; ``calculation`` the workbook's status
-    (``invalidated``: every cached value may be stale)."""
+    tables); ``reshaped`` where a range now covers other cells than it did, moved (a move
+    whose block passed one of its ends, as Excel adjusts it: ``SUM(A1:C1)`` with C placed
+    before A is ``SUM(B1:C1)``; places as ``broken``, at most :data:`MAX_LISTED`,
+    ``reshaped_count`` all); ``notes`` what the caller should know; ``calculation`` the
+    workbook's status (``invalidated``: every cached value may be stale)."""
 
     operation: str
     sheet: str
@@ -68,6 +71,8 @@ class Restructured:
     removed: dict[str, int] = field(default_factory=dict)
     notes: tuple[str, ...] = ()
     calculation: str = "invalidated"
+    reshaped: tuple[str, ...] = ()
+    reshaped_count: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {"operation": self.operation, "sheet": self.sheet,
@@ -79,6 +84,9 @@ class Restructured:
                                "calculation": self.calculation}
         if self.before is not None:
             out["before"] = self.before
+        if self.reshaped_count:
+            out["reshaped"] = list(self.reshaped)
+            out["reshaped_count"] = self.reshaped_count
         return out
 
 
@@ -137,6 +145,8 @@ class Job:
         self.formulas = 0
         self.broken: list[str] = []
         self.broken_count = 0
+        self.reshaped: list[str] = []
+        self.reshaped_count = 0
         self.removed: dict[str, int] = {}
         self.notes: list[str] = []
         self._keep_one: _Table | None = None
@@ -270,8 +280,9 @@ class Job:
                     c1, c2 = area.c1, area.c2
                     if not (change.last < c1 or c2 < change.first) or c1 < change.before <= c2:
                         self.refuse("table_move", where,
-                                    "Excel refuses to move columns into, out of or within a "
-                                    "table")
+                                    "Excel refuses to move whole columns into, out of or "
+                                    "within a table; to reorder a table's columns, "
+                                    "rearrange_columns moves them in the table's rows")
                 continue
             body = table.body
             r1, r2 = area.r1, area.r2
@@ -442,11 +453,16 @@ class Job:
     def _rewrite(self, text: str, home: str | None, where: str | None,
                  table: str | None = None) -> str:
         """``where`` names the place in the report; ``None``: a cell that goes."""
+        before = self.rewriter.reshaped
         try:
             new = self.rewriter.formula(text, home, table)
         except ShiftError:
             raise NotDone("not_measured", where or self.label,
                           "a formula that cannot be read") from None
+        if self.rewriter.reshaped != before and where is not None:
+            self.reshaped_count += 1
+            if len(self.reshaped) < MAX_LISTED and where not in self.reshaped:
+                self.reshaped.append(where)
         if new != text and where is not None:
             self.formulas += 1
             if REF in new and new.count(REF) > text.count(REF):
@@ -1938,8 +1954,6 @@ def restructure(workbook: Any, sheet: Any, operation: str, first: Any, count: An
         raise EditError("not_a_worksheet", f"{label} holds no cells to move")
     if workbook.strict:
         raise EditError("strict")
-    if found.protected:
-        raise EditError("protected", addresses=[label])
     if workbook._allowed() is not None:
         raise EditError("not_writable", f"the host's write policy is set: {noun} are "
                         "inserted, deleted or moved only in a workbook without one",
@@ -1965,6 +1979,13 @@ def restructure(workbook: Any, sheet: Any, operation: str, first: Any, count: An
         if target_end != target:
             raise EditError("bad_position", "before: one line, the one the moved "
                             f"{noun} are placed before")
+    if found.protected:
+        from .protection import lines_problem
+
+        problem = lines_problem(workbook, found, kind, "row" if axis == ROW else "column",
+                                a, a + count - 1)
+        if problem is not None:
+            raise EditError("protected", problem, addresses=[label])
     change = Change(kind, axis, a, count, target)
     shown = _shown(axis, a, a + count - 1)
     if kind == "move" and a <= target <= a + count:
@@ -1995,7 +2016,8 @@ def restructure(workbook: Any, sheet: Any, operation: str, first: Any, count: An
     return Restructured(operation, label, a, count, target if kind == "move" else None,
                         formulas=job.formulas, broken=tuple(job.broken),
                         broken_count=job.broken_count, removed=dict(job.removed),
-                        notes=tuple(notes), calculation=workbook.calculation_status)
+                        notes=tuple(notes), calculation=workbook.calculation_status,
+                        reshaped=tuple(job.reshaped), reshaped_count=job.reshaped_count)
 
 
 def _shown(axis: str, a: int, b: int) -> str:

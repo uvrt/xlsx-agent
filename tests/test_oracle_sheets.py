@@ -154,3 +154,41 @@ def test_excel_reads_escaped_text_as_it_was_given(excel, shared):
         assert again.cell(address).v == text, address
     assert again.cell("Totals!B20").v == "_x0041_\x01"
     assert again.cell("Totals!B20").formula_text == '"_x0041_"&CHAR(1)'
+
+
+@pytest.mark.oracle
+def test_excel_keeps_sheets_named_with_outer_spaces_and_what_was_done_to_them(excel):
+    """R69: sheets ``Stock`` and ``Stock `` (and `` Lead``) side by side, each call given the
+    spaced name; Excel opens the result without a repair and its re-save keeps the names,
+    the edits on the spaced sheet and the formulas naming it."""
+    from build import WorkbookBuilder
+
+    book = WorkbookBuilder()
+    for name, word in (("Stock", "twin"), ("Stock ", "here"), (" Lead", "lead")):
+        book.sheet(name).rows("A1", [["SKU", "Qty", "Bin"], [f"{word}-1", 1, "x"],
+                                     [f"{word}-2", 2, "y"], [f"{word}-3", 3, "z"]])
+    book.sheet("Sums")
+    wb = Workbook.open(book.to_bytes())
+    wb.set_cells({"Sums!A1": {"formula": "=SUM('Stock '!B2:B4)"},
+                  "Sums!A2": {"formula": "=SUM(' Lead'!B2:B4)+SUM(Stock!B2:B4)"},
+                  "'Stock '!E1": "noted"})
+    wb.insert_rows("Stock ", 2)
+    wb.merge("'Stock '!E1:F1")
+    wb.set_comment("'Stock '!A1", "count again")
+    wb.set_autofilter("Stock ", "A1:C5")
+    wb.freeze_panes("Stock ", rows=1)
+    wb.hide_columns(" Lead", ["C"])
+    wb.rename_sheet(" Lead", "Lead  ")
+    data = wb.to_bytes()
+    outcome = excel.resave(data, name="r46x-spaces")
+    assert outcome.ok, outcome
+    saved = outcome.saved.read_bytes()
+    assert oracle.sheet_names(saved) == ["Stock", "Stock ", "Lead  ", "Sums"]
+    ours, theirs = _facts(data), _facts(saved)
+    assert theirs["Sums"] == ours["Sums"]
+    assert ("A2", "SUM('Lead  '!B2:B4)+SUM(Stock!B2:B4)") in theirs["Sums"]
+    again = Workbook.open(saved)
+    assert again.merges("Stock ") == wb.merges("Stock ")
+    assert len(again.comments("Stock ")) == 1 and again.comments("Stock") == []
+    assert again.cell("Sums!A1").v == 6 and again.cell("'Stock '!A3").v == "here-1"
+    assert again.cell("Stock!A2").v == "twin-1"
