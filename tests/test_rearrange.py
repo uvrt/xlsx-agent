@@ -62,6 +62,8 @@ class Grid:
         self.merged = sorted(rng.sample(list(cols), k=min(3, width)))
         self.checked = {c: rng.choice(cols) for c in rng.sample(list(cols), k=min(3, width))}
         self.shaded = {c: rng.choice(cols) for c in rng.sample(list(cols), k=min(3, width))}
+        # a conditional format over two columns, its formula reading another column
+        self.pair = (rng.randint(1, width - 1), rng.choice(cols))
         self.refs = [rng.choice(cols) for _ in range(6)]
         self.names = [rng.choice(cols) for _ in range(3)]
         self.series = [rng.choice(cols) for _ in range(2)]
@@ -92,6 +94,10 @@ class Grid:
             f'<conditionalFormatting sqref="{L(c)}1:{L(c)}6"><cfRule type="expression" '
             f'dxfId="0" priority="{n + 1}"><formula>{L(y)}1&lt;&gt;""</formula></cfRule>'
             '</conditionalFormatting>' for n, (c, y) in enumerate(sorted(self.shaded.items())))
+        p, y = self.pair
+        formats += (f'<conditionalFormatting sqref="{L(p)}1:{L(p + 1)}6"><cfRule '
+                    f'type="expression" dxfId="0" priority="9"><formula>{L(y)}1&gt;0</formula>'
+                    '</cfRule></conditionalFormatting>')
         checks = "".join(
             f'<dataValidation type="custom" allowBlank="1" sqref="{L(c)}1:{L(c)}6">'
             f'<formula1>LEN({L(y)}1)&gt;0</formula1></dataValidation>'
@@ -346,6 +352,18 @@ def test_random_rearrangements_match_the_model(seed):
         for r in range(1, 7):
             read = "#REF!" if where[y] is None else f"{L(where[y])}{r}"
             assert (f"{L(where[c])}{r}", f'{read}<>""') in shades
+    # the two-column format, its columns holding still: its first column reads where the
+    # read column went, its second the column after that -- Excel rewrites a rule for the
+    # first cell of each part its cells move as, the others reading relative to it
+    p, y = grid.pair
+    moving = {c for c, t in zip(listed, sorted(listed)) if c != t}
+    still = not {p, p + 1} & (moving | set(dropped))
+    if still and where[y] is not None:
+        pairs = {(cell, fs[0]) for cell, kind, fs in sheet["formats"]
+                 if fs and fs[0] and fs[0].endswith(">0")}
+        for r in range(1, 7):
+            assert (f"{L(where[p])}{r}", f"{L(where[y])}{r}>0") in pairs
+            assert (f"{L(where[p + 1])}{r}", f"{L(where[y] + 1)}{r}>0") in pairs
     widths = {int(col["min"]): float(col["width"]) for col in sheet["cols"]
               if col["min"] == col["max"]}
     for c in kept:

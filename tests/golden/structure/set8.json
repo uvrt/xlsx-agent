@@ -1,0 +1,8233 @@
+{
+"book": "GridBook",
+"cases": {
+"rule-d1": {
+"excel": "done",
+"facts": {
+"charts": [],
+"names": {
+"ColSpan": "Grid!$B$2:$E$2",
+"Cols": "Grid!$B:$E",
+"RowSpan": "Grid!$B$3:$B$6",
+"Rows36": "Grid!$3:$6"
+},
+"pivots": [],
+"sheets": {
+"Grid": {
+"autoFilter": null,
+"cells": {
+"A1": [
+null,
+"n",
+101.0,
+null
+],
+"A10": [
+null,
+"n",
+1001.0,
+null
+],
+"A2": [
+null,
+"n",
+201.0,
+null
+],
+"A3": [
+null,
+"n",
+301.0,
+null
+],
+"A4": [
+null,
+"n",
+401.0,
+null
+],
+"A5": [
+null,
+"n",
+501.0,
+null
+],
+"A6": [
+null,
+"n",
+601.0,
+null
+],
+"A7": [
+null,
+"n",
+701.0,
+null
+],
+"A8": [
+null,
+"n",
+801.0,
+null
+],
+"A9": [
+null,
+"n",
+901.0,
+null
+],
+"B1": [
+null,
+"n",
+102.0,
+null
+],
+"B10": [
+null,
+"n",
+1002.0,
+null
+],
+"B2": [
+null,
+"n",
+202.0,
+null
+],
+"B3": [
+null,
+"n",
+302.0,
+null
+],
+"B4": [
+null,
+"n",
+402.0,
+null
+],
+"B5": [
+null,
+"n",
+502.0,
+null
+],
+"B6": [
+null,
+"n",
+602.0,
+null
+],
+"B7": [
+null,
+"n",
+702.0,
+null
+],
+"B8": [
+null,
+"n",
+802.0,
+null
+],
+"B9": [
+null,
+"n",
+902.0,
+null
+],
+"C1": [
+null,
+"n",
+105.0,
+null
+],
+"C10": [
+null,
+"n",
+1005.0,
+null
+],
+"C2": [
+null,
+"n",
+205.0,
+null
+],
+"C3": [
+null,
+"n",
+305.0,
+null
+],
+"C4": [
+null,
+"n",
+405.0,
+null
+],
+"C5": [
+null,
+"n",
+505.0,
+null
+],
+"C6": [
+null,
+"n",
+605.0,
+null
+],
+"C7": [
+null,
+"n",
+705.0,
+null
+],
+"C8": [
+null,
+"n",
+805.0,
+null
+],
+"C9": [
+null,
+"n",
+905.0,
+null
+],
+"D1": [
+null,
+"n",
+104.0,
+null
+],
+"D10": [
+null,
+"n",
+1004.0,
+null
+],
+"D2": [
+null,
+"n",
+204.0,
+null
+],
+"D3": [
+null,
+"n",
+304.0,
+null
+],
+"D4": [
+null,
+"n",
+404.0,
+null
+],
+"D5": [
+null,
+"n",
+504.0,
+null
+],
+"D6": [
+null,
+"n",
+604.0,
+null
+],
+"D7": [
+null,
+"n",
+704.0,
+null
+],
+"D8": [
+null,
+"n",
+804.0,
+null
+],
+"D9": [
+null,
+"n",
+904.0,
+null
+],
+"E1": [
+null,
+"n",
+106.0,
+null
+],
+"E10": [
+null,
+"n",
+1006.0,
+null
+],
+"E2": [
+null,
+"n",
+206.0,
+null
+],
+"E3": [
+null,
+"n",
+306.0,
+null
+],
+"E4": [
+null,
+"n",
+406.0,
+null
+],
+"E5": [
+null,
+"n",
+506.0,
+null
+],
+"E6": [
+null,
+"n",
+606.0,
+null
+],
+"E7": [
+null,
+"n",
+706.0,
+null
+],
+"E8": [
+null,
+"n",
+806.0,
+null
+],
+"E9": [
+null,
+"n",
+906.0,
+null
+],
+"F1": [
+null,
+"n",
+107.0,
+null
+],
+"F10": [
+null,
+"n",
+1007.0,
+null
+],
+"F2": [
+null,
+"n",
+207.0,
+null
+],
+"F3": [
+null,
+"n",
+307.0,
+null
+],
+"F4": [
+null,
+"n",
+407.0,
+null
+],
+"F5": [
+null,
+"n",
+507.0,
+null
+],
+"F6": [
+null,
+"n",
+607.0,
+null
+],
+"F7": [
+null,
+"n",
+707.0,
+null
+],
+"F8": [
+null,
+"n",
+807.0,
+null
+],
+"F9": [
+null,
+"n",
+907.0,
+null
+],
+"G1": [
+null,
+"n",
+108.0,
+null
+],
+"G10": [
+null,
+"n",
+1008.0,
+null
+],
+"G2": [
+null,
+"n",
+208.0,
+null
+],
+"G3": [
+null,
+"n",
+308.0,
+null
+],
+"G4": [
+null,
+"n",
+408.0,
+null
+],
+"G5": [
+null,
+"n",
+508.0,
+null
+],
+"G6": [
+null,
+"n",
+608.0,
+null
+],
+"G7": [
+null,
+"n",
+708.0,
+null
+],
+"G8": [
+null,
+"n",
+808.0,
+null
+],
+"G9": [
+null,
+"n",
+908.0,
+null
+],
+"H1": [
+null,
+"n",
+109.0,
+null
+],
+"H10": [
+null,
+"n",
+1009.0,
+null
+],
+"H2": [
+null,
+"n",
+209.0,
+null
+],
+"H3": [
+null,
+"n",
+309.0,
+null
+],
+"H4": [
+null,
+"n",
+409.0,
+null
+],
+"H5": [
+null,
+"n",
+509.0,
+null
+],
+"H6": [
+null,
+"n",
+609.0,
+null
+],
+"H7": [
+null,
+"n",
+709.0,
+null
+],
+"H8": [
+null,
+"n",
+809.0,
+null
+],
+"H9": [
+null,
+"n",
+909.0,
+null
+],
+"I1": [
+null,
+"n",
+110.0,
+null
+],
+"I10": [
+null,
+"n",
+1010.0,
+null
+],
+"I2": [
+null,
+"n",
+210.0,
+null
+],
+"I3": [
+null,
+"n",
+310.0,
+null
+],
+"I4": [
+null,
+"n",
+410.0,
+null
+],
+"I5": [
+null,
+"n",
+510.0,
+null
+],
+"I6": [
+null,
+"n",
+610.0,
+null
+],
+"I7": [
+null,
+"n",
+710.0,
+null
+],
+"I8": [
+null,
+"n",
+810.0,
+null
+],
+"I9": [
+null,
+"n",
+910.0,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [
+[
+"B3",
+"expression",
+[
+"B3>A3"
+]
+],
+[
+"B4",
+"expression",
+[
+"B4>A4"
+]
+],
+[
+"B5",
+"expression",
+[
+"B5>A5"
+]
+],
+[
+"B6",
+"expression",
+[
+"B6>A6"
+]
+],
+[
+"C2",
+"expression",
+[
+"C2>C1"
+]
+],
+[
+"C3",
+"expression",
+[
+"C3>B3"
+]
+],
+[
+"C4",
+"expression",
+[
+"C4>B4"
+]
+],
+[
+"C5",
+"expression",
+[
+"C5>B5"
+]
+],
+[
+"C6",
+"expression",
+[
+"C6>B6"
+]
+],
+[
+"D2",
+"expression",
+[
+"D2>D1"
+]
+],
+[
+"E2",
+"expression",
+[
+"E2>E1"
+]
+]
+],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [
+[
+"B3",
+"whole",
+"0",
+null
+],
+[
+"B4",
+"whole",
+"0",
+null
+],
+[
+"B5",
+"whole",
+"0",
+null
+],
+[
+"B6",
+"whole",
+"0",
+null
+],
+[
+"C2",
+"whole",
+"0",
+null
+],
+[
+"C3",
+"whole",
+"0",
+null
+],
+[
+"C4",
+"whole",
+"0",
+null
+],
+[
+"C5",
+"whole",
+"0",
+null
+],
+[
+"C6",
+"whole",
+"0",
+null
+],
+[
+"D2",
+"whole",
+"0",
+null
+],
+[
+"E2",
+"whole",
+"0",
+null
+]
+],
+"vml": []
+},
+"Refs": {
+"autoFilter": null,
+"cells": {
+"A1": [
+"Grid!B1",
+null,
+null,
+null
+],
+"A2": [
+"Grid!B2",
+null,
+null,
+null
+],
+"A3": [
+"Grid!B3",
+null,
+null,
+null
+],
+"A4": [
+"Grid!B4",
+null,
+null,
+null
+],
+"A5": [
+"Grid!B5",
+null,
+null,
+null
+],
+"A6": [
+"Grid!B6",
+null,
+null,
+null
+],
+"A7": [
+"Grid!B7",
+null,
+null,
+null
+],
+"A8": [
+"Grid!B8",
+null,
+null,
+null
+],
+"A9": [
+"Grid!B9",
+null,
+null,
+null
+],
+"B1": [
+"Grid!A2",
+null,
+null,
+null
+],
+"B2": [
+"Grid!B2",
+null,
+null,
+null
+],
+"B3": [
+"Grid!#REF!",
+null,
+null,
+null
+],
+"B4": [
+"Grid!D2",
+null,
+null,
+null
+],
+"B5": [
+"Grid!C2",
+null,
+null,
+null
+],
+"B6": [
+"Grid!E2",
+null,
+null,
+null
+],
+"B7": [
+"Grid!F2",
+null,
+null,
+null
+],
+"B8": [
+"Grid!G2",
+null,
+null,
+null
+],
+"B9": [
+"Grid!H2",
+null,
+null,
+null
+],
+"C1": [
+"SUM(Grid!B3:B6)",
+null,
+null,
+null
+],
+"C10": [
+"SUM(Grid!B6:B7)",
+null,
+null,
+null
+],
+"C11": [
+"SUM(Grid!B3:B6)",
+null,
+null,
+null
+],
+"C2": [
+"SUM(Grid!B3:B3)",
+null,
+null,
+null
+],
+"C3": [
+"SUM(Grid!B4:B5)",
+null,
+null,
+null
+],
+"C4": [
+"SUM(Grid!B1:B9)",
+null,
+null,
+null
+],
+"C5": [
+"SUM(Grid!$B$3:$B$6)",
+null,
+null,
+null
+],
+"C6": [
+"SUM(Grid!3:6)",
+null,
+null,
+null
+],
+"C7": [
+"SUM(Grid!B3:B4)",
+null,
+null,
+null
+],
+"C8": [
+"SUM(Grid!B5:B6)",
+null,
+null,
+null
+],
+"C9": [
+"SUM(Grid!B2:B3)",
+null,
+null,
+null
+],
+"D1": [
+"SUM(Grid!B2:E2)",
+null,
+null,
+null
+],
+"D10": [
+"SUM(Grid!E2:F2)",
+null,
+null,
+null
+],
+"D2": [
+"SUM(Grid!#REF!)",
+null,
+null,
+null
+],
+"D3": [
+"SUM(Grid!D2:D2)",
+null,
+null,
+null
+],
+"D4": [
+"SUM(Grid!A2:H2)",
+null,
+null,
+null
+],
+"D5": [
+"SUM(Grid!$B$2:$E$2)",
+null,
+null,
+null
+],
+"D6": [
+"SUM(Grid!B:E)",
+null,
+null,
+null
+],
+"D7": [
+"SUM(Grid!B2:D2)",
+null,
+null,
+null
+],
+"D8": [
+"SUM(Grid!C2:E2)",
+null,
+null,
+null
+],
+"D9": [
+"SUM(Grid!B2:B2)",
+null,
+null,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [],
+"vml": []
+}
+}
+},
+"steps": [
+"move|Grid|C:C|B:B",
+"move|Grid|E:E|D:D",
+"delete_columns|Grid|B:B|"
+],
+"variant": {}
+},
+"rule-i1": {
+"excel": "done",
+"facts": {
+"charts": [],
+"names": {
+"ColSpan": "Grid!$C$2:$G$2",
+"Cols": "Grid!$C:$G",
+"RowSpan": "Grid!$D$3:$D$6",
+"Rows36": "Grid!$3:$6"
+},
+"pivots": [],
+"sheets": {
+"Grid": {
+"autoFilter": null,
+"cells": {
+"A1": [
+null,
+"n",
+101.0,
+null
+],
+"A10": [
+null,
+"n",
+1001.0,
+null
+],
+"A2": [
+null,
+"n",
+201.0,
+null
+],
+"A3": [
+null,
+"n",
+301.0,
+null
+],
+"A4": [
+null,
+"n",
+401.0,
+null
+],
+"A5": [
+null,
+"n",
+501.0,
+null
+],
+"A6": [
+null,
+"n",
+601.0,
+null
+],
+"A7": [
+null,
+"n",
+701.0,
+null
+],
+"A8": [
+null,
+"n",
+801.0,
+null
+],
+"A9": [
+null,
+"n",
+901.0,
+null
+],
+"C1": [
+null,
+"n",
+103.0,
+null
+],
+"C10": [
+null,
+"n",
+1003.0,
+null
+],
+"C2": [
+null,
+"n",
+203.0,
+null
+],
+"C3": [
+null,
+"n",
+303.0,
+null
+],
+"C4": [
+null,
+"n",
+403.0,
+null
+],
+"C5": [
+null,
+"n",
+503.0,
+null
+],
+"C6": [
+null,
+"n",
+603.0,
+null
+],
+"C7": [
+null,
+"n",
+703.0,
+null
+],
+"C8": [
+null,
+"n",
+803.0,
+null
+],
+"C9": [
+null,
+"n",
+903.0,
+null
+],
+"D1": [
+null,
+"n",
+102.0,
+null
+],
+"D10": [
+null,
+"n",
+1002.0,
+null
+],
+"D2": [
+null,
+"n",
+202.0,
+null
+],
+"D3": [
+null,
+"n",
+302.0,
+null
+],
+"D4": [
+null,
+"n",
+402.0,
+null
+],
+"D5": [
+null,
+"n",
+502.0,
+null
+],
+"D6": [
+null,
+"n",
+602.0,
+null
+],
+"D7": [
+null,
+"n",
+702.0,
+null
+],
+"D8": [
+null,
+"n",
+802.0,
+null
+],
+"D9": [
+null,
+"n",
+902.0,
+null
+],
+"E1": [
+null,
+"n",
+105.0,
+null
+],
+"E10": [
+null,
+"n",
+1005.0,
+null
+],
+"E2": [
+null,
+"n",
+205.0,
+null
+],
+"E3": [
+null,
+"n",
+305.0,
+null
+],
+"E4": [
+null,
+"n",
+405.0,
+null
+],
+"E5": [
+null,
+"n",
+505.0,
+null
+],
+"E6": [
+null,
+"n",
+605.0,
+null
+],
+"E7": [
+null,
+"n",
+705.0,
+null
+],
+"E8": [
+null,
+"n",
+805.0,
+null
+],
+"E9": [
+null,
+"n",
+905.0,
+null
+],
+"F1": [
+null,
+"n",
+104.0,
+null
+],
+"F10": [
+null,
+"n",
+1004.0,
+null
+],
+"F2": [
+null,
+"n",
+204.0,
+null
+],
+"F3": [
+null,
+"n",
+304.0,
+null
+],
+"F4": [
+null,
+"n",
+404.0,
+null
+],
+"F5": [
+null,
+"n",
+504.0,
+null
+],
+"F6": [
+null,
+"n",
+604.0,
+null
+],
+"F7": [
+null,
+"n",
+704.0,
+null
+],
+"F8": [
+null,
+"n",
+804.0,
+null
+],
+"F9": [
+null,
+"n",
+904.0,
+null
+],
+"G1": [
+null,
+"n",
+106.0,
+null
+],
+"G10": [
+null,
+"n",
+1006.0,
+null
+],
+"G2": [
+null,
+"n",
+206.0,
+null
+],
+"G3": [
+null,
+"n",
+306.0,
+null
+],
+"G4": [
+null,
+"n",
+406.0,
+null
+],
+"G5": [
+null,
+"n",
+506.0,
+null
+],
+"G6": [
+null,
+"n",
+606.0,
+null
+],
+"G7": [
+null,
+"n",
+706.0,
+null
+],
+"G8": [
+null,
+"n",
+806.0,
+null
+],
+"G9": [
+null,
+"n",
+906.0,
+null
+],
+"H1": [
+null,
+"n",
+107.0,
+null
+],
+"H10": [
+null,
+"n",
+1007.0,
+null
+],
+"H2": [
+null,
+"n",
+207.0,
+null
+],
+"H3": [
+null,
+"n",
+307.0,
+null
+],
+"H4": [
+null,
+"n",
+407.0,
+null
+],
+"H5": [
+null,
+"n",
+507.0,
+null
+],
+"H6": [
+null,
+"n",
+607.0,
+null
+],
+"H7": [
+null,
+"n",
+707.0,
+null
+],
+"H8": [
+null,
+"n",
+807.0,
+null
+],
+"H9": [
+null,
+"n",
+907.0,
+null
+],
+"I1": [
+null,
+"n",
+108.0,
+null
+],
+"I10": [
+null,
+"n",
+1008.0,
+null
+],
+"I2": [
+null,
+"n",
+208.0,
+null
+],
+"I3": [
+null,
+"n",
+308.0,
+null
+],
+"I4": [
+null,
+"n",
+408.0,
+null
+],
+"I5": [
+null,
+"n",
+508.0,
+null
+],
+"I6": [
+null,
+"n",
+608.0,
+null
+],
+"I7": [
+null,
+"n",
+708.0,
+null
+],
+"I8": [
+null,
+"n",
+808.0,
+null
+],
+"I9": [
+null,
+"n",
+908.0,
+null
+],
+"J1": [
+null,
+"n",
+109.0,
+null
+],
+"J10": [
+null,
+"n",
+1009.0,
+null
+],
+"J2": [
+null,
+"n",
+209.0,
+null
+],
+"J3": [
+null,
+"n",
+309.0,
+null
+],
+"J4": [
+null,
+"n",
+409.0,
+null
+],
+"J5": [
+null,
+"n",
+509.0,
+null
+],
+"J6": [
+null,
+"n",
+609.0,
+null
+],
+"J7": [
+null,
+"n",
+709.0,
+null
+],
+"J8": [
+null,
+"n",
+809.0,
+null
+],
+"J9": [
+null,
+"n",
+909.0,
+null
+],
+"K1": [
+null,
+"n",
+110.0,
+null
+],
+"K10": [
+null,
+"n",
+1010.0,
+null
+],
+"K2": [
+null,
+"n",
+210.0,
+null
+],
+"K3": [
+null,
+"n",
+310.0,
+null
+],
+"K4": [
+null,
+"n",
+410.0,
+null
+],
+"K5": [
+null,
+"n",
+510.0,
+null
+],
+"K6": [
+null,
+"n",
+610.0,
+null
+],
+"K7": [
+null,
+"n",
+710.0,
+null
+],
+"K8": [
+null,
+"n",
+810.0,
+null
+],
+"K9": [
+null,
+"n",
+910.0,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [
+[
+"C2",
+"expression",
+[
+"C2>C1"
+]
+],
+[
+"D3",
+"expression",
+[
+"D3>A3"
+]
+],
+[
+"D4",
+"expression",
+[
+"D4>A4"
+]
+],
+[
+"D5",
+"expression",
+[
+"D5>A5"
+]
+],
+[
+"D6",
+"expression",
+[
+"D6>A6"
+]
+],
+[
+"E2",
+"expression",
+[
+"E2>E1"
+]
+],
+[
+"E3",
+"expression",
+[
+"E3>B3"
+]
+],
+[
+"E4",
+"expression",
+[
+"E4>B4"
+]
+],
+[
+"E5",
+"expression",
+[
+"E5>B5"
+]
+],
+[
+"E6",
+"expression",
+[
+"E6>B6"
+]
+],
+[
+"F2",
+"expression",
+[
+"F2>F1"
+]
+],
+[
+"G2",
+"expression",
+[
+"G2>G1"
+]
+]
+],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [
+[
+"C2",
+"whole",
+"0",
+null
+],
+[
+"D3",
+"whole",
+"0",
+null
+],
+[
+"D4",
+"whole",
+"0",
+null
+],
+[
+"D5",
+"whole",
+"0",
+null
+],
+[
+"D6",
+"whole",
+"0",
+null
+],
+[
+"E2",
+"whole",
+"0",
+null
+],
+[
+"E3",
+"whole",
+"0",
+null
+],
+[
+"E4",
+"whole",
+"0",
+null
+],
+[
+"E5",
+"whole",
+"0",
+null
+],
+[
+"E6",
+"whole",
+"0",
+null
+],
+[
+"F2",
+"whole",
+"0",
+null
+],
+[
+"G2",
+"whole",
+"0",
+null
+]
+],
+"vml": []
+},
+"Refs": {
+"autoFilter": null,
+"cells": {
+"A1": [
+"Grid!D1",
+null,
+null,
+null
+],
+"A2": [
+"Grid!D2",
+null,
+null,
+null
+],
+"A3": [
+"Grid!D3",
+null,
+null,
+null
+],
+"A4": [
+"Grid!D4",
+null,
+null,
+null
+],
+"A5": [
+"Grid!D5",
+null,
+null,
+null
+],
+"A6": [
+"Grid!D6",
+null,
+null,
+null
+],
+"A7": [
+"Grid!D7",
+null,
+null,
+null
+],
+"A8": [
+"Grid!D8",
+null,
+null,
+null
+],
+"A9": [
+"Grid!D9",
+null,
+null,
+null
+],
+"B1": [
+"Grid!A2",
+null,
+null,
+null
+],
+"B2": [
+"Grid!D2",
+null,
+null,
+null
+],
+"B3": [
+"Grid!C2",
+null,
+null,
+null
+],
+"B4": [
+"Grid!F2",
+null,
+null,
+null
+],
+"B5": [
+"Grid!E2",
+null,
+null,
+null
+],
+"B6": [
+"Grid!G2",
+null,
+null,
+null
+],
+"B7": [
+"Grid!H2",
+null,
+null,
+null
+],
+"B8": [
+"Grid!I2",
+null,
+null,
+null
+],
+"B9": [
+"Grid!J2",
+null,
+null,
+null
+],
+"C1": [
+"SUM(Grid!D3:D6)",
+null,
+null,
+null
+],
+"C10": [
+"SUM(Grid!D6:D7)",
+null,
+null,
+null
+],
+"C11": [
+"SUM(Grid!D3:D6)",
+null,
+null,
+null
+],
+"C2": [
+"SUM(Grid!D3:D3)",
+null,
+null,
+null
+],
+"C3": [
+"SUM(Grid!D4:D5)",
+null,
+null,
+null
+],
+"C4": [
+"SUM(Grid!D1:D9)",
+null,
+null,
+null
+],
+"C5": [
+"SUM(Grid!$D$3:$D$6)",
+null,
+null,
+null
+],
+"C6": [
+"SUM(Grid!3:6)",
+null,
+null,
+null
+],
+"C7": [
+"SUM(Grid!D3:D4)",
+null,
+null,
+null
+],
+"C8": [
+"SUM(Grid!D5:D6)",
+null,
+null,
+null
+],
+"C9": [
+"SUM(Grid!D2:D3)",
+null,
+null,
+null
+],
+"D1": [
+"SUM(Grid!C2:G2)",
+null,
+null,
+null
+],
+"D10": [
+"SUM(Grid!G2:H2)",
+null,
+null,
+null
+],
+"D2": [
+"SUM(Grid!C2:C2)",
+null,
+null,
+null
+],
+"D3": [
+"SUM(Grid!F2:F2)",
+null,
+null,
+null
+],
+"D4": [
+"SUM(Grid!A2:J2)",
+null,
+null,
+null
+],
+"D5": [
+"SUM(Grid!$C$2:$G$2)",
+null,
+null,
+null
+],
+"D6": [
+"SUM(Grid!C:G)",
+null,
+null,
+null
+],
+"D7": [
+"SUM(Grid!C2:F2)",
+null,
+null,
+null
+],
+"D8": [
+"SUM(Grid!E2:G2)",
+null,
+null,
+null
+],
+"D9": [
+"SUM(Grid!D2:D2)",
+null,
+null,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [],
+"vml": []
+}
+}
+},
+"steps": [
+"move|Grid|C:C|B:B",
+"move|Grid|E:E|D:D",
+"insert_columns|Grid|B:B|"
+],
+"variant": {}
+},
+"rule-s1": {
+"excel": "done",
+"facts": {
+"charts": [],
+"names": {
+"ColSpan": "Grid!$B$2:$F$2",
+"Cols": "Grid!$B:$F",
+"RowSpan": "Grid!$C$3:$C$6",
+"Rows36": "Grid!$3:$6"
+},
+"pivots": [],
+"sheets": {
+"Grid": {
+"autoFilter": null,
+"cells": {
+"A1": [
+null,
+"n",
+101.0,
+null
+],
+"A10": [
+null,
+"n",
+1001.0,
+null
+],
+"A2": [
+null,
+"n",
+201.0,
+null
+],
+"A3": [
+null,
+"n",
+301.0,
+null
+],
+"A4": [
+null,
+"n",
+401.0,
+null
+],
+"A5": [
+null,
+"n",
+501.0,
+null
+],
+"A6": [
+null,
+"n",
+601.0,
+null
+],
+"A7": [
+null,
+"n",
+701.0,
+null
+],
+"A8": [
+null,
+"n",
+801.0,
+null
+],
+"A9": [
+null,
+"n",
+901.0,
+null
+],
+"B1": [
+null,
+"n",
+103.0,
+null
+],
+"B10": [
+null,
+"n",
+1003.0,
+null
+],
+"B2": [
+null,
+"n",
+203.0,
+null
+],
+"B3": [
+null,
+"n",
+303.0,
+null
+],
+"B4": [
+null,
+"n",
+403.0,
+null
+],
+"B5": [
+null,
+"n",
+503.0,
+null
+],
+"B6": [
+null,
+"n",
+603.0,
+null
+],
+"B7": [
+null,
+"n",
+703.0,
+null
+],
+"B8": [
+null,
+"n",
+803.0,
+null
+],
+"B9": [
+null,
+"n",
+903.0,
+null
+],
+"C1": [
+null,
+"n",
+102.0,
+null
+],
+"C10": [
+null,
+"n",
+1002.0,
+null
+],
+"C2": [
+null,
+"n",
+202.0,
+null
+],
+"C3": [
+null,
+"n",
+302.0,
+null
+],
+"C4": [
+null,
+"n",
+402.0,
+null
+],
+"C5": [
+null,
+"n",
+502.0,
+null
+],
+"C6": [
+null,
+"n",
+602.0,
+null
+],
+"C7": [
+null,
+"n",
+702.0,
+null
+],
+"C8": [
+null,
+"n",
+802.0,
+null
+],
+"C9": [
+null,
+"n",
+902.0,
+null
+],
+"D1": [
+null,
+"n",
+104.0,
+null
+],
+"D10": [
+null,
+"n",
+1004.0,
+null
+],
+"D2": [
+null,
+"n",
+204.0,
+null
+],
+"D3": [
+null,
+"n",
+304.0,
+null
+],
+"D4": [
+null,
+"n",
+404.0,
+null
+],
+"D5": [
+null,
+"n",
+504.0,
+null
+],
+"D6": [
+null,
+"n",
+604.0,
+null
+],
+"D7": [
+null,
+"n",
+704.0,
+null
+],
+"D8": [
+null,
+"n",
+804.0,
+null
+],
+"D9": [
+null,
+"n",
+904.0,
+null
+],
+"E1": [
+null,
+"n",
+105.0,
+null
+],
+"E10": [
+null,
+"n",
+1005.0,
+null
+],
+"E2": [
+null,
+"n",
+205.0,
+null
+],
+"E3": [
+null,
+"n",
+305.0,
+null
+],
+"E4": [
+null,
+"n",
+405.0,
+null
+],
+"E5": [
+null,
+"n",
+505.0,
+null
+],
+"E6": [
+null,
+"n",
+605.0,
+null
+],
+"E7": [
+null,
+"n",
+705.0,
+null
+],
+"E8": [
+null,
+"n",
+805.0,
+null
+],
+"E9": [
+null,
+"n",
+905.0,
+null
+],
+"F1": [
+null,
+"n",
+106.0,
+null
+],
+"F10": [
+null,
+"n",
+1006.0,
+null
+],
+"F2": [
+null,
+"n",
+206.0,
+null
+],
+"F3": [
+null,
+"n",
+306.0,
+null
+],
+"F4": [
+null,
+"n",
+406.0,
+null
+],
+"F5": [
+null,
+"n",
+506.0,
+null
+],
+"F6": [
+null,
+"n",
+606.0,
+null
+],
+"F7": [
+null,
+"n",
+706.0,
+null
+],
+"F8": [
+null,
+"n",
+806.0,
+null
+],
+"F9": [
+null,
+"n",
+906.0,
+null
+],
+"G1": [
+null,
+"n",
+107.0,
+null
+],
+"G10": [
+null,
+"n",
+1007.0,
+null
+],
+"G2": [
+null,
+"n",
+207.0,
+null
+],
+"G3": [
+null,
+"n",
+307.0,
+null
+],
+"G4": [
+null,
+"n",
+407.0,
+null
+],
+"G5": [
+null,
+"n",
+507.0,
+null
+],
+"G6": [
+null,
+"n",
+607.0,
+null
+],
+"G7": [
+null,
+"n",
+707.0,
+null
+],
+"G8": [
+null,
+"n",
+807.0,
+null
+],
+"G9": [
+null,
+"n",
+907.0,
+null
+],
+"H1": [
+null,
+"n",
+108.0,
+null
+],
+"H10": [
+null,
+"n",
+1008.0,
+null
+],
+"H2": [
+null,
+"n",
+208.0,
+null
+],
+"H3": [
+null,
+"n",
+308.0,
+null
+],
+"H4": [
+null,
+"n",
+408.0,
+null
+],
+"H5": [
+null,
+"n",
+508.0,
+null
+],
+"H6": [
+null,
+"n",
+608.0,
+null
+],
+"H7": [
+null,
+"n",
+708.0,
+null
+],
+"H8": [
+null,
+"n",
+808.0,
+null
+],
+"H9": [
+null,
+"n",
+908.0,
+null
+],
+"I1": [
+null,
+"n",
+109.0,
+null
+],
+"I10": [
+null,
+"n",
+1009.0,
+null
+],
+"I2": [
+null,
+"n",
+209.0,
+null
+],
+"I3": [
+null,
+"n",
+309.0,
+null
+],
+"I4": [
+null,
+"n",
+409.0,
+null
+],
+"I5": [
+null,
+"n",
+509.0,
+null
+],
+"I6": [
+null,
+"n",
+609.0,
+null
+],
+"I7": [
+null,
+"n",
+709.0,
+null
+],
+"I8": [
+null,
+"n",
+809.0,
+null
+],
+"I9": [
+null,
+"n",
+909.0,
+null
+],
+"J1": [
+null,
+"n",
+110.0,
+null
+],
+"J10": [
+null,
+"n",
+1010.0,
+null
+],
+"J2": [
+null,
+"n",
+210.0,
+null
+],
+"J3": [
+null,
+"n",
+310.0,
+null
+],
+"J4": [
+null,
+"n",
+410.0,
+null
+],
+"J5": [
+null,
+"n",
+510.0,
+null
+],
+"J6": [
+null,
+"n",
+610.0,
+null
+],
+"J7": [
+null,
+"n",
+710.0,
+null
+],
+"J8": [
+null,
+"n",
+810.0,
+null
+],
+"J9": [
+null,
+"n",
+910.0,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [
+[
+"B2",
+"expression",
+[
+"B2>B1"
+]
+],
+[
+"C3",
+"expression",
+[
+"C3>A3"
+]
+],
+[
+"C4",
+"expression",
+[
+"C4>A4"
+]
+],
+[
+"C5",
+"expression",
+[
+"C5>A5"
+]
+],
+[
+"C6",
+"expression",
+[
+"C6>A6"
+]
+],
+[
+"D2",
+"expression",
+[
+"D2>D1"
+]
+],
+[
+"E2",
+"expression",
+[
+"E2>E1"
+]
+],
+[
+"F2",
+"expression",
+[
+"F2>F1"
+]
+]
+],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [
+[
+"B2",
+"whole",
+"0",
+null
+],
+[
+"C3",
+"whole",
+"0",
+null
+],
+[
+"C4",
+"whole",
+"0",
+null
+],
+[
+"C5",
+"whole",
+"0",
+null
+],
+[
+"C6",
+"whole",
+"0",
+null
+],
+[
+"D2",
+"whole",
+"0",
+null
+],
+[
+"E2",
+"whole",
+"0",
+null
+],
+[
+"F2",
+"whole",
+"0",
+null
+]
+],
+"vml": []
+},
+"Refs": {
+"autoFilter": null,
+"cells": {
+"A1": [
+"Grid!C1",
+null,
+null,
+null
+],
+"A2": [
+"Grid!C2",
+null,
+null,
+null
+],
+"A3": [
+"Grid!C3",
+null,
+null,
+null
+],
+"A4": [
+"Grid!C4",
+null,
+null,
+null
+],
+"A5": [
+"Grid!C5",
+null,
+null,
+null
+],
+"A6": [
+"Grid!C6",
+null,
+null,
+null
+],
+"A7": [
+"Grid!C7",
+null,
+null,
+null
+],
+"A8": [
+"Grid!C8",
+null,
+null,
+null
+],
+"A9": [
+"Grid!C9",
+null,
+null,
+null
+],
+"B1": [
+"Grid!A2",
+null,
+null,
+null
+],
+"B2": [
+"Grid!C2",
+null,
+null,
+null
+],
+"B3": [
+"Grid!B2",
+null,
+null,
+null
+],
+"B4": [
+"Grid!D2",
+null,
+null,
+null
+],
+"B5": [
+"Grid!E2",
+null,
+null,
+null
+],
+"B6": [
+"Grid!F2",
+null,
+null,
+null
+],
+"B7": [
+"Grid!G2",
+null,
+null,
+null
+],
+"B8": [
+"Grid!H2",
+null,
+null,
+null
+],
+"B9": [
+"Grid!I2",
+null,
+null,
+null
+],
+"C1": [
+"SUM(Grid!C3:C6)",
+null,
+null,
+null
+],
+"C10": [
+"SUM(Grid!C6:C7)",
+null,
+null,
+null
+],
+"C11": [
+"SUM(Grid!C3:C6)",
+null,
+null,
+null
+],
+"C2": [
+"SUM(Grid!C3:C3)",
+null,
+null,
+null
+],
+"C3": [
+"SUM(Grid!C4:C5)",
+null,
+null,
+null
+],
+"C4": [
+"SUM(Grid!C1:C9)",
+null,
+null,
+null
+],
+"C5": [
+"SUM(Grid!$C$3:$C$6)",
+null,
+null,
+null
+],
+"C6": [
+"SUM(Grid!3:6)",
+null,
+null,
+null
+],
+"C7": [
+"SUM(Grid!C3:C4)",
+null,
+null,
+null
+],
+"C8": [
+"SUM(Grid!C5:C6)",
+null,
+null,
+null
+],
+"C9": [
+"SUM(Grid!C2:C3)",
+null,
+null,
+null
+],
+"D1": [
+"SUM(Grid!B2:F2)",
+null,
+null,
+null
+],
+"D10": [
+"SUM(Grid!F2:G2)",
+null,
+null,
+null
+],
+"D2": [
+"SUM(Grid!B2:B2)",
+null,
+null,
+null
+],
+"D3": [
+"SUM(Grid!D2:E2)",
+null,
+null,
+null
+],
+"D4": [
+"SUM(Grid!A2:I2)",
+null,
+null,
+null
+],
+"D5": [
+"SUM(Grid!$B$2:$F$2)",
+null,
+null,
+null
+],
+"D6": [
+"SUM(Grid!B:F)",
+null,
+null,
+null
+],
+"D7": [
+"SUM(Grid!B2:D2)",
+null,
+null,
+null
+],
+"D8": [
+"SUM(Grid!E2:F2)",
+null,
+null,
+null
+],
+"D9": [
+"SUM(Grid!C2:C2)",
+null,
+null,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [],
+"vml": []
+}
+}
+},
+"steps": [
+"move|Grid|C:C|B:B"
+],
+"variant": {}
+},
+"rule-s2": {
+"excel": "done",
+"facts": {
+"charts": [],
+"names": {
+"ColSpan": "Grid!$B$2:$F$2",
+"Cols": "Grid!$B:$F",
+"RowSpan": "Grid!$C$3:$C$6",
+"Rows36": "Grid!$3:$6"
+},
+"pivots": [],
+"sheets": {
+"Grid": {
+"autoFilter": null,
+"cells": {
+"A1": [
+null,
+"n",
+101.0,
+null
+],
+"A10": [
+null,
+"n",
+1001.0,
+null
+],
+"A2": [
+null,
+"n",
+201.0,
+null
+],
+"A3": [
+null,
+"n",
+301.0,
+null
+],
+"A4": [
+null,
+"n",
+401.0,
+null
+],
+"A5": [
+null,
+"n",
+501.0,
+null
+],
+"A6": [
+null,
+"n",
+601.0,
+null
+],
+"A7": [
+null,
+"n",
+701.0,
+null
+],
+"A8": [
+null,
+"n",
+801.0,
+null
+],
+"A9": [
+null,
+"n",
+901.0,
+null
+],
+"B1": [
+null,
+"n",
+103.0,
+null
+],
+"B10": [
+null,
+"n",
+1003.0,
+null
+],
+"B2": [
+null,
+"n",
+203.0,
+null
+],
+"B3": [
+null,
+"n",
+303.0,
+null
+],
+"B4": [
+null,
+"n",
+403.0,
+null
+],
+"B5": [
+null,
+"n",
+503.0,
+null
+],
+"B6": [
+null,
+"n",
+603.0,
+null
+],
+"B7": [
+null,
+"n",
+703.0,
+null
+],
+"B8": [
+null,
+"n",
+803.0,
+null
+],
+"B9": [
+null,
+"n",
+903.0,
+null
+],
+"C1": [
+null,
+"n",
+102.0,
+null
+],
+"C10": [
+null,
+"n",
+1002.0,
+null
+],
+"C2": [
+null,
+"n",
+202.0,
+null
+],
+"C3": [
+null,
+"n",
+302.0,
+null
+],
+"C4": [
+null,
+"n",
+402.0,
+null
+],
+"C5": [
+null,
+"n",
+502.0,
+null
+],
+"C6": [
+null,
+"n",
+602.0,
+null
+],
+"C7": [
+null,
+"n",
+702.0,
+null
+],
+"C8": [
+null,
+"n",
+802.0,
+null
+],
+"C9": [
+null,
+"n",
+902.0,
+null
+],
+"D1": [
+null,
+"n",
+105.0,
+null
+],
+"D10": [
+null,
+"n",
+1005.0,
+null
+],
+"D2": [
+null,
+"n",
+205.0,
+null
+],
+"D3": [
+null,
+"n",
+305.0,
+null
+],
+"D4": [
+null,
+"n",
+405.0,
+null
+],
+"D5": [
+null,
+"n",
+505.0,
+null
+],
+"D6": [
+null,
+"n",
+605.0,
+null
+],
+"D7": [
+null,
+"n",
+705.0,
+null
+],
+"D8": [
+null,
+"n",
+805.0,
+null
+],
+"D9": [
+null,
+"n",
+905.0,
+null
+],
+"E1": [
+null,
+"n",
+104.0,
+null
+],
+"E10": [
+null,
+"n",
+1004.0,
+null
+],
+"E2": [
+null,
+"n",
+204.0,
+null
+],
+"E3": [
+null,
+"n",
+304.0,
+null
+],
+"E4": [
+null,
+"n",
+404.0,
+null
+],
+"E5": [
+null,
+"n",
+504.0,
+null
+],
+"E6": [
+null,
+"n",
+604.0,
+null
+],
+"E7": [
+null,
+"n",
+704.0,
+null
+],
+"E8": [
+null,
+"n",
+804.0,
+null
+],
+"E9": [
+null,
+"n",
+904.0,
+null
+],
+"F1": [
+null,
+"n",
+106.0,
+null
+],
+"F10": [
+null,
+"n",
+1006.0,
+null
+],
+"F2": [
+null,
+"n",
+206.0,
+null
+],
+"F3": [
+null,
+"n",
+306.0,
+null
+],
+"F4": [
+null,
+"n",
+406.0,
+null
+],
+"F5": [
+null,
+"n",
+506.0,
+null
+],
+"F6": [
+null,
+"n",
+606.0,
+null
+],
+"F7": [
+null,
+"n",
+706.0,
+null
+],
+"F8": [
+null,
+"n",
+806.0,
+null
+],
+"F9": [
+null,
+"n",
+906.0,
+null
+],
+"G1": [
+null,
+"n",
+107.0,
+null
+],
+"G10": [
+null,
+"n",
+1007.0,
+null
+],
+"G2": [
+null,
+"n",
+207.0,
+null
+],
+"G3": [
+null,
+"n",
+307.0,
+null
+],
+"G4": [
+null,
+"n",
+407.0,
+null
+],
+"G5": [
+null,
+"n",
+507.0,
+null
+],
+"G6": [
+null,
+"n",
+607.0,
+null
+],
+"G7": [
+null,
+"n",
+707.0,
+null
+],
+"G8": [
+null,
+"n",
+807.0,
+null
+],
+"G9": [
+null,
+"n",
+907.0,
+null
+],
+"H1": [
+null,
+"n",
+108.0,
+null
+],
+"H10": [
+null,
+"n",
+1008.0,
+null
+],
+"H2": [
+null,
+"n",
+208.0,
+null
+],
+"H3": [
+null,
+"n",
+308.0,
+null
+],
+"H4": [
+null,
+"n",
+408.0,
+null
+],
+"H5": [
+null,
+"n",
+508.0,
+null
+],
+"H6": [
+null,
+"n",
+608.0,
+null
+],
+"H7": [
+null,
+"n",
+708.0,
+null
+],
+"H8": [
+null,
+"n",
+808.0,
+null
+],
+"H9": [
+null,
+"n",
+908.0,
+null
+],
+"I1": [
+null,
+"n",
+109.0,
+null
+],
+"I10": [
+null,
+"n",
+1009.0,
+null
+],
+"I2": [
+null,
+"n",
+209.0,
+null
+],
+"I3": [
+null,
+"n",
+309.0,
+null
+],
+"I4": [
+null,
+"n",
+409.0,
+null
+],
+"I5": [
+null,
+"n",
+509.0,
+null
+],
+"I6": [
+null,
+"n",
+609.0,
+null
+],
+"I7": [
+null,
+"n",
+709.0,
+null
+],
+"I8": [
+null,
+"n",
+809.0,
+null
+],
+"I9": [
+null,
+"n",
+909.0,
+null
+],
+"J1": [
+null,
+"n",
+110.0,
+null
+],
+"J10": [
+null,
+"n",
+1010.0,
+null
+],
+"J2": [
+null,
+"n",
+210.0,
+null
+],
+"J3": [
+null,
+"n",
+310.0,
+null
+],
+"J4": [
+null,
+"n",
+410.0,
+null
+],
+"J5": [
+null,
+"n",
+510.0,
+null
+],
+"J6": [
+null,
+"n",
+610.0,
+null
+],
+"J7": [
+null,
+"n",
+710.0,
+null
+],
+"J8": [
+null,
+"n",
+810.0,
+null
+],
+"J9": [
+null,
+"n",
+910.0,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [
+[
+"B2",
+"expression",
+[
+"B2>B1"
+]
+],
+[
+"C3",
+"expression",
+[
+"C3>A3"
+]
+],
+[
+"C4",
+"expression",
+[
+"C4>A4"
+]
+],
+[
+"C5",
+"expression",
+[
+"C5>A5"
+]
+],
+[
+"C6",
+"expression",
+[
+"C6>A6"
+]
+],
+[
+"D2",
+"expression",
+[
+"D2>D1"
+]
+],
+[
+"D3",
+"expression",
+[
+"D3>B3"
+]
+],
+[
+"D4",
+"expression",
+[
+"D4>B4"
+]
+],
+[
+"D5",
+"expression",
+[
+"D5>B5"
+]
+],
+[
+"D6",
+"expression",
+[
+"D6>B6"
+]
+],
+[
+"E2",
+"expression",
+[
+"E2>E1"
+]
+],
+[
+"F2",
+"expression",
+[
+"F2>F1"
+]
+]
+],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [
+[
+"B2",
+"whole",
+"0",
+null
+],
+[
+"C3",
+"whole",
+"0",
+null
+],
+[
+"C4",
+"whole",
+"0",
+null
+],
+[
+"C5",
+"whole",
+"0",
+null
+],
+[
+"C6",
+"whole",
+"0",
+null
+],
+[
+"D2",
+"whole",
+"0",
+null
+],
+[
+"D3",
+"whole",
+"0",
+null
+],
+[
+"D4",
+"whole",
+"0",
+null
+],
+[
+"D5",
+"whole",
+"0",
+null
+],
+[
+"D6",
+"whole",
+"0",
+null
+],
+[
+"E2",
+"whole",
+"0",
+null
+],
+[
+"F2",
+"whole",
+"0",
+null
+]
+],
+"vml": []
+},
+"Refs": {
+"autoFilter": null,
+"cells": {
+"A1": [
+"Grid!C1",
+null,
+null,
+null
+],
+"A2": [
+"Grid!C2",
+null,
+null,
+null
+],
+"A3": [
+"Grid!C3",
+null,
+null,
+null
+],
+"A4": [
+"Grid!C4",
+null,
+null,
+null
+],
+"A5": [
+"Grid!C5",
+null,
+null,
+null
+],
+"A6": [
+"Grid!C6",
+null,
+null,
+null
+],
+"A7": [
+"Grid!C7",
+null,
+null,
+null
+],
+"A8": [
+"Grid!C8",
+null,
+null,
+null
+],
+"A9": [
+"Grid!C9",
+null,
+null,
+null
+],
+"B1": [
+"Grid!A2",
+null,
+null,
+null
+],
+"B2": [
+"Grid!C2",
+null,
+null,
+null
+],
+"B3": [
+"Grid!B2",
+null,
+null,
+null
+],
+"B4": [
+"Grid!E2",
+null,
+null,
+null
+],
+"B5": [
+"Grid!D2",
+null,
+null,
+null
+],
+"B6": [
+"Grid!F2",
+null,
+null,
+null
+],
+"B7": [
+"Grid!G2",
+null,
+null,
+null
+],
+"B8": [
+"Grid!H2",
+null,
+null,
+null
+],
+"B9": [
+"Grid!I2",
+null,
+null,
+null
+],
+"C1": [
+"SUM(Grid!C3:C6)",
+null,
+null,
+null
+],
+"C10": [
+"SUM(Grid!C6:C7)",
+null,
+null,
+null
+],
+"C11": [
+"SUM(Grid!C3:C6)",
+null,
+null,
+null
+],
+"C2": [
+"SUM(Grid!C3:C3)",
+null,
+null,
+null
+],
+"C3": [
+"SUM(Grid!C4:C5)",
+null,
+null,
+null
+],
+"C4": [
+"SUM(Grid!C1:C9)",
+null,
+null,
+null
+],
+"C5": [
+"SUM(Grid!$C$3:$C$6)",
+null,
+null,
+null
+],
+"C6": [
+"SUM(Grid!3:6)",
+null,
+null,
+null
+],
+"C7": [
+"SUM(Grid!C3:C4)",
+null,
+null,
+null
+],
+"C8": [
+"SUM(Grid!C5:C6)",
+null,
+null,
+null
+],
+"C9": [
+"SUM(Grid!C2:C3)",
+null,
+null,
+null
+],
+"D1": [
+"SUM(Grid!B2:F2)",
+null,
+null,
+null
+],
+"D10": [
+"SUM(Grid!F2:G2)",
+null,
+null,
+null
+],
+"D2": [
+"SUM(Grid!B2:B2)",
+null,
+null,
+null
+],
+"D3": [
+"SUM(Grid!E2:E2)",
+null,
+null,
+null
+],
+"D4": [
+"SUM(Grid!A2:I2)",
+null,
+null,
+null
+],
+"D5": [
+"SUM(Grid!$B$2:$F$2)",
+null,
+null,
+null
+],
+"D6": [
+"SUM(Grid!B:F)",
+null,
+null,
+null
+],
+"D7": [
+"SUM(Grid!B2:E2)",
+null,
+null,
+null
+],
+"D8": [
+"SUM(Grid!D2:F2)",
+null,
+null,
+null
+],
+"D9": [
+"SUM(Grid!C2:C2)",
+null,
+null,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [],
+"vml": []
+}
+}
+},
+"steps": [
+"move|Grid|C:C|B:B",
+"move|Grid|E:E|D:D"
+],
+"variant": {}
+},
+"rule-s3": {
+"excel": "done",
+"facts": {
+"charts": [],
+"names": {
+"ColSpan": "Grid!$A$2:$F$2",
+"Cols": "Grid!$A:$F",
+"RowSpan": "Grid!$B$3:$B$6",
+"Rows36": "Grid!$3:$6"
+},
+"pivots": [],
+"sheets": {
+"Grid": {
+"autoFilter": null,
+"cells": {
+"A1": [
+null,
+"n",
+103.0,
+null
+],
+"A10": [
+null,
+"n",
+1003.0,
+null
+],
+"A2": [
+null,
+"n",
+203.0,
+null
+],
+"A3": [
+null,
+"n",
+303.0,
+null
+],
+"A4": [
+null,
+"n",
+403.0,
+null
+],
+"A5": [
+null,
+"n",
+503.0,
+null
+],
+"A6": [
+null,
+"n",
+603.0,
+null
+],
+"A7": [
+null,
+"n",
+703.0,
+null
+],
+"A8": [
+null,
+"n",
+803.0,
+null
+],
+"A9": [
+null,
+"n",
+903.0,
+null
+],
+"B1": [
+null,
+"n",
+102.0,
+null
+],
+"B10": [
+null,
+"n",
+1002.0,
+null
+],
+"B2": [
+null,
+"n",
+202.0,
+null
+],
+"B3": [
+null,
+"n",
+302.0,
+null
+],
+"B4": [
+null,
+"n",
+402.0,
+null
+],
+"B5": [
+null,
+"n",
+502.0,
+null
+],
+"B6": [
+null,
+"n",
+602.0,
+null
+],
+"B7": [
+null,
+"n",
+702.0,
+null
+],
+"B8": [
+null,
+"n",
+802.0,
+null
+],
+"B9": [
+null,
+"n",
+902.0,
+null
+],
+"C1": [
+null,
+"n",
+105.0,
+null
+],
+"C10": [
+null,
+"n",
+1005.0,
+null
+],
+"C2": [
+null,
+"n",
+205.0,
+null
+],
+"C3": [
+null,
+"n",
+305.0,
+null
+],
+"C4": [
+null,
+"n",
+405.0,
+null
+],
+"C5": [
+null,
+"n",
+505.0,
+null
+],
+"C6": [
+null,
+"n",
+605.0,
+null
+],
+"C7": [
+null,
+"n",
+705.0,
+null
+],
+"C8": [
+null,
+"n",
+805.0,
+null
+],
+"C9": [
+null,
+"n",
+905.0,
+null
+],
+"D1": [
+null,
+"n",
+104.0,
+null
+],
+"D10": [
+null,
+"n",
+1004.0,
+null
+],
+"D2": [
+null,
+"n",
+204.0,
+null
+],
+"D3": [
+null,
+"n",
+304.0,
+null
+],
+"D4": [
+null,
+"n",
+404.0,
+null
+],
+"D5": [
+null,
+"n",
+504.0,
+null
+],
+"D6": [
+null,
+"n",
+604.0,
+null
+],
+"D7": [
+null,
+"n",
+704.0,
+null
+],
+"D8": [
+null,
+"n",
+804.0,
+null
+],
+"D9": [
+null,
+"n",
+904.0,
+null
+],
+"E1": [
+null,
+"n",
+101.0,
+null
+],
+"E10": [
+null,
+"n",
+1001.0,
+null
+],
+"E2": [
+null,
+"n",
+201.0,
+null
+],
+"E3": [
+null,
+"n",
+301.0,
+null
+],
+"E4": [
+null,
+"n",
+401.0,
+null
+],
+"E5": [
+null,
+"n",
+501.0,
+null
+],
+"E6": [
+null,
+"n",
+601.0,
+null
+],
+"E7": [
+null,
+"n",
+701.0,
+null
+],
+"E8": [
+null,
+"n",
+801.0,
+null
+],
+"E9": [
+null,
+"n",
+901.0,
+null
+],
+"F1": [
+null,
+"n",
+106.0,
+null
+],
+"F10": [
+null,
+"n",
+1006.0,
+null
+],
+"F2": [
+null,
+"n",
+206.0,
+null
+],
+"F3": [
+null,
+"n",
+306.0,
+null
+],
+"F4": [
+null,
+"n",
+406.0,
+null
+],
+"F5": [
+null,
+"n",
+506.0,
+null
+],
+"F6": [
+null,
+"n",
+606.0,
+null
+],
+"F7": [
+null,
+"n",
+706.0,
+null
+],
+"F8": [
+null,
+"n",
+806.0,
+null
+],
+"F9": [
+null,
+"n",
+906.0,
+null
+],
+"G1": [
+null,
+"n",
+107.0,
+null
+],
+"G10": [
+null,
+"n",
+1007.0,
+null
+],
+"G2": [
+null,
+"n",
+207.0,
+null
+],
+"G3": [
+null,
+"n",
+307.0,
+null
+],
+"G4": [
+null,
+"n",
+407.0,
+null
+],
+"G5": [
+null,
+"n",
+507.0,
+null
+],
+"G6": [
+null,
+"n",
+607.0,
+null
+],
+"G7": [
+null,
+"n",
+707.0,
+null
+],
+"G8": [
+null,
+"n",
+807.0,
+null
+],
+"G9": [
+null,
+"n",
+907.0,
+null
+],
+"H1": [
+null,
+"n",
+108.0,
+null
+],
+"H10": [
+null,
+"n",
+1008.0,
+null
+],
+"H2": [
+null,
+"n",
+208.0,
+null
+],
+"H3": [
+null,
+"n",
+308.0,
+null
+],
+"H4": [
+null,
+"n",
+408.0,
+null
+],
+"H5": [
+null,
+"n",
+508.0,
+null
+],
+"H6": [
+null,
+"n",
+608.0,
+null
+],
+"H7": [
+null,
+"n",
+708.0,
+null
+],
+"H8": [
+null,
+"n",
+808.0,
+null
+],
+"H9": [
+null,
+"n",
+908.0,
+null
+],
+"I1": [
+null,
+"n",
+109.0,
+null
+],
+"I10": [
+null,
+"n",
+1009.0,
+null
+],
+"I2": [
+null,
+"n",
+209.0,
+null
+],
+"I3": [
+null,
+"n",
+309.0,
+null
+],
+"I4": [
+null,
+"n",
+409.0,
+null
+],
+"I5": [
+null,
+"n",
+509.0,
+null
+],
+"I6": [
+null,
+"n",
+609.0,
+null
+],
+"I7": [
+null,
+"n",
+709.0,
+null
+],
+"I8": [
+null,
+"n",
+809.0,
+null
+],
+"I9": [
+null,
+"n",
+909.0,
+null
+],
+"J1": [
+null,
+"n",
+110.0,
+null
+],
+"J10": [
+null,
+"n",
+1010.0,
+null
+],
+"J2": [
+null,
+"n",
+210.0,
+null
+],
+"J3": [
+null,
+"n",
+310.0,
+null
+],
+"J4": [
+null,
+"n",
+410.0,
+null
+],
+"J5": [
+null,
+"n",
+510.0,
+null
+],
+"J6": [
+null,
+"n",
+610.0,
+null
+],
+"J7": [
+null,
+"n",
+710.0,
+null
+],
+"J8": [
+null,
+"n",
+810.0,
+null
+],
+"J9": [
+null,
+"n",
+910.0,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [
+[
+"A2",
+"expression",
+[
+"A2>A1"
+]
+],
+[
+"B3",
+"expression",
+[
+"B3>E3"
+]
+],
+[
+"B4",
+"expression",
+[
+"B4>E4"
+]
+],
+[
+"B5",
+"expression",
+[
+"B5>E5"
+]
+],
+[
+"B6",
+"expression",
+[
+"B6>E6"
+]
+],
+[
+"C2",
+"expression",
+[
+"C2>C1"
+]
+],
+[
+"C3",
+"expression",
+[
+"C3>F3"
+]
+],
+[
+"C4",
+"expression",
+[
+"C4>F4"
+]
+],
+[
+"C5",
+"expression",
+[
+"C5>F5"
+]
+],
+[
+"C6",
+"expression",
+[
+"C6>F6"
+]
+],
+[
+"D2",
+"expression",
+[
+"D2>D1"
+]
+],
+[
+"F2",
+"expression",
+[
+"F2>F1"
+]
+]
+],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [
+[
+"A2",
+"whole",
+"0",
+null
+],
+[
+"B3",
+"whole",
+"0",
+null
+],
+[
+"B4",
+"whole",
+"0",
+null
+],
+[
+"B5",
+"whole",
+"0",
+null
+],
+[
+"B6",
+"whole",
+"0",
+null
+],
+[
+"C2",
+"whole",
+"0",
+null
+],
+[
+"C3",
+"whole",
+"0",
+null
+],
+[
+"C4",
+"whole",
+"0",
+null
+],
+[
+"C5",
+"whole",
+"0",
+null
+],
+[
+"C6",
+"whole",
+"0",
+null
+],
+[
+"D2",
+"whole",
+"0",
+null
+],
+[
+"E2",
+"whole",
+"0",
+null
+],
+[
+"F2",
+"whole",
+"0",
+null
+]
+],
+"vml": []
+},
+"Refs": {
+"autoFilter": null,
+"cells": {
+"A1": [
+"Grid!B1",
+null,
+null,
+null
+],
+"A2": [
+"Grid!B2",
+null,
+null,
+null
+],
+"A3": [
+"Grid!B3",
+null,
+null,
+null
+],
+"A4": [
+"Grid!B4",
+null,
+null,
+null
+],
+"A5": [
+"Grid!B5",
+null,
+null,
+null
+],
+"A6": [
+"Grid!B6",
+null,
+null,
+null
+],
+"A7": [
+"Grid!B7",
+null,
+null,
+null
+],
+"A8": [
+"Grid!B8",
+null,
+null,
+null
+],
+"A9": [
+"Grid!B9",
+null,
+null,
+null
+],
+"B1": [
+"Grid!E2",
+null,
+null,
+null
+],
+"B2": [
+"Grid!B2",
+null,
+null,
+null
+],
+"B3": [
+"Grid!A2",
+null,
+null,
+null
+],
+"B4": [
+"Grid!D2",
+null,
+null,
+null
+],
+"B5": [
+"Grid!C2",
+null,
+null,
+null
+],
+"B6": [
+"Grid!F2",
+null,
+null,
+null
+],
+"B7": [
+"Grid!G2",
+null,
+null,
+null
+],
+"B8": [
+"Grid!H2",
+null,
+null,
+null
+],
+"B9": [
+"Grid!I2",
+null,
+null,
+null
+],
+"C1": [
+"SUM(Grid!B3:B6)",
+null,
+null,
+null
+],
+"C10": [
+"SUM(Grid!B6:B7)",
+null,
+null,
+null
+],
+"C11": [
+"SUM(Grid!B3:B6)",
+null,
+null,
+null
+],
+"C2": [
+"SUM(Grid!B3:B3)",
+null,
+null,
+null
+],
+"C3": [
+"SUM(Grid!B4:B5)",
+null,
+null,
+null
+],
+"C4": [
+"SUM(Grid!B1:B9)",
+null,
+null,
+null
+],
+"C5": [
+"SUM(Grid!$B$3:$B$6)",
+null,
+null,
+null
+],
+"C6": [
+"SUM(Grid!3:6)",
+null,
+null,
+null
+],
+"C7": [
+"SUM(Grid!B3:B4)",
+null,
+null,
+null
+],
+"C8": [
+"SUM(Grid!B5:B6)",
+null,
+null,
+null
+],
+"C9": [
+"SUM(Grid!B2:B3)",
+null,
+null,
+null
+],
+"D1": [
+"SUM(Grid!A2:F2)",
+null,
+null,
+null
+],
+"D10": [
+"SUM(Grid!F2:G2)",
+null,
+null,
+null
+],
+"D2": [
+"SUM(Grid!A2:A2)",
+null,
+null,
+null
+],
+"D3": [
+"SUM(Grid!D2:D2)",
+null,
+null,
+null
+],
+"D4": [
+"SUM(Grid!A2:I2)",
+null,
+null,
+null
+],
+"D5": [
+"SUM(Grid!$A$2:$F$2)",
+null,
+null,
+null
+],
+"D6": [
+"SUM(Grid!A:F)",
+null,
+null,
+null
+],
+"D7": [
+"SUM(Grid!A2:D2)",
+null,
+null,
+null
+],
+"D8": [
+"SUM(Grid!C2:F2)",
+null,
+null,
+null
+],
+"D9": [
+"SUM(Grid!B2:B2)",
+null,
+null,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [],
+"vml": []
+}
+}
+},
+"steps": [
+"move|Grid|C:C|B:B",
+"move|Grid|E:E|D:D",
+"move|Grid|A:A|F:F"
+],
+"variant": {}
+},
+"rule-t1": {
+"excel": "done",
+"facts": {
+"charts": [],
+"names": {
+"ColSpan": "Grid!$A$2:$F$2",
+"Cols": "Grid!$A:$F",
+"RowSpan": "Grid!$C$3:$C$6",
+"Rows36": "Grid!$3:$6"
+},
+"pivots": [],
+"sheets": {
+"Grid": {
+"autoFilter": null,
+"cells": {
+"A1": [
+null,
+"n",
+103.0,
+null
+],
+"A10": [
+null,
+"n",
+1003.0,
+null
+],
+"A2": [
+null,
+"n",
+203.0,
+null
+],
+"A3": [
+null,
+"n",
+303.0,
+null
+],
+"A4": [
+null,
+"n",
+403.0,
+null
+],
+"A5": [
+null,
+"n",
+503.0,
+null
+],
+"A6": [
+null,
+"n",
+603.0,
+null
+],
+"A7": [
+null,
+"n",
+703.0,
+null
+],
+"A8": [
+null,
+"n",
+803.0,
+null
+],
+"A9": [
+null,
+"n",
+903.0,
+null
+],
+"B1": [
+null,
+"n",
+101.0,
+null
+],
+"B10": [
+null,
+"n",
+1001.0,
+null
+],
+"B2": [
+null,
+"n",
+201.0,
+null
+],
+"B3": [
+null,
+"n",
+301.0,
+null
+],
+"B4": [
+null,
+"n",
+401.0,
+null
+],
+"B5": [
+null,
+"n",
+501.0,
+null
+],
+"B6": [
+null,
+"n",
+601.0,
+null
+],
+"B7": [
+null,
+"n",
+701.0,
+null
+],
+"B8": [
+null,
+"n",
+801.0,
+null
+],
+"B9": [
+null,
+"n",
+901.0,
+null
+],
+"C1": [
+null,
+"n",
+102.0,
+null
+],
+"C10": [
+null,
+"n",
+1002.0,
+null
+],
+"C2": [
+null,
+"n",
+202.0,
+null
+],
+"C3": [
+null,
+"n",
+302.0,
+null
+],
+"C4": [
+null,
+"n",
+402.0,
+null
+],
+"C5": [
+null,
+"n",
+502.0,
+null
+],
+"C6": [
+null,
+"n",
+602.0,
+null
+],
+"C7": [
+null,
+"n",
+702.0,
+null
+],
+"C8": [
+null,
+"n",
+802.0,
+null
+],
+"C9": [
+null,
+"n",
+902.0,
+null
+],
+"D1": [
+null,
+"n",
+105.0,
+null
+],
+"D10": [
+null,
+"n",
+1005.0,
+null
+],
+"D2": [
+null,
+"n",
+205.0,
+null
+],
+"D3": [
+null,
+"n",
+305.0,
+null
+],
+"D4": [
+null,
+"n",
+405.0,
+null
+],
+"D5": [
+null,
+"n",
+505.0,
+null
+],
+"D6": [
+null,
+"n",
+605.0,
+null
+],
+"D7": [
+null,
+"n",
+705.0,
+null
+],
+"D8": [
+null,
+"n",
+805.0,
+null
+],
+"D9": [
+null,
+"n",
+905.0,
+null
+],
+"E1": [
+null,
+"n",
+104.0,
+null
+],
+"E10": [
+null,
+"n",
+1004.0,
+null
+],
+"E2": [
+null,
+"n",
+204.0,
+null
+],
+"E3": [
+null,
+"n",
+304.0,
+null
+],
+"E4": [
+null,
+"n",
+404.0,
+null
+],
+"E5": [
+null,
+"n",
+504.0,
+null
+],
+"E6": [
+null,
+"n",
+604.0,
+null
+],
+"E7": [
+null,
+"n",
+704.0,
+null
+],
+"E8": [
+null,
+"n",
+804.0,
+null
+],
+"E9": [
+null,
+"n",
+904.0,
+null
+],
+"F1": [
+null,
+"n",
+106.0,
+null
+],
+"F10": [
+null,
+"n",
+1006.0,
+null
+],
+"F2": [
+null,
+"n",
+206.0,
+null
+],
+"F3": [
+null,
+"n",
+306.0,
+null
+],
+"F4": [
+null,
+"n",
+406.0,
+null
+],
+"F5": [
+null,
+"n",
+506.0,
+null
+],
+"F6": [
+null,
+"n",
+606.0,
+null
+],
+"F7": [
+null,
+"n",
+706.0,
+null
+],
+"F8": [
+null,
+"n",
+806.0,
+null
+],
+"F9": [
+null,
+"n",
+906.0,
+null
+],
+"G1": [
+null,
+"n",
+107.0,
+null
+],
+"G10": [
+null,
+"n",
+1007.0,
+null
+],
+"G2": [
+null,
+"n",
+207.0,
+null
+],
+"G3": [
+null,
+"n",
+307.0,
+null
+],
+"G4": [
+null,
+"n",
+407.0,
+null
+],
+"G5": [
+null,
+"n",
+507.0,
+null
+],
+"G6": [
+null,
+"n",
+607.0,
+null
+],
+"G7": [
+null,
+"n",
+707.0,
+null
+],
+"G8": [
+null,
+"n",
+807.0,
+null
+],
+"G9": [
+null,
+"n",
+907.0,
+null
+],
+"H1": [
+null,
+"n",
+108.0,
+null
+],
+"H10": [
+null,
+"n",
+1008.0,
+null
+],
+"H2": [
+null,
+"n",
+208.0,
+null
+],
+"H3": [
+null,
+"n",
+308.0,
+null
+],
+"H4": [
+null,
+"n",
+408.0,
+null
+],
+"H5": [
+null,
+"n",
+508.0,
+null
+],
+"H6": [
+null,
+"n",
+608.0,
+null
+],
+"H7": [
+null,
+"n",
+708.0,
+null
+],
+"H8": [
+null,
+"n",
+808.0,
+null
+],
+"H9": [
+null,
+"n",
+908.0,
+null
+],
+"I1": [
+null,
+"n",
+109.0,
+null
+],
+"I10": [
+null,
+"n",
+1009.0,
+null
+],
+"I2": [
+null,
+"n",
+209.0,
+null
+],
+"I3": [
+null,
+"n",
+309.0,
+null
+],
+"I4": [
+null,
+"n",
+409.0,
+null
+],
+"I5": [
+null,
+"n",
+509.0,
+null
+],
+"I6": [
+null,
+"n",
+609.0,
+null
+],
+"I7": [
+null,
+"n",
+709.0,
+null
+],
+"I8": [
+null,
+"n",
+809.0,
+null
+],
+"I9": [
+null,
+"n",
+909.0,
+null
+],
+"J1": [
+null,
+"n",
+110.0,
+null
+],
+"J10": [
+null,
+"n",
+1010.0,
+null
+],
+"J2": [
+null,
+"n",
+210.0,
+null
+],
+"J3": [
+null,
+"n",
+310.0,
+null
+],
+"J4": [
+null,
+"n",
+410.0,
+null
+],
+"J5": [
+null,
+"n",
+510.0,
+null
+],
+"J6": [
+null,
+"n",
+610.0,
+null
+],
+"J7": [
+null,
+"n",
+710.0,
+null
+],
+"J8": [
+null,
+"n",
+810.0,
+null
+],
+"J9": [
+null,
+"n",
+910.0,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [
+[
+"A2",
+"expression",
+[
+"A2>A1"
+]
+],
+[
+"C3",
+"expression",
+[
+"C3>B3"
+]
+],
+[
+"C4",
+"expression",
+[
+"C4>B4"
+]
+],
+[
+"C5",
+"expression",
+[
+"C5>B5"
+]
+],
+[
+"C6",
+"expression",
+[
+"C6>B6"
+]
+],
+[
+"D2",
+"expression",
+[
+"D2>D1"
+]
+],
+[
+"D3",
+"expression",
+[
+"D3>C3"
+]
+],
+[
+"D4",
+"expression",
+[
+"D4>C4"
+]
+],
+[
+"D5",
+"expression",
+[
+"D5>C5"
+]
+],
+[
+"D6",
+"expression",
+[
+"D6>C6"
+]
+],
+[
+"E2",
+"expression",
+[
+"E2>E1"
+]
+],
+[
+"F2",
+"expression",
+[
+"F2>F1"
+]
+]
+],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [
+[
+"A2",
+"whole",
+"0",
+null
+],
+[
+"C3",
+"whole",
+"0",
+null
+],
+[
+"C4",
+"whole",
+"0",
+null
+],
+[
+"C5",
+"whole",
+"0",
+null
+],
+[
+"C6",
+"whole",
+"0",
+null
+],
+[
+"D2",
+"whole",
+"0",
+null
+],
+[
+"D3",
+"whole",
+"0",
+null
+],
+[
+"D4",
+"whole",
+"0",
+null
+],
+[
+"D5",
+"whole",
+"0",
+null
+],
+[
+"D6",
+"whole",
+"0",
+null
+],
+[
+"E2",
+"whole",
+"0",
+null
+],
+[
+"F2",
+"whole",
+"0",
+null
+]
+],
+"vml": []
+},
+"Refs": {
+"autoFilter": null,
+"cells": {
+"A1": [
+"Grid!C1",
+null,
+null,
+null
+],
+"A2": [
+"Grid!C2",
+null,
+null,
+null
+],
+"A3": [
+"Grid!C3",
+null,
+null,
+null
+],
+"A4": [
+"Grid!C4",
+null,
+null,
+null
+],
+"A5": [
+"Grid!C5",
+null,
+null,
+null
+],
+"A6": [
+"Grid!C6",
+null,
+null,
+null
+],
+"A7": [
+"Grid!C7",
+null,
+null,
+null
+],
+"A8": [
+"Grid!C8",
+null,
+null,
+null
+],
+"A9": [
+"Grid!C9",
+null,
+null,
+null
+],
+"B1": [
+"Grid!B2",
+null,
+null,
+null
+],
+"B2": [
+"Grid!C2",
+null,
+null,
+null
+],
+"B3": [
+"Grid!A2",
+null,
+null,
+null
+],
+"B4": [
+"Grid!E2",
+null,
+null,
+null
+],
+"B5": [
+"Grid!D2",
+null,
+null,
+null
+],
+"B6": [
+"Grid!F2",
+null,
+null,
+null
+],
+"B7": [
+"Grid!G2",
+null,
+null,
+null
+],
+"B8": [
+"Grid!H2",
+null,
+null,
+null
+],
+"B9": [
+"Grid!I2",
+null,
+null,
+null
+],
+"C1": [
+"SUM(Grid!C3:C6)",
+null,
+null,
+null
+],
+"C10": [
+"SUM(Grid!C6:C7)",
+null,
+null,
+null
+],
+"C11": [
+"SUM(Grid!C3:C6)",
+null,
+null,
+null
+],
+"C2": [
+"SUM(Grid!C3:C3)",
+null,
+null,
+null
+],
+"C3": [
+"SUM(Grid!C4:C5)",
+null,
+null,
+null
+],
+"C4": [
+"SUM(Grid!C1:C9)",
+null,
+null,
+null
+],
+"C5": [
+"SUM(Grid!$C$3:$C$6)",
+null,
+null,
+null
+],
+"C6": [
+"SUM(Grid!3:6)",
+null,
+null,
+null
+],
+"C7": [
+"SUM(Grid!C3:C4)",
+null,
+null,
+null
+],
+"C8": [
+"SUM(Grid!C5:C6)",
+null,
+null,
+null
+],
+"C9": [
+"SUM(Grid!C2:C3)",
+null,
+null,
+null
+],
+"D1": [
+"SUM(Grid!A2:F2)",
+null,
+null,
+null
+],
+"D10": [
+"SUM(Grid!F2:G2)",
+null,
+null,
+null
+],
+"D2": [
+"SUM(Grid!A2:A2)",
+null,
+null,
+null
+],
+"D3": [
+"SUM(Grid!E2:E2)",
+null,
+null,
+null
+],
+"D4": [
+"SUM(Grid!B2:I2)",
+null,
+null,
+null
+],
+"D5": [
+"SUM(Grid!$A$2:$F$2)",
+null,
+null,
+null
+],
+"D6": [
+"SUM(Grid!A:F)",
+null,
+null,
+null
+],
+"D7": [
+"SUM(Grid!A2:E2)",
+null,
+null,
+null
+],
+"D8": [
+"SUM(Grid!D2:F2)",
+null,
+null,
+null
+],
+"D9": [
+"SUM(Grid!C2:C2)",
+null,
+null,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [],
+"vml": []
+}
+}
+},
+"steps": [
+"move|Grid|C:C|B:B",
+"move|Grid|E:E|D:D",
+"move|Grid|B:B|A:A"
+],
+"variant": {}
+},
+"rule-t2": {
+"excel": "done",
+"facts": {
+"charts": [],
+"names": {
+"ColSpan": "Grid!$A$2:$F$2",
+"Cols": "Grid!$A:$F",
+"RowSpan": "Grid!$C$3:$C$6",
+"Rows36": "Grid!$3:$6"
+},
+"pivots": [],
+"sheets": {
+"Grid": {
+"autoFilter": null,
+"cells": {
+"A1": [
+null,
+"n",
+103.0,
+null
+],
+"A10": [
+null,
+"n",
+1003.0,
+null
+],
+"A2": [
+null,
+"n",
+203.0,
+null
+],
+"A3": [
+null,
+"n",
+303.0,
+null
+],
+"A4": [
+null,
+"n",
+403.0,
+null
+],
+"A5": [
+null,
+"n",
+503.0,
+null
+],
+"A6": [
+null,
+"n",
+603.0,
+null
+],
+"A7": [
+null,
+"n",
+703.0,
+null
+],
+"A8": [
+null,
+"n",
+803.0,
+null
+],
+"A9": [
+null,
+"n",
+903.0,
+null
+],
+"B1": [
+null,
+"n",
+101.0,
+null
+],
+"B10": [
+null,
+"n",
+1001.0,
+null
+],
+"B2": [
+null,
+"n",
+201.0,
+null
+],
+"B3": [
+null,
+"n",
+301.0,
+null
+],
+"B4": [
+null,
+"n",
+401.0,
+null
+],
+"B5": [
+null,
+"n",
+501.0,
+null
+],
+"B6": [
+null,
+"n",
+601.0,
+null
+],
+"B7": [
+null,
+"n",
+701.0,
+null
+],
+"B8": [
+null,
+"n",
+801.0,
+null
+],
+"B9": [
+null,
+"n",
+901.0,
+null
+],
+"C1": [
+null,
+"n",
+102.0,
+null
+],
+"C10": [
+null,
+"n",
+1002.0,
+null
+],
+"C2": [
+null,
+"n",
+202.0,
+null
+],
+"C3": [
+null,
+"n",
+302.0,
+null
+],
+"C4": [
+null,
+"n",
+402.0,
+null
+],
+"C5": [
+null,
+"n",
+502.0,
+null
+],
+"C6": [
+null,
+"n",
+602.0,
+null
+],
+"C7": [
+null,
+"n",
+702.0,
+null
+],
+"C8": [
+null,
+"n",
+802.0,
+null
+],
+"C9": [
+null,
+"n",
+902.0,
+null
+],
+"D1": [
+null,
+"n",
+105.0,
+null
+],
+"D10": [
+null,
+"n",
+1005.0,
+null
+],
+"D2": [
+null,
+"n",
+205.0,
+null
+],
+"D3": [
+null,
+"n",
+305.0,
+null
+],
+"D4": [
+null,
+"n",
+405.0,
+null
+],
+"D5": [
+null,
+"n",
+505.0,
+null
+],
+"D6": [
+null,
+"n",
+605.0,
+null
+],
+"D7": [
+null,
+"n",
+705.0,
+null
+],
+"D8": [
+null,
+"n",
+805.0,
+null
+],
+"D9": [
+null,
+"n",
+905.0,
+null
+],
+"E1": [
+null,
+"n",
+104.0,
+null
+],
+"E10": [
+null,
+"n",
+1004.0,
+null
+],
+"E2": [
+null,
+"n",
+204.0,
+null
+],
+"E3": [
+null,
+"n",
+304.0,
+null
+],
+"E4": [
+null,
+"n",
+404.0,
+null
+],
+"E5": [
+null,
+"n",
+504.0,
+null
+],
+"E6": [
+null,
+"n",
+604.0,
+null
+],
+"E7": [
+null,
+"n",
+704.0,
+null
+],
+"E8": [
+null,
+"n",
+804.0,
+null
+],
+"E9": [
+null,
+"n",
+904.0,
+null
+],
+"F1": [
+null,
+"n",
+106.0,
+null
+],
+"F10": [
+null,
+"n",
+1006.0,
+null
+],
+"F2": [
+null,
+"n",
+206.0,
+null
+],
+"F3": [
+null,
+"n",
+306.0,
+null
+],
+"F4": [
+null,
+"n",
+406.0,
+null
+],
+"F5": [
+null,
+"n",
+506.0,
+null
+],
+"F6": [
+null,
+"n",
+606.0,
+null
+],
+"F7": [
+null,
+"n",
+706.0,
+null
+],
+"F8": [
+null,
+"n",
+806.0,
+null
+],
+"F9": [
+null,
+"n",
+906.0,
+null
+],
+"G1": [
+null,
+"n",
+107.0,
+null
+],
+"G10": [
+null,
+"n",
+1007.0,
+null
+],
+"G2": [
+null,
+"n",
+207.0,
+null
+],
+"G3": [
+null,
+"n",
+307.0,
+null
+],
+"G4": [
+null,
+"n",
+407.0,
+null
+],
+"G5": [
+null,
+"n",
+507.0,
+null
+],
+"G6": [
+null,
+"n",
+607.0,
+null
+],
+"G7": [
+null,
+"n",
+707.0,
+null
+],
+"G8": [
+null,
+"n",
+807.0,
+null
+],
+"G9": [
+null,
+"n",
+907.0,
+null
+],
+"H1": [
+null,
+"n",
+108.0,
+null
+],
+"H10": [
+null,
+"n",
+1008.0,
+null
+],
+"H2": [
+null,
+"n",
+208.0,
+null
+],
+"H3": [
+null,
+"n",
+308.0,
+null
+],
+"H4": [
+null,
+"n",
+408.0,
+null
+],
+"H5": [
+null,
+"n",
+508.0,
+null
+],
+"H6": [
+null,
+"n",
+608.0,
+null
+],
+"H7": [
+null,
+"n",
+708.0,
+null
+],
+"H8": [
+null,
+"n",
+808.0,
+null
+],
+"H9": [
+null,
+"n",
+908.0,
+null
+],
+"I1": [
+null,
+"n",
+109.0,
+null
+],
+"I10": [
+null,
+"n",
+1009.0,
+null
+],
+"I2": [
+null,
+"n",
+209.0,
+null
+],
+"I3": [
+null,
+"n",
+309.0,
+null
+],
+"I4": [
+null,
+"n",
+409.0,
+null
+],
+"I5": [
+null,
+"n",
+509.0,
+null
+],
+"I6": [
+null,
+"n",
+609.0,
+null
+],
+"I7": [
+null,
+"n",
+709.0,
+null
+],
+"I8": [
+null,
+"n",
+809.0,
+null
+],
+"I9": [
+null,
+"n",
+909.0,
+null
+],
+"J1": [
+null,
+"n",
+110.0,
+null
+],
+"J10": [
+null,
+"n",
+1010.0,
+null
+],
+"J2": [
+null,
+"n",
+210.0,
+null
+],
+"J3": [
+null,
+"n",
+310.0,
+null
+],
+"J4": [
+null,
+"n",
+410.0,
+null
+],
+"J5": [
+null,
+"n",
+510.0,
+null
+],
+"J6": [
+null,
+"n",
+610.0,
+null
+],
+"J7": [
+null,
+"n",
+710.0,
+null
+],
+"J8": [
+null,
+"n",
+810.0,
+null
+],
+"J9": [
+null,
+"n",
+910.0,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [
+[
+"A2",
+"expression",
+[
+"A2>A1"
+]
+],
+[
+"C3",
+"expression",
+[
+"C3>B3"
+]
+],
+[
+"C4",
+"expression",
+[
+"C4>B4"
+]
+],
+[
+"C5",
+"expression",
+[
+"C5>B5"
+]
+],
+[
+"C6",
+"expression",
+[
+"C6>B6"
+]
+],
+[
+"D2",
+"expression",
+[
+"D2>D1"
+]
+],
+[
+"D3",
+"expression",
+[
+"D3>C3"
+]
+],
+[
+"D4",
+"expression",
+[
+"D4>C4"
+]
+],
+[
+"D5",
+"expression",
+[
+"D5>C5"
+]
+],
+[
+"D6",
+"expression",
+[
+"D6>C6"
+]
+],
+[
+"E2",
+"expression",
+[
+"E2>E1"
+]
+],
+[
+"F2",
+"expression",
+[
+"F2>F1"
+]
+]
+],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [
+[
+"A2",
+"whole",
+"0",
+null
+],
+[
+"B2",
+"whole",
+"0",
+null
+],
+[
+"C3",
+"whole",
+"0",
+null
+],
+[
+"C4",
+"whole",
+"0",
+null
+],
+[
+"C5",
+"whole",
+"0",
+null
+],
+[
+"C6",
+"whole",
+"0",
+null
+],
+[
+"D2",
+"whole",
+"0",
+null
+],
+[
+"D3",
+"whole",
+"0",
+null
+],
+[
+"D4",
+"whole",
+"0",
+null
+],
+[
+"D5",
+"whole",
+"0",
+null
+],
+[
+"D6",
+"whole",
+"0",
+null
+],
+[
+"E2",
+"whole",
+"0",
+null
+],
+[
+"F2",
+"whole",
+"0",
+null
+]
+],
+"vml": []
+},
+"Refs": {
+"autoFilter": null,
+"cells": {
+"A1": [
+"Grid!C1",
+null,
+null,
+null
+],
+"A2": [
+"Grid!C2",
+null,
+null,
+null
+],
+"A3": [
+"Grid!C3",
+null,
+null,
+null
+],
+"A4": [
+"Grid!C4",
+null,
+null,
+null
+],
+"A5": [
+"Grid!C5",
+null,
+null,
+null
+],
+"A6": [
+"Grid!C6",
+null,
+null,
+null
+],
+"A7": [
+"Grid!C7",
+null,
+null,
+null
+],
+"A8": [
+"Grid!C8",
+null,
+null,
+null
+],
+"A9": [
+"Grid!C9",
+null,
+null,
+null
+],
+"B1": [
+"Grid!B2",
+null,
+null,
+null
+],
+"B2": [
+"Grid!C2",
+null,
+null,
+null
+],
+"B3": [
+"Grid!A2",
+null,
+null,
+null
+],
+"B4": [
+"Grid!E2",
+null,
+null,
+null
+],
+"B5": [
+"Grid!D2",
+null,
+null,
+null
+],
+"B6": [
+"Grid!F2",
+null,
+null,
+null
+],
+"B7": [
+"Grid!G2",
+null,
+null,
+null
+],
+"B8": [
+"Grid!H2",
+null,
+null,
+null
+],
+"B9": [
+"Grid!I2",
+null,
+null,
+null
+],
+"C1": [
+"SUM(Grid!C3:C6)",
+null,
+null,
+null
+],
+"C10": [
+"SUM(Grid!C6:C7)",
+null,
+null,
+null
+],
+"C11": [
+"SUM(Grid!C3:C6)",
+null,
+null,
+null
+],
+"C2": [
+"SUM(Grid!C3:C3)",
+null,
+null,
+null
+],
+"C3": [
+"SUM(Grid!C4:C5)",
+null,
+null,
+null
+],
+"C4": [
+"SUM(Grid!C1:C9)",
+null,
+null,
+null
+],
+"C5": [
+"SUM(Grid!$C$3:$C$6)",
+null,
+null,
+null
+],
+"C6": [
+"SUM(Grid!3:6)",
+null,
+null,
+null
+],
+"C7": [
+"SUM(Grid!C3:C4)",
+null,
+null,
+null
+],
+"C8": [
+"SUM(Grid!C5:C6)",
+null,
+null,
+null
+],
+"C9": [
+"SUM(Grid!C2:C3)",
+null,
+null,
+null
+],
+"D1": [
+"SUM(Grid!A2:F2)",
+null,
+null,
+null
+],
+"D10": [
+"SUM(Grid!F2:G2)",
+null,
+null,
+null
+],
+"D2": [
+"SUM(Grid!A2:A2)",
+null,
+null,
+null
+],
+"D3": [
+"SUM(Grid!E2:E2)",
+null,
+null,
+null
+],
+"D4": [
+"SUM(Grid!A2:I2)",
+null,
+null,
+null
+],
+"D5": [
+"SUM(Grid!$A$2:$F$2)",
+null,
+null,
+null
+],
+"D6": [
+"SUM(Grid!A:F)",
+null,
+null,
+null
+],
+"D7": [
+"SUM(Grid!A2:E2)",
+null,
+null,
+null
+],
+"D8": [
+"SUM(Grid!D2:F2)",
+null,
+null,
+null
+],
+"D9": [
+"SUM(Grid!C2:C2)",
+null,
+null,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [],
+"vml": []
+}
+}
+},
+"steps": [
+"move|Grid|C:C|B:B",
+"move|Grid|E:E|D:D",
+"move|Grid|A:A|C:C"
+],
+"variant": {}
+},
+"rule-t3": {
+"excel": "done",
+"facts": {
+"charts": [],
+"names": {
+"ColSpan": "Grid!$C$2:$F$2",
+"Cols": "Grid!$C:$F",
+"RowSpan": "Grid!$D$3:$D$6",
+"Rows36": "Grid!$3:$6"
+},
+"pivots": [],
+"sheets": {
+"Grid": {
+"autoFilter": null,
+"cells": {
+"A1": [
+null,
+"n",
+106.0,
+null
+],
+"A10": [
+null,
+"n",
+1006.0,
+null
+],
+"A2": [
+null,
+"n",
+206.0,
+null
+],
+"A3": [
+null,
+"n",
+306.0,
+null
+],
+"A4": [
+null,
+"n",
+406.0,
+null
+],
+"A5": [
+null,
+"n",
+506.0,
+null
+],
+"A6": [
+null,
+"n",
+606.0,
+null
+],
+"A7": [
+null,
+"n",
+706.0,
+null
+],
+"A8": [
+null,
+"n",
+806.0,
+null
+],
+"A9": [
+null,
+"n",
+906.0,
+null
+],
+"B1": [
+null,
+"n",
+101.0,
+null
+],
+"B10": [
+null,
+"n",
+1001.0,
+null
+],
+"B2": [
+null,
+"n",
+201.0,
+null
+],
+"B3": [
+null,
+"n",
+301.0,
+null
+],
+"B4": [
+null,
+"n",
+401.0,
+null
+],
+"B5": [
+null,
+"n",
+501.0,
+null
+],
+"B6": [
+null,
+"n",
+601.0,
+null
+],
+"B7": [
+null,
+"n",
+701.0,
+null
+],
+"B8": [
+null,
+"n",
+801.0,
+null
+],
+"B9": [
+null,
+"n",
+901.0,
+null
+],
+"C1": [
+null,
+"n",
+103.0,
+null
+],
+"C10": [
+null,
+"n",
+1003.0,
+null
+],
+"C2": [
+null,
+"n",
+203.0,
+null
+],
+"C3": [
+null,
+"n",
+303.0,
+null
+],
+"C4": [
+null,
+"n",
+403.0,
+null
+],
+"C5": [
+null,
+"n",
+503.0,
+null
+],
+"C6": [
+null,
+"n",
+603.0,
+null
+],
+"C7": [
+null,
+"n",
+703.0,
+null
+],
+"C8": [
+null,
+"n",
+803.0,
+null
+],
+"C9": [
+null,
+"n",
+903.0,
+null
+],
+"D1": [
+null,
+"n",
+102.0,
+null
+],
+"D10": [
+null,
+"n",
+1002.0,
+null
+],
+"D2": [
+null,
+"n",
+202.0,
+null
+],
+"D3": [
+null,
+"n",
+302.0,
+null
+],
+"D4": [
+null,
+"n",
+402.0,
+null
+],
+"D5": [
+null,
+"n",
+502.0,
+null
+],
+"D6": [
+null,
+"n",
+602.0,
+null
+],
+"D7": [
+null,
+"n",
+702.0,
+null
+],
+"D8": [
+null,
+"n",
+802.0,
+null
+],
+"D9": [
+null,
+"n",
+902.0,
+null
+],
+"E1": [
+null,
+"n",
+105.0,
+null
+],
+"E10": [
+null,
+"n",
+1005.0,
+null
+],
+"E2": [
+null,
+"n",
+205.0,
+null
+],
+"E3": [
+null,
+"n",
+305.0,
+null
+],
+"E4": [
+null,
+"n",
+405.0,
+null
+],
+"E5": [
+null,
+"n",
+505.0,
+null
+],
+"E6": [
+null,
+"n",
+605.0,
+null
+],
+"E7": [
+null,
+"n",
+705.0,
+null
+],
+"E8": [
+null,
+"n",
+805.0,
+null
+],
+"E9": [
+null,
+"n",
+905.0,
+null
+],
+"F1": [
+null,
+"n",
+104.0,
+null
+],
+"F10": [
+null,
+"n",
+1004.0,
+null
+],
+"F2": [
+null,
+"n",
+204.0,
+null
+],
+"F3": [
+null,
+"n",
+304.0,
+null
+],
+"F4": [
+null,
+"n",
+404.0,
+null
+],
+"F5": [
+null,
+"n",
+504.0,
+null
+],
+"F6": [
+null,
+"n",
+604.0,
+null
+],
+"F7": [
+null,
+"n",
+704.0,
+null
+],
+"F8": [
+null,
+"n",
+804.0,
+null
+],
+"F9": [
+null,
+"n",
+904.0,
+null
+],
+"G1": [
+null,
+"n",
+107.0,
+null
+],
+"G10": [
+null,
+"n",
+1007.0,
+null
+],
+"G2": [
+null,
+"n",
+207.0,
+null
+],
+"G3": [
+null,
+"n",
+307.0,
+null
+],
+"G4": [
+null,
+"n",
+407.0,
+null
+],
+"G5": [
+null,
+"n",
+507.0,
+null
+],
+"G6": [
+null,
+"n",
+607.0,
+null
+],
+"G7": [
+null,
+"n",
+707.0,
+null
+],
+"G8": [
+null,
+"n",
+807.0,
+null
+],
+"G9": [
+null,
+"n",
+907.0,
+null
+],
+"H1": [
+null,
+"n",
+108.0,
+null
+],
+"H10": [
+null,
+"n",
+1008.0,
+null
+],
+"H2": [
+null,
+"n",
+208.0,
+null
+],
+"H3": [
+null,
+"n",
+308.0,
+null
+],
+"H4": [
+null,
+"n",
+408.0,
+null
+],
+"H5": [
+null,
+"n",
+508.0,
+null
+],
+"H6": [
+null,
+"n",
+608.0,
+null
+],
+"H7": [
+null,
+"n",
+708.0,
+null
+],
+"H8": [
+null,
+"n",
+808.0,
+null
+],
+"H9": [
+null,
+"n",
+908.0,
+null
+],
+"I1": [
+null,
+"n",
+109.0,
+null
+],
+"I10": [
+null,
+"n",
+1009.0,
+null
+],
+"I2": [
+null,
+"n",
+209.0,
+null
+],
+"I3": [
+null,
+"n",
+309.0,
+null
+],
+"I4": [
+null,
+"n",
+409.0,
+null
+],
+"I5": [
+null,
+"n",
+509.0,
+null
+],
+"I6": [
+null,
+"n",
+609.0,
+null
+],
+"I7": [
+null,
+"n",
+709.0,
+null
+],
+"I8": [
+null,
+"n",
+809.0,
+null
+],
+"I9": [
+null,
+"n",
+909.0,
+null
+],
+"J1": [
+null,
+"n",
+110.0,
+null
+],
+"J10": [
+null,
+"n",
+1010.0,
+null
+],
+"J2": [
+null,
+"n",
+210.0,
+null
+],
+"J3": [
+null,
+"n",
+310.0,
+null
+],
+"J4": [
+null,
+"n",
+410.0,
+null
+],
+"J5": [
+null,
+"n",
+510.0,
+null
+],
+"J6": [
+null,
+"n",
+610.0,
+null
+],
+"J7": [
+null,
+"n",
+710.0,
+null
+],
+"J8": [
+null,
+"n",
+810.0,
+null
+],
+"J9": [
+null,
+"n",
+910.0,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [
+[
+"A2",
+"expression",
+[
+"A2>A1"
+]
+],
+[
+"C2",
+"expression",
+[
+"C2>C1"
+]
+],
+[
+"D3",
+"expression",
+[
+"D3>B3"
+]
+],
+[
+"D4",
+"expression",
+[
+"D4>B4"
+]
+],
+[
+"D5",
+"expression",
+[
+"D5>B5"
+]
+],
+[
+"D6",
+"expression",
+[
+"D6>B6"
+]
+],
+[
+"E2",
+"expression",
+[
+"E2>E1"
+]
+],
+[
+"E3",
+"expression",
+[
+"E3>C3"
+]
+],
+[
+"E4",
+"expression",
+[
+"E4>C4"
+]
+],
+[
+"E5",
+"expression",
+[
+"E5>C5"
+]
+],
+[
+"E6",
+"expression",
+[
+"E6>C6"
+]
+],
+[
+"F2",
+"expression",
+[
+"F2>F1"
+]
+]
+],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [
+[
+"A2",
+"whole",
+"0",
+null
+],
+[
+"C2",
+"whole",
+"0",
+null
+],
+[
+"D3",
+"whole",
+"0",
+null
+],
+[
+"D4",
+"whole",
+"0",
+null
+],
+[
+"D5",
+"whole",
+"0",
+null
+],
+[
+"D6",
+"whole",
+"0",
+null
+],
+[
+"E2",
+"whole",
+"0",
+null
+],
+[
+"E3",
+"whole",
+"0",
+null
+],
+[
+"E4",
+"whole",
+"0",
+null
+],
+[
+"E5",
+"whole",
+"0",
+null
+],
+[
+"E6",
+"whole",
+"0",
+null
+],
+[
+"F2",
+"whole",
+"0",
+null
+]
+],
+"vml": []
+},
+"Refs": {
+"autoFilter": null,
+"cells": {
+"A1": [
+"Grid!D1",
+null,
+null,
+null
+],
+"A2": [
+"Grid!D2",
+null,
+null,
+null
+],
+"A3": [
+"Grid!D3",
+null,
+null,
+null
+],
+"A4": [
+"Grid!D4",
+null,
+null,
+null
+],
+"A5": [
+"Grid!D5",
+null,
+null,
+null
+],
+"A6": [
+"Grid!D6",
+null,
+null,
+null
+],
+"A7": [
+"Grid!D7",
+null,
+null,
+null
+],
+"A8": [
+"Grid!D8",
+null,
+null,
+null
+],
+"A9": [
+"Grid!D9",
+null,
+null,
+null
+],
+"B1": [
+"Grid!B2",
+null,
+null,
+null
+],
+"B2": [
+"Grid!D2",
+null,
+null,
+null
+],
+"B3": [
+"Grid!C2",
+null,
+null,
+null
+],
+"B4": [
+"Grid!F2",
+null,
+null,
+null
+],
+"B5": [
+"Grid!E2",
+null,
+null,
+null
+],
+"B6": [
+"Grid!A2",
+null,
+null,
+null
+],
+"B7": [
+"Grid!G2",
+null,
+null,
+null
+],
+"B8": [
+"Grid!H2",
+null,
+null,
+null
+],
+"B9": [
+"Grid!I2",
+null,
+null,
+null
+],
+"C1": [
+"SUM(Grid!D3:D6)",
+null,
+null,
+null
+],
+"C10": [
+"SUM(Grid!D6:D7)",
+null,
+null,
+null
+],
+"C11": [
+"SUM(Grid!D3:D6)",
+null,
+null,
+null
+],
+"C2": [
+"SUM(Grid!D3:D3)",
+null,
+null,
+null
+],
+"C3": [
+"SUM(Grid!D4:D5)",
+null,
+null,
+null
+],
+"C4": [
+"SUM(Grid!D1:D9)",
+null,
+null,
+null
+],
+"C5": [
+"SUM(Grid!$D$3:$D$6)",
+null,
+null,
+null
+],
+"C6": [
+"SUM(Grid!3:6)",
+null,
+null,
+null
+],
+"C7": [
+"SUM(Grid!D3:D4)",
+null,
+null,
+null
+],
+"C8": [
+"SUM(Grid!D5:D6)",
+null,
+null,
+null
+],
+"C9": [
+"SUM(Grid!D2:D3)",
+null,
+null,
+null
+],
+"D1": [
+"SUM(Grid!C2:F2)",
+null,
+null,
+null
+],
+"D10": [
+"SUM(Grid!A2:G2)",
+null,
+null,
+null
+],
+"D2": [
+"SUM(Grid!C2:C2)",
+null,
+null,
+null
+],
+"D3": [
+"SUM(Grid!F2:F2)",
+null,
+null,
+null
+],
+"D4": [
+"SUM(Grid!B2:I2)",
+null,
+null,
+null
+],
+"D5": [
+"SUM(Grid!$C$2:$F$2)",
+null,
+null,
+null
+],
+"D6": [
+"SUM(Grid!C:F)",
+null,
+null,
+null
+],
+"D7": [
+"SUM(Grid!C2:F2)",
+null,
+null,
+null
+],
+"D8": [
+"SUM(Grid!E2:F2)",
+null,
+null,
+null
+],
+"D9": [
+"SUM(Grid!D2:D2)",
+null,
+null,
+null
+]
+},
+"cols": {},
+"comments": [],
+"formats": [],
+"links": [],
+"merges": [],
+"pane": null,
+"rows": {},
+"tables": [],
+"validations": [],
+"vml": []
+}
+}
+},
+"steps": [
+"move|Grid|C:C|B:B",
+"move|Grid|E:E|D:D",
+"move|Grid|F:F|A:A"
+],
+"variant": {}
+}
+}
+}
