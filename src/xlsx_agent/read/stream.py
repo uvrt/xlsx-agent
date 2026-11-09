@@ -980,6 +980,7 @@ class SheetReader:
             for _, node in iterparse_xml(stream, tag=_STREAMED):
                 yield node, None, None
             return
+        assert plan is not None   # not parsed whole: there is a plan
         parser = etree.XMLPullParser(events=("end",), tag=_STREAMED, **SAFE_OPTIONS)
         parser.feed(plan.header)
         for _, node in parser.read_events():
