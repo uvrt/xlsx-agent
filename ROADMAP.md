@@ -1234,6 +1234,36 @@ outer from"), `join.columns` (this join's table's) and `xlsx_compare`'s,
 `xlsx_validate_data`'s and `xlsx_query`'s `cursor` ("the same call") made clear: `xlsx_derive` 1,182 ->
 1,245, the core 4,783 -> 4,844 (about 6,866 online), every definition 5,754 -> 5,815.
 
+*A sheet formatted to its last row* (production feedback, round 46, R73, 2026-11-09).
+A sheet of 200,000 rows of values formatted down to row 1,048,576 (each row below the
+values holding only styles: `<c r="B9" s="3"/>` cells, or a styled empty row) took a full
+pass for `cells()` and another for `merges()` / `used_range()`. Now (`read.stream`): a row
+that holds only styles is read from the part's bytes instead of being parsed (`_Plan`:
+only in a UTF-8 part where every `<` is a tag -- no comment, CDATA, document type or
+processing instruction -- with one `sheetData` of the main namespace and no namespace
+bound among the rows; a row's attributes checked for what the parser refuses; a row seen
+before but for its number is read by template); the parser is fed the other bytes in
+pieces, so one row is held at a time as before. A pass that counts values (`scan`,
+`cells(values_only=True)`, `find_text`) places a cell with nothing in it without typing
+it. `cells()` read to the end also scans the sheet (kept per state of the package, as
+`scan` is), so `used_range()` and `merges()` after it read nothing again. `merges(sheet,
+within=None)` reads the part's header and what follows `sheetData` when no pass has been
+made (a `mergeCell` among the rows: a pass), and `within` (`A1:S40` or `Stock!A1:S40`)
+keeps those overlapping a range. `tests/test_skim.py` compares every call with the long
+way (every row parsed, every cell typed) on generated sheets that trip it, through windows
+and pieces small enough to split rows anywhere. Timings (0.1.31): see CHANGELOG.
+
+*Banners and merged data cells* (production feedback, round 46, R74). `find_regions`: a
+merged area of one row and two or more columns holding text, with nothing beside it in
+its row, is a banner; over a header row (directly or one blank row above) and covering its
+columns it is the region's `title`, not part of the header; at its own cell it is a
+caption, left out. A merged area of one column starting in a region's data rows no longer
+makes the header `merged_header`: the region's reading (any read of a range through the
+region: `t:` reads, keys, query, profile -- `regions.FilledSheet`) gives each of its rows
+the merged area's value, and the region's `flags` say so (`merged_cells_filled`, the area,
+the cells filled). A read of the sheet's cells as cells is as stored. Every other merged
+area touching the header's rows stays `merged_header`.
+
 ### 0.2 — edit
 
 | # | Item | Effort | Done when |

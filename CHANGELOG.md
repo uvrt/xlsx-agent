@@ -38,6 +38,28 @@ has the detail of every milestone. Why each dependency is needed at its version:
   before A, A before C, F before A, B inserted or B deleted likewise (deleting B kept the
   second column's part, which was dropped). The rearrangement property test now holds a
   two-column format to this; the oracle's three-move cycle agrees with Excel.
+## 0.1.31 (unreleased) -- large formatted sheets read the short way; banners and merged data cells
+
+- **Large sheets** (production round 46, R73; `xlsx_agent.read.stream`): a row that holds
+  only styles (style-only `<c r s/>` cells, or a styled empty row: a sheet formatted to row
+  1,048,576) is read from the part's bytes instead of parsed, by template when it repeats
+  but for its number; a pass that counts values never types a cell with nothing in it.
+  `wb.cells(sheet, values_only=True)` gives only the cells with a value or formula.
+  `wb.cells()` read to the end also keeps the sheet's scan, so `used_range()` and
+  `merges()` after it make no pass. `wb.merges(sheet, within=None)` reads the merges
+  without a pass over the cells (the part's header and what follows `sheetData`), and
+  `within` keeps those overlapping a range. Results identical to before for every call
+  (`tests/test_skim.py`, generated sheets, long way against short). Measured on a
+  made-up 200,000 x 19 sheet with 19 style-only cells in every row down to 1,048,576 (534
+  MB of sheet XML), CPU seconds per fresh process on a heavily loaded machine (before ->
+  after): `cells()` 190 -> 119, `cells(values_only=True)` 68, `merges()` 174 -> 5,
+  `merges(within)` 5, `used_range()` 155 -> 61; peak memory unchanged (about 1.25 GB, the
+  package's own copy of the part).
+- **Regions** (R74; `xlsx_agent.read.regions`): a merged banner over a header row is the
+  region's `title` (a caption at its own cell); a merged area of one column in a region's
+  data rows fills each of its rows in the region's reading (`FilledSheet`) and is flagged
+  `merged_cells_filled`. Other merged areas at the header stay `merged_header`.
+- No tool definition changed.
 
 ## 0.1.30 (unreleased) -- rearranging columns fixed; a table's columns reordered
 

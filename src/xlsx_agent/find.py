@@ -322,7 +322,9 @@ def _sheet(workbook: "Workbook", sheet: "Sheet", pattern: re.Pattern,
     # holds none is not read further.
     strings = workbook.strings
     holds: dict[int, bool] = {}
-    for row, column, row_hidden, node in workbook._stream(sheet, lambda: reader._walk(start)):
+    # A cell with nothing in it is placed, never given: it holds no text.
+    walk = workbook._stream(sheet, lambda: reader._walk(start, blanks=False))
+    for row, column, row_hidden, node in walk:
         if area is not None and not _inside(Cell(row, column), area):
             if ordered and row > area.last.row:
                 break
