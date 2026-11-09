@@ -22,28 +22,45 @@ formula) goes, the cell's format stays; empty text is refused for the same reaso
 value).  ``{"value": v}`` is ``v``.  Nothing is coerced: a blank is never 0, and text over
 32,767 characters is refused, never cut.
 
-**Dates.**  ``{"date": "2026-10-20"}`` or a Python ``date`` is the day's serial in the
-workbook's date system (1900 or 1904, ``workbookPr date1904``).  A date string is ISO 8601
-(``YYYY-MM-DD``) or written in the date order of the workbook's locale
-(:attr:`Workbook.locale <xlsx_agent.Workbook.locale>`, the shared
-:class:`ooxml_common.locales.Locale`: ``20/10/2026`` under ``dmy``) with a four-digit year;
-a two-digit year, a locale without a date order, a time in the string, or a day no
-calendar has is refused.  A ``datetime`` with a time zone is refused (a cell has none: a
-time zone is never dropped silently); a naive one is taken as its date when its time is
-midnight, and refused otherwise: times and durations come later.  A ``time`` and a
-``timedelta`` are refused.  The cell's number format (its own, or for a new cell the one its
-row or column gives it) decides, as it does for a date typed in Excel (measured, Excel for
-Mac 16.106, 2026-11-09): one whose code shows a day keeps it (xlsx-agent's reading,
-:mod:`xlsx_agent.read.styles`: its code read by :func:`ooxml_common.numfmt.classify`, or a
-language-dependent built-in id read in the workbook's locale); General -- a new cell's --
-and the built-in formats Excel replaces (currency, accounting, percentage, scientific,
-fraction and time: :data:`TAKES_SHORT_DATE`) give the cell the built-in short date
-(``numFmtId`` 14), the rest of its format kept, listed in the result (``short_date``);
-any other -- a number format such as ``0.00`` or ``#,##0``, text (``@``), a custom code
-that shows no day -- is refused naming the cell, since the cell would show the date's
-serial number (or only a time), unless the call gives a format:
-``{"date": "2026-10-20", "format": "yyyy-mm-dd"}`` (a code that shows a day), which the
-cell is given, reusing an identical format.
+**Dates and times.**  ``{"date": "2026-10-20"}`` or a Python ``date`` is the day's serial in
+the workbook's date system (1900 or 1904, ``workbookPr date1904``); a date and time
+(``{"date": "2026-10-20 14:30"}``, a Python ``datetime``) adds the time of day as the
+fraction, and a time of day alone (``{"date": "14:30"}``, a Python ``time``) is the fraction
+by itself, as Excel stores what is typed (measured, Excel for Mac 16.106, 2026-11-09: the
+serials equal, in both date systems).  A date string is ISO 8601 (``YYYY-MM-DD``) or written
+in the date order of the workbook's locale (:attr:`Workbook.locale
+<xlsx_agent.Workbook.locale>`, the shared :class:`ooxml_common.locales.Locale`:
+``20/10/2026`` under ``dmy``) with a four-digit year, optionally followed by a time
+(``hh:mm``, ``hh:mm:ss``, a fraction of a second: ``2026-10-20T14:30:15.250`` too); a
+two-digit year, a locale without a date order, a day no calendar has, an hour past 23 (a
+duration) are refused.  A time is kept to the millisecond, rounded half up, as Excel keeps
+a typed one (:data:`PRECISION`); a ``datetime`` at midnight is its date.  A ``datetime`` or
+``time`` with a time zone is refused (a cell has none: a time zone is never dropped
+silently), and so is a ``timedelta`` (a duration).
+
+The cell's number format (its own, or for a new cell the one its row or column gives it)
+decides, as it does for a value typed in Excel (measured, Excel for Mac 16.106,
+2026-11-09, dates, dates and times and times typed into cells of 33 formats).  A format
+that shows the value keeps it (xlsx-agent's reading, :mod:`xlsx_agent.read.styles`: its
+code read by :func:`ooxml_common.numfmt.classify`, or a language-dependent built-in id read
+in the workbook's locale): a date or a date and time into a format that shows a day (a
+date and time into the short date shows its day only, as in Excel), a time into a time
+format.  General -- a new cell's -- and the built-in formats Excel replaces give the cell
+Excel's format for what is typed, the rest of its format kept: the short date (``numFmtId``
+14, :data:`TAKES_SHORT_DATE`: currency, accounting, percentage, scientific, fraction and
+time) for a date, listed in the result (``short_date``); ``m/d/yyyy h:mm`` (22,
+:data:`TAKES_DATE_TIME`, the same formats) for a date and time; ``h:mm`` (20) or, with
+seconds, ``h:mm:ss`` (21) for a time (:data:`TAKES_TIME`: those and the built-in dates),
+listed in ``time_format``.  (Excel gives a value typed with a fraction of a second
+``mm:ss.0``, 47, which hides the hour and the day; 22 and 21 are given here, the fraction
+kept in the value.)  Any other -- a number format such as ``0.00`` or ``#,##0``, text
+(``@``), a custom code that shows only a time for a date, one that shows a day for a time
+alone -- is refused naming the cell, since the cell would show a serial number (or only a
+time, or day 0), unless the call gives a format: ``{"date": "2026-10-20", "format":
+"yyyy-mm-dd"}`` (a code that shows a day for a date, a date or a time for a date and time,
+a time for a time), which the cell is given, reusing an identical format.  ``write_table``
+and ``append_rows`` give a cell whose format would refuse Excel's format for the value
+instead (``typed``).
 
 **Markdown** (``{"markdown": "**Total** due *now*"}``, :mod:`xlsx_agent.markdown`): the
 cell's text as runs -- ``**bold**``, ``*italic*``, ``***both***``, ``~~struck~~``,
@@ -70,9 +87,9 @@ column's name); a cell named twice.  A neighbour's formula is never touched.
 a cell named by key (``"t:stock/P-7/Quantity"``, :mod:`xlsx_agent.edit.keys`) is the
 cell of the row holding the key (never of a key column of formulas: ``formula_key``); a
 key no row has starts a row in its table's capacity, in the free row ``allocate`` names
-(``{"t:stock/Lamp": 15}``) or, with ``new_rows``, the next free one.  A cell on a
+(``{"t:stock/Lamp": 15}``) or, with ``new_rows``, the next free one.  A locked cell of a
 protected sheet (``protected``: its ``sheetProtection`` turns protection on, read from
-the package; unlocked cells are refused too, see below), a cell the host's write policy
+the package; its unlocked cells are written, see below), a cell the host's write policy
 does not cover (``not_writable``), a formula or a write over
 one it refuses (``formulas_not_allowed``; :mod:`xlsx_agent.edit.policy`), a free capacity
 row named by its address (``capacity_row``).  An *expectation* goes with any value as
@@ -88,12 +105,12 @@ holds by type, never by value.  ``revision``: the workbook's :attr:`version
 <xlsx_agent.Workbook.version>` the call was made for, refused (``revision``) before
 anything else when it has moved on.
 
-*Protected sheets* (decided, X4): ECMA-376 Part 1 prohibits what a protected sheet's
-``sheetProtection`` (18.3.1.85) protects for the cells marked ``locked`` (``protection``,
-18.8.33; locked unless their format says otherwise), so it reads as leaving unlocked cells
-open to input.  How Excel treats a value written into an unlocked cell of a protected
-sheet (as typed there, or as a change it would not have allowed) is not measured, so
-every cell of a protected sheet is refused, unlocked ones too, until it is.
+*Protected sheets* (round 46, R71; :mod:`xlsx_agent.edit.protection`): a protected
+sheet's unlocked cells are written, as Excel lets a value be typed into them, and its
+locked ones refused (``protected``, naming the sheet's unlocked cells and the way out);
+the ``sheetProtection`` element is never touched.  A date, a time or a line break gives an
+unlocked cell its format there as anywhere (measured: Excel did so on a protected sheet
+whose protection does not allow formatting cells).
 A workbook's structure protection (``workbookProtection lockStructure``) locks its sheets
 (adding, deleting, renaming, moving, hiding), not their cells: no cell write is refused for
 it, and none adds a sheet.
@@ -148,6 +165,35 @@ SHORT_DATE = 14
 #: ``General``.
 TAKES_SHORT_DATE = frozenset({0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 18, 19, 20, 21, 44, 45, 46,
                               47, 48})
+
+#: Excel's date and time, ``m/d/yyyy h:mm`` (built-in id 22): what Excel gives a date and
+#: time typed into a General cell, with or without seconds (measured, Excel for Mac 16.106,
+#: 2026-11-09: ``2026-01-05 14:30``, ``1/5/2026 14:30``, ``2026-01-05 14:30:15``,
+#: ``2026-01-05 2:30 PM`` typed).
+DATE_TIME = 22
+#: Excel's times (built-in ids 20, ``h:mm``, and 21, ``h:mm:ss``): what Excel gives a time of
+#: day typed into a General cell, without and with seconds (measured, the same session:
+#: ``14:30``, ``14:30:15``).
+TIME_MINUTES = 20
+TIME_SECONDS = 21
+#: The built-in number formats Excel replaces with :data:`DATE_TIME` when a date and time
+#: is typed into a cell of one (measured, the same session, ``2026-01-05 14:30`` typed into
+#: cells of 33 formats): the same as for a date (:data:`TAKES_SHORT_DATE`) -- General,
+#: currency and accounting, percentages, scientific, fractions and the times.  It keeps the
+#: dates (14 to 17, 22), the number ones and every custom code (a time one too), and stores
+#: text in a cell of the text format (49).
+TAKES_DATE_TIME = TAKES_SHORT_DATE
+#: The built-in number formats Excel replaces with :data:`TIME_MINUTES` or
+#: :data:`TIME_SECONDS` when a time of day is typed into a cell of one (measured, the same
+#: session, ``14:30`` and ``14:30:15`` typed into the same 33): General, currency and
+#: accounting, percentages, scientific, fractions and the built-in dates (14 to 17, 22).  It
+#: keeps the times (18 to 21, 45 to 47), the number ones and every custom code, a date one
+#: too (which would show day 0 of the date system: refused here).
+TAKES_TIME = frozenset({0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 22, 44, 48})
+#: Excel keeps a typed time to the millisecond, rounded half up (measured, the same session:
+#: ``14:30:15.1234`` and ``14:30:15.12345`` stored as ``14:30:15.123``, ``0:00:00.0005`` as
+#: one millisecond, ``0:00:00.0004`` as none, ``23:59:59.9996`` as the next midnight).
+PRECISION = _dt.timedelta(milliseconds=1)
 
 _ISO_DAY = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
 _LOCAL_DAY = re.compile(r"([0-9]{1,4})([/.-])([0-9]{1,2})\2([0-9]{1,4})")
@@ -207,6 +253,10 @@ class Written:
     #: The cells a date was written into whose format Excel replaces with the short date
     #: (``numFmtId`` 14) for a typed date (General, a new cell's), given it.
     short_date: tuple[str, ...] = ()
+    #: The cells a date and time or a time of day was written into whose format Excel
+    #: replaces for a typed one, given Excel's (:data:`DATE_TIME`, :data:`TIME_MINUTES`,
+    #: :data:`TIME_SECONDS`).
+    time_format: tuple[str, ...] = ()
 
     def as_dict(self, limit: int = MAX_LISTED) -> dict[str, Any]:
         """As plain data, at most ``limit`` cells listed (the rest counted)."""
@@ -221,7 +271,7 @@ class Written:
             out["fixed_height"] = list(self.fixed_height[:limit])
         if self.new_rows:
             out["new_rows"] = list(self.new_rows[:limit])
-        for name in ("invalid", "unchecked", "escaped", "short_date"):
+        for name in ("invalid", "unchecked", "escaped", "short_date", "time_format"):
             found = getattr(self, name)
             if found:
                 out[name] = list(found[:limit])
@@ -233,7 +283,7 @@ class Written:
 
 def set_cells(workbook: Any, cells: Any, *, replace_formulas: bool = False,
               new_rows: bool = False, allocate: Any = None,
-              revision: int | None = None) -> Written:
+              revision: int | None = None, typed: bool = False) -> Written:
     """Write ``cells`` (see the module): a mapping of address to value, or ``(address,
     value)`` pairs; ``allocate`` the rows the host names for new keys
     (:mod:`xlsx_agent.edit.keys`).  :class:`~xlsx_agent.edit.EditError` before anything
@@ -259,7 +309,7 @@ def set_cells(workbook: Any, cells: Any, *, replace_formulas: bool = False,
         # Checked inside the step: a refusal caught in an open batch still rolls it back,
         # as any write that fails there does (xlsx_agent.edit, "Atomic").
         planned = plan(workbook, items, replace_formulas=replace_formulas, new_rows=new_rows,
-                       allocate=allocate)
+                       allocate=allocate, typed=typed)
         cells_of: dict[str, set[Cell]] = {}
         for write in planned:
             cells_of.setdefault(write.sheet.part, set()).add(write.cell)
@@ -300,7 +350,9 @@ def set_cells(workbook: Any, cells: Any, *, replace_formulas: bool = False,
                    old={w.address: w.old for w in planned}, released=tuple(released),
                    calculation=workbook.calculation_status, fixed_height=fixed,
                    new_rows=rows, invalid=invalid, unchecked=unchecked, escaped=escaped,
-                   short_date=tuple(w.address for w in planned if w.format == SHORT_DATE))
+                   short_date=tuple(w.address for w in planned if w.format == SHORT_DATE),
+                   time_format=tuple(w.address for w in planned
+                                     if w.format in (DATE_TIME, TIME_MINUTES, TIME_SECONDS)))
 
 
 def stored(value: Any) -> Any:
@@ -398,7 +450,7 @@ class _Refusals:
 
 def plan(workbook: Any, items: "list[tuple[Any, Any]]", *,
          replace_formulas: bool = False, new_rows: bool = False,
-         allocate: Any = None) -> list[Planned]:
+         allocate: Any = None, typed: bool = False) -> list[Planned]:
     """Every write checked against the values allowed, the host's policy, the
     expectations and the guards (see the module), nothing changed: the writes, or
     :class:`~xlsx_agent.edit.EditError`."""
@@ -415,7 +467,7 @@ def plan(workbook: Any, items: "list[tuple[Any, Any]]", *,
         allowed = workbook._allowed()
     except PolicyError as error:
         raise EditError("bad_policy", error.message) from None
-    check = _Check(workbook, refusals, allowed, free_rows(workbook), replace_formulas)
+    check = _Check(workbook, refusals, allowed, free_rows(workbook), replace_formulas, typed)
     explicit = allocations(workbook, allocate, refusals.add)
     allocated = {(item.region.address.text, item.key) for item in explicit}
     # (order, sub-order, sheet, cell, value, new row: "key", "row" or False), as found
@@ -504,14 +556,34 @@ class _Check:
     sheet's facts, the host's policy as resolved, the free capacity rows."""
 
     def __init__(self, workbook: Any, refusals: "_Refusals", allowed: Any,
-                 free: "dict[str, list[Area]]", replace_formulas: bool) -> None:
+                 free: "dict[str, list[Area]]", replace_formulas: bool,
+                 typed: bool = False) -> None:
         self.workbook = workbook
+        self.typed = typed
         self.refusals = refusals
         self.allowed = allowed
         self.free = free
         self.replace_formulas = replace_formulas
         self.seen: dict[tuple[str, int, int], str] = {}
         self.sheets: dict[str, _SheetFacts] = {}
+        self.locks: Any = None
+        #: A protected sheet's refusal detail, by part (its unlocked cells, the way out).
+        self.hints: dict[str, str] = {}
+
+    def _locked(self, sheet: Any, cell: Cell) -> bool:
+        """Whether ``cell`` of the protected ``sheet`` is locked (:mod:`.protection`)."""
+        from .protection import Locks, refusal
+
+        writer = self.workbook.editor.cells.sheet(sheet.stored_name)
+        if writer is None:
+            return True
+        if self.locks is None:
+            self.locks = Locks(self.workbook)
+        if not self.locks.locked(writer, cell):
+            return False
+        if sheet.part not in self.hints:
+            self.hints[sheet.part] = refusal(self.locks, sheet, writer)
+        return True
 
     def one(self, sheet: Any, cell: Cell, given: Any, new_row: "str | bool") -> Planned | None:
         """One cell's write, checked; ``None`` (with the refusal noted) when refused.
@@ -529,9 +601,8 @@ class _Check:
                          "its address" if self.seen[key] == "key" else None)
             return None
         self.seen[key] = "key" if new_row == "key" else label
-        if sheet.protected:
-            refusals.add("protected", label, f"sheet {_label(sheet)} is protected "
-                         "(sheetProtection): its owner unprotects it in Excel")
+        if sheet.protected and self._locked(sheet, cell):
+            refusals.add("protected", label, self.hints[sheet.part])
             return None
         if not new_row and any(area.contains(cell) for area in self.free.get(sheet.part, ())):
             refusals.add("capacity_row", label, "start the row by its key, with allocate")
@@ -555,7 +626,7 @@ class _Check:
             if not given:
                 refusals.add("bad_value", label, "expect goes with the value to write")
                 return None
-        write = _value(self.workbook, facts, label, sheet, cell, given, refusals)
+        write = _value(self.workbook, facts, label, sheet, cell, given, refusals, self.typed)
         if write is None:
             return None
         write.new_row = new_row == "key"
@@ -721,7 +792,7 @@ class _SheetFacts:
 
 
 def _value(workbook: Any, facts: _SheetFacts, label: str, sheet: Any, cell: Cell,
-           given: Any, refusals: _Refusals) -> Planned | None:
+           given: Any, refusals: _Refusals, typed: bool = False) -> Planned | None:
     """The value to write, checked; ``None`` (with the refusal noted) when it is refused."""
     content = facts.writer.content(cell)
     old = "formula" if content.formula is not None else content.kind
@@ -752,16 +823,11 @@ def _value(workbook: Any, facts: _SheetFacts, label: str, sheet: Any, cell: Cell
             return Planned(label, sheet, cell, Formula(text), "formula", old)
         else:
             date_format = given.get("format")
-            if date_format is not None:
-                problem = _format_problem(date_format)
-                if problem is not None:
-                    refusals.add("date_format", label, problem)
-                    return None
-            day = _day(given["date"], workbook, label, refusals)
-            if day is None:
+            moment = _moment(given["date"], workbook, label, refusals)
+            if moment is None:
                 return None
-            return _dated(workbook, facts, label, sheet, cell, day, old, date_format,
-                          refusals)
+            return _dated(workbook, facts, label, sheet, cell, moment, old, date_format,
+                          refusals, typed)
     if isinstance(given, Formula):
         return Planned(label, sheet, cell, given, "formula", old)
     if given is None:
@@ -790,13 +856,14 @@ def _value(workbook: Any, facts: _SheetFacts, label: str, sheet: Any, cell: Cell
             refusals.add("bad_value", label, "empty text is no value: write None for a blank")
             return None
         return Planned(label, sheet, cell, given, "text", old)
-    if isinstance(given, (_dt.date, _dt.datetime)):
-        day = _day(given, workbook, label, refusals)
-        if day is None:
+    if isinstance(given, (_dt.date, _dt.time)):
+        moment = _moment(given, workbook, label, refusals)
+        if moment is None:
             return None
-        return _dated(workbook, facts, label, sheet, cell, day, old, None, refusals)
-    if isinstance(given, (_dt.time, _dt.timedelta)):
-        refusals.add("date_time", label, "times and durations are not written yet")
+        return _dated(workbook, facts, label, sheet, cell, moment, old, None, refusals, typed)
+    if isinstance(given, _dt.timedelta):
+        refusals.add("date_time", label, "a duration: durations are not written yet; give a "
+                     "number of days, or a time of day as a time")
         return None
     refusals.add("bad_value", label, f"not a value a cell holds: {type(given).__name__}")
     return None
@@ -867,63 +934,206 @@ def _day(given: Any, workbook: Any, label: str, refusals: _Refusals) -> _dt.date
         return None
 
 
-def _dated(workbook: Any, facts: _SheetFacts, label: str, sheet: Any, cell: Cell,
-           day: _dt.date, old: str, date_format: str | None,
-           refusals: _Refusals) -> Planned | None:
-    first = _dt.date(1904, 1, 1) if workbook.date1904 else _dt.date(1900, 1, 1)
-    if day < first:
-        refusals.add("bad_date", label, f"before {first.isoformat()}, the first day of the "
-                     "workbook's date system: write it as text")
+#: A time of day after a date (``2026-01-05 14:30``, ``2026-01-05T14:30:15.250``) or alone
+#: (``14:30``): hours 0 to 23, minutes and seconds two digits, a fraction of a second.
+_CLOCK = r"([0-9]{1,2}):([0-9]{2})(?::([0-9]{2})(?:[.,]([0-9]{1,9}))?)?"
+_ISO_MOMENT = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})(?:[T ]" + _CLOCK + ")?")
+_LOCAL_MOMENT = re.compile(r"([0-9]{1,4})([/.-])([0-9]{1,2})\2([0-9]{1,4})(?: " + _CLOCK + ")?")
+_TIME_ONLY = re.compile(_CLOCK)
+
+
+def _moment(given: Any, workbook: Any, label: str,
+            refusals: _Refusals) -> "_dt.date | _dt.datetime | _dt.time | None":
+    """A date, a date and time, or a time of day, given as a Python ``date``, ``datetime``
+    or ``time`` or as text (see the module): a ``datetime`` whose time is midnight is its
+    date; a time zone is refused, and the time is rounded to Excel's precision
+    (:func:`_rounded`)."""
+    if isinstance(given, (_dt.datetime, _dt.time)) and given.tzinfo is not None:
+        refusals.add("date_time", label, "a time zone a cell cannot hold: convert it to the "
+                     "zone the workbook means and drop the tzinfo")
         return None
+    if isinstance(given, _dt.datetime):
+        return _rounded(given, label, refusals)
+    if isinstance(given, (_dt.date, _dt.time)):
+        return _rounded(given, label, refusals) if isinstance(given, _dt.time) else given
+    if not isinstance(given, str):
+        refusals.add("bad_date", label, "a date is text (YYYY-MM-DD, YYYY-MM-DD hh:mm:ss, "
+                     "hh:mm) or a Python date, datetime or time")
+        return None
+    text = given.strip()
+    clock: tuple[Any, ...] = (None,) * 4
+    match = _ISO_MOMENT.fullmatch(text)
+    if match is not None:
+        year, month, day = (int(g) for g in match.groups()[:3])
+        clock = match.groups()[3:]
+    elif (match := _TIME_ONLY.fullmatch(text)) is not None:
+        found = _clock(match.groups(), label, refusals)
+        return None if found is None else _rounded(found, label, refusals)
+    else:
+        local = _LOCAL_MOMENT.fullmatch(text)
+        order = getattr(workbook.locale, "date_order", None)
+        if local is None or order not in DATE_ORDERS:
+            refusals.add("bad_date", label, "a date as YYYY-MM-DD, or in the locale's date "
+                         "order with a four-digit year; a time after it as hh:mm or "
+                         "hh:mm:ss")
+            return None
+        assert order is not None   # one of DATE_ORDERS
+        parts = dict(zip(order, (local.group(1), local.group(3), local.group(4))))
+        if len(parts["y"]) != 4 or len(parts["m"]) > 2 or len(parts["d"]) > 2:
+            refusals.add("bad_date", label, "ambiguous: a four-digit year in the locale's "
+                         f"date order ({order}), or YYYY-MM-DD")
+            return None
+        year, month, day = int(parts["y"]), int(parts["m"]), int(parts["d"])
+        clock = local.groups()[4:]
+    try:
+        found_day = _dt.date(year, month, day)
+    except ValueError:
+        refusals.add("bad_date", label, "no calendar has that day")
+        return None
+    if clock[0] is None:
+        return found_day
+    time = _clock(clock, label, refusals)
+    if time is None:
+        return None
+    return _rounded(_dt.datetime.combine(found_day, time), label, refusals)
+
+
+def _clock(groups: "tuple[Any, ...]", label: str, refusals: _Refusals) -> _dt.time | None:
+    hour, minute, second, fraction = groups
+    digits = (fraction or "")[:6].ljust(6, "0")
+    try:
+        return _dt.time(int(hour), int(minute), int(second or 0), int(digits))
+    except ValueError:
+        refusals.add("bad_date", label, "no clock has that time: hours 0 to 23, minutes and "
+                     "seconds 0 to 59 (a duration is not written yet)")
+        return None
+
+
+def _rounded(moment: "_dt.datetime | _dt.time", label: str,
+             refusals: _Refusals) -> "_dt.date | _dt.datetime | _dt.time | None":
+    """``moment`` rounded to the millisecond, half up, as Excel rounds a typed time
+    (:data:`PRECISION`); a ``datetime`` at midnight after it is its date."""
+    micro = moment.microsecond
+    rounded = (micro + 500) // 1000 * 1000
+    if isinstance(moment, _dt.datetime):
+        found = moment.replace(microsecond=0) + _dt.timedelta(microseconds=rounded)
+        return found.date() if found.time() == _dt.time(0) else found
+    if rounded == 1_000_000:
+        whole = _dt.datetime.combine(_dt.date(2000, 1, 1), moment.replace(microsecond=0)) \
+            + _dt.timedelta(seconds=1)
+        if whole.date() != _dt.date(2000, 1, 1):
+            refusals.add("bad_date", label, "the time rounds to 24:00 at Excel's precision "
+                         "(a millisecond): give 23:59:59.999 or the next day")
+            return None
+        return whole.time()
+    return moment.replace(microsecond=rounded)
+
+
+def _dated(workbook: Any, facts: _SheetFacts, label: str, sheet: Any, cell: Cell,
+           moment: "_dt.date | _dt.datetime | _dt.time", old: str, date_format: str | None,
+           refusals: _Refusals, typed: bool = False) -> Planned | None:
+    """A date, a date and time or a time of day written (see the module): the cell's format
+    kept when it shows the value, Excel's format for it where Excel gives a typed one
+    (:data:`TAKES_SHORT_DATE`, :data:`TAKES_DATE_TIME`, :data:`TAKES_TIME`), ``date_format``
+    when given; refused otherwise.  ``typed``: a cell whose format would not show the
+    value is given Excel's format for it (``write_table``, ``append_rows``)."""
+    kind = _kind(moment)
+    if not isinstance(moment, _dt.time):
+        day = moment.date() if isinstance(moment, _dt.datetime) else moment
+        first = _dt.date(1904, 1, 1) if workbook.date1904 else _dt.date(1900, 1, 1)
+        if day < first:
+            refusals.add("bad_date", label, f"before {first.isoformat()}, the first day of "
+                         "the workbook's date system: write it as text")
+            return None
     style = facts.writer.style(cell, inherited=True)
     own = facts.writer.style(cell)
     if date_format is not None:
+        problem = _format_problem(date_format, kind)
+        if problem is not None:
+            refusals.add("date_format", label, problem)
+            return None
         if workbook.editor.cells.styles is None:
             refusals.add("date_format", label, "the workbook has no cell formats to give it "
                          "one: write the date as text")
             return None
-        return Planned(label, sheet, cell, day, "date", old, format=date_format)
-    shows = _shows_day(workbook, style)
-    if shows is None:
-        # General: a typed date gets the short date, and keeps the rest of the format.
-        return Planned(label, sheet, cell, day, "date", old, format=SHORT_DATE)
-    if shows is not True:
+        return Planned(label, sheet, cell, moment, "date", old, format=date_format)
+    shows = _shows(workbook, style, kind, moment)
+    if isinstance(shows, str) and typed and workbook.editor.cells.styles is not None:
+        shows = _builtin_for(kind, moment)
+    if isinstance(shows, int) and not isinstance(shows, bool):
+        # Excel's format for a typed value; the rest of the cell's format kept.
+        return Planned(label, sheet, cell, moment, "date", old, format=shows)
+    if isinstance(shows, str):
         refusals.add("date_format", label, shows)
         return None
-    return Planned(label, sheet, cell, day, "date", old,
+    return Planned(label, sheet, cell, moment, "date", old,
                    style=style if style != own else None)
 
 
-_GIVE = '{"date": ..., "format": "yyyy-mm-dd"}'
+def _kind(moment: Any) -> str:
+    if isinstance(moment, _dt.datetime):
+        return "datetime"
+    return "time" if isinstance(moment, _dt.time) else "date"
 
 
-def _shows_day(workbook: Any, style: int) -> "Literal[True] | str | None":
-    """``True`` when cell format ``style`` shows a day; ``None`` when its number format is
-    one Excel replaces with the short date for a typed date (:data:`TAKES_SHORT_DATE`,
-    General); else why not and what to do (the refusal's detail)."""
+def _builtin_for(kind: str, moment: Any) -> int:
+    """The built-in format Excel gives a typed value of ``kind`` in a General cell."""
+    if kind == "date":
+        return SHORT_DATE
+    if kind == "datetime":
+        return DATE_TIME
+    return TIME_SECONDS if moment.second or moment.microsecond else TIME_MINUTES
+
+
+_GIVE = {"date": '{"date": ..., "format": "yyyy-mm-dd"}',
+         "datetime": '{"date": ..., "format": "yyyy-mm-dd hh:mm"}',
+         "time": '{"date": ..., "format": "hh:mm"}'}
+
+
+def _shows(workbook: Any, style: int, kind: str,
+           moment: Any) -> "Literal[True] | int | str":
+    """What cell format ``style`` makes of a value of ``kind`` (``date``, ``datetime``,
+    ``time``): ``True`` when it shows it, as it is kept; the built-in id Excel replaces it
+    with for a typed value (General, :data:`TAKES_SHORT_DATE` and its kin); else why not and
+    what to do (the refusal's detail)."""
+    give = _GIVE[kind]
     styles = workbook.editor.cells.styles
     if styles is None:
-        return f"the workbook has no cell formats; give one: {_GIVE}"
+        return f"the workbook has no cell formats; give one: {give}"
     found = workbook.styles.format(style)
-    if found.kind in ("date", "datetime"):
-        return True
-    if style < styles.count and (found.id in TAKES_SHORT_DATE or found.kind == "general"):
-        return None
-    if found.kind == "time":
-        return f"it shows only a time; give a date format: {_GIVE}"
+    takes = {"date": TAKES_SHORT_DATE, "datetime": TAKES_DATE_TIME, "time": TAKES_TIME}[kind]
+    if style < styles.count and (found.kind == "general" or found.id in takes):
+        return _builtin_for(kind, moment)
+    if kind == "time":
+        if found.kind == "time":
+            return True
+        if found.kind in ("date", "datetime"):
+            return (f"it shows a day, which a time of day alone does not have (Excel would "
+                    f"show day 0 of the date system); give a time format: {give}")
+    else:
+        if found.kind in ("date", "datetime"):
+            return True
+        if found.kind == "time":
+            return f"it shows only a time; give a format that shows the day: {give}"
     if found.builtin and styles.is_date(style) is None:
         # A built-in id whose code depends on the application's language.
-        return f"it is not known to show one in the workbook's language; give one: {_GIVE}"
+        return f"it is not known to show one in the workbook's language; give one: {give}"
     shown = f" ({found.code})" if found.code else ""
-    return (f"its number format{shown} would show the date as a serial number; give a "
-            f"date format: {_GIVE}")
+    noun = "time" if kind == "time" else "date"
+    return (f"its number format{shown} would show the {noun} as a serial number; give a "
+            f"format: {give}")
 
 
-def _format_problem(code: Any) -> str | None:
+def _format_problem(code: Any, kind: str = "date") -> str | None:
     if not isinstance(code, str) or not code.strip():
-        return "a format is a number format code, as yyyy-mm-dd"
-    if classify_format(code)[0] not in ("date", "datetime"):
+        return f"a format is a number format code, as {_GIVE[kind].split(': ')[-1][1:-2]}"
+    shown = classify_format(code)[0]
+    if kind == "date" and shown not in ("date", "datetime"):
         return "the format given does not show a day"
+    if kind == "datetime" and shown not in ("date", "datetime", "time"):
+        return "the format given shows neither a date nor a time"
+    if kind == "time" and shown not in ("time", "datetime"):
+        return "the format given does not show a time"
     return None
 
 

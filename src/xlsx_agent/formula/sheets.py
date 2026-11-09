@@ -56,6 +56,41 @@ def fold_name(name: str) -> str:
     return unicodedata.normalize("NFKC", name.translate(_IGNORED)).casefold()
 
 
+def written_names(text: str) -> list[str]:
+    """The sheet names ``text`` may mean as a call gives a sheet, the likeliest first:
+    the text itself -- a name's spaces are its own: Excel keeps a sheet name's leading and
+    trailing spaces, and ``Stock`` and ``Stock `` are two sheets (measured, Excel for Mac
+    16.106, 2026-11-09) -- then the name an address writes (``'Q3 sales'``, ``'Stock '!``,
+    ``Bob''s``), the spaces around its quotes aside, or a bare name with its ``!``."""
+    out = [text]
+    body = text.strip()
+    if body.endswith("!"):
+        body = body[:-1]
+    if len(body) >= 2 and body.startswith("'") and body.endswith("'"):
+        out.append(body[1:-1].replace("''", "'"))
+    elif text.endswith("!") and len(text) > 1:
+        out.append(text[:-1])
+    return out
+
+
+def pick_sheet(names: Sequence[str], text: str) -> list[int]:
+    """Which of the sheets ``names`` (in the workbook's order) ``text`` names: ``[i]`` for
+    one, as Excel compares names (:func:`fold_name`) and spaces kept
+    (:func:`written_names`); when none is so named, the one equal to it with outer spaces
+    aside -- ``Stock`` for a sheet ``Stock `` and the other way round -- when only one is;
+    several when that is more than one (the caller says which there are), none when no
+    sheet is."""
+    folded = [fold_name(name) for name in names]
+    wanted = written_names(text)
+    for name in wanted:
+        key = fold_name(name)
+        for index, have in enumerate(folded):
+            if have == key:
+                return [index]
+    loose = {fold_name(name.strip()) for name in wanted}
+    return [index for index, name in enumerate(names) if fold_name(name.strip()) in loose]
+
+
 @dataclass(frozen=True)
 class Prefix:
     """A reference's sheet prefix read: its first and last sheet (``last`` ``None`` for

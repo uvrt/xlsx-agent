@@ -187,9 +187,11 @@ class _Plan:
     #: A row's start with its number first (``<row r="9"``), and its end tag.
     head: "re.Pattern[bytes]"
     end_tag: bytes
-
     #: Every byte up to ``begin``: the namespaces, ``cols``, ``dimension``.
     header: bytes
+    #: Whether the part has a row that holds only styles: a part with none is parsed
+    #: whole, as before (``iterparse``); its plan still serves :func:`merges_only`.
+    skims: bool = True
 
     @classmethod
     def of(cls, facts: "_Facts") -> "_Plan | None":
@@ -212,7 +214,7 @@ class _Plan:
         return cls(len(header), facts.end, row, following, cell,
                    frozenset(name for name, _ in bound if name) | {b"xml"},
                    re.compile(rb"<" + re.escape(prefix) + rb'row r="([1-9][0-9]{0,6})"'),
-                   b"</" + prefix + b"row>", header)
+                   b"</" + prefix + b"row>", header, facts.skims)
 
 
 @dataclass(frozen=True)
@@ -242,6 +244,11 @@ class _Facts:
     #: Whether the part may hold ``sheetProtection``: UTF-16, a NUL in its first 64 bytes,
     #: or the name in its bytes (spelt out so in any 8-bit encoding).
     protection: bool
+    #: Whether a row that holds only styles (:func:`_skim_patterns`) stands among the
+    #: rows.  A streamed part's pieces are searched each, with :data:`_CONTEXT` bytes of
+    #: the one before: a longer such row cut by a piece's end may go unseen (``False``:
+    #: the part is parsed whole, the same cells).
+    skims: bool
     #: The part's :class:`_Plan`, made of these.
     plan: "_Plan | None" = field(default=None, compare=False)
 
@@ -260,6 +267,7 @@ class _Facts:
         header = end = None
         prefix = b""
         xmlns = merges = True
+        skims = False
         start = _SHEET_DATA_TAG.search(data)
         if start is not None:
             header, prefix = data[:start.end()], start.group(1) or b""
@@ -269,11 +277,12 @@ class _Facts:
                 end = found.start()
                 xmlns = data.find(b"xmlns", start.end(), end) >= 0
                 merges = data.find(b"mergeCell", start.end(), end) >= 0
+                skims = _skim_patterns(prefix)[0].search(data, start.end(), end) is not None
         protection = data[:2] in (b"\xff\xfe", b"\xfe\xff") or b"\x00" in data[:64] \
             or _PROTECTION_NAME in data
         return cls(plain, data.startswith((b"\xfe\xff", b"\xff\xfe")),
                    declared.group(1) if declared is not None else None,
-                   header, prefix, end, xmlns, merges, protection)
+                   header, prefix, end, xmlns, merges, protection, skims)
 
     @classmethod
     def _of_stream(cls, chunks: Iterator[bytes]) -> "_Facts":
@@ -291,6 +300,7 @@ class _Facts:
         first = b""
         head64 = b""
         protection = False
+        skims = False
         tail = b""
         offset = 0                      # where ``buffer`` starts in the part
         for chunk in chunks:
@@ -357,6 +367,12 @@ class _Facts:
             elif closing is not None and b">" not in closing and len(closing) < _CONTEXT:
                 closing += chunk[:_CONTEXT - len(closing)]
 
+            if header is not None and not skims and (end is None or offset < end):
+                low = max(len(header) - offset, 0)
+                high = end - offset if end is not None else len(buffer)
+                if low < high and _skim_patterns(prefix)[0].search(buffer, low, high):
+                    skims = True
+
             tail = buffer[-_CONTEXT:]
             offset += len(buffer) - len(tail)
         # The closing tag ends at its first ">", after spaces only.
@@ -370,7 +386,7 @@ class _Facts:
         if header is None or end is None:
             xmlns = merges = True
         return cls(plain, first.startswith((b"\xfe\xff", b"\xff\xfe")), declared, header,
-                   prefix, end, xmlns, merges, protection)
+                   prefix, end, xmlns, merges, protection, skims and end is not None)
 
 
 class SheetBytes:
@@ -944,14 +960,17 @@ class SheetReader:
         plan = self.plan()
         # A pass from the top that will index the part (scan's) counts the row tags of a
         # streamed part as it goes, so the index need not inflate it again.
+        parsed_whole = plan is None or not plan.skims \
+            or (start is not None and len(start[0].header) != plan.begin)
         tap = None
         self._tags = None
         if start is None and self.marks is not None and source.entry is not None:
             facts = self.facts()
             if facts.plain and facts.header is not None:
+                # The parser is fed the part from its start; the window from the rows'.
                 tap = self._tags = _Tags(len(facts.header),
-                                         plan.begin if plan is not None else 0)
-        if plan is None or (start is not None and len(start[0].header) != plan.begin):
+                                         0 if parsed_whole or plan is None else plan.begin)
+        if parsed_whole:
             stream: Any
             if tap is not None:
                 stream = _Pieces(source.chunks(0, tap))

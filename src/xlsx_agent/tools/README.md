@@ -65,10 +65,12 @@ issues (cell facts such as numbers stored as text are `describe`'s).
 
 **Writing cells** (`xlsx_set_cells`, E3). Each item of `cells` is an `address` and
 exactly one of `text` (always literal, `"=x"` too), `number`, `bool`, `date` (`YYYY-MM-DD`,
-or the session locale's order with a four-digit year, into a cell whose format shows a
-date; a General cell, a new one too, and one of a format Excel replaces for a typed date --
-percentage, currency, time -- gets the short date as in Excel, listed in `short_date`; a
-number format such as `0.00` needs `format`), `formula` (`=D10*2`, the only way to write one), `blank: true`
+or the session locale's order with a four-digit year, optionally with a time after it --
+`YYYY-MM-DD hh:mm[:ss]`, kept to the millisecond -- or a time of day alone, `hh:mm`, into a
+cell whose format shows it; a General cell, a new one too, and one of a format Excel
+replaces for a typed value -- percentage, currency, time -- gets Excel's format as in Excel:
+the short date, listed in `short_date`, or `m/d/yyyy h:mm`, `h:mm`, `h:mm:ss`, listed in
+`time_format`; a number format such as `0.00` needs `format`), `formula` (`=D10*2`, the only way to write one), `blank: true`
 (the value goes, the format stays) or `markdown` (rich text: `**bold**`, `*italic*`,
 `~~strike~~`, each line a line of the cell, `-` and `1.` items shown as `•` and numbers;
 `xlsx_agent.markdown`). `xlsx_read`'s `markdown: true` gives text as that Markdown --
@@ -137,8 +139,9 @@ never empty) and `expect_value`
 (the value now as read, as text: a number's digits, `true`/`false`, a date `YYYY-MM-DD`)
 refuse the call when the cell holds something else, `details`'
 `held` naming each such cell's type, never its value; `revision` (a result's `version`)
-refuses it when the workbook has changed since. A protected sheet (`sheetProtection`) is
-never written, unlocked cells included (not measured in Excel yet). The application's
+refuses it when the workbook has changed since. A protected sheet's (`sheetProtection`)
+locked cells are never written; its unlocked cells are, as Excel lets them be typed into
+(measured, round 46), its protection untouched, and a refusal names the unlocked cells. The application's
 write policy -- `xlsx_agent.tools.policy(session, {"cells": ["Stock!D10:E209"],
 "tables": [{"table": "stock", "columns": ["Quantity"], "new_rows": true}], "formulas":
 false})` before the session opens the workbook (`{"cells": []}`: nothing writable), or

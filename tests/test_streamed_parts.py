@@ -130,13 +130,14 @@ def _part_book(xml: bytes) -> bytes:
     return zip_parts(parts)
 
 
-def _large(rows: int) -> bytes:
-    """A sheet of ``rows`` rows of values, formatted to the bottom as R73's is."""
+def _large(rows: int, styled: bool = True) -> bytes:
+    """A sheet of ``rows`` rows of values, formatted to the bottom as R73's is (or not:
+    no row holds only styles, and the part is parsed whole)."""
     body = []
     for n in range(1, rows + 1):
         body.append(f'<row r="{n}"><c r="A{n}"><v>{n}</v></c><c r="B{n}" s="1"/>'
                     f'<c r="C{n}" t="inlineStr"><is><t>item {n % 97}</t></is></c></row>')
-    for n in range(rows + 1, rows * 3):
+    for n in range(rows + 1, rows * 3 if styled else 0):
         body.append(f'<row r="{n}"><c r="A{n}" s="1"/><c r="B{n}" s="1"/></row>')
     xml = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="{NS_MAIN}">'
            f'<sheetData>{"".join(body)}</sheetData><mergeCells count="1">'
@@ -209,19 +210,26 @@ def test_damaged_shared_strings_are_refused_when_read():
     assert refused.value.code == "damaged"
 
 
+@pytest.mark.parametrize("styled", [True, False])
 @pytest.mark.parametrize("read", [1, 2, 5, 13, 64])
-def test_the_row_index_of_a_streamed_sheet_is_the_held_one(monkeypatch, read):
+def test_the_row_index_of_a_streamed_sheet_is_the_held_one(monkeypatch, read, styled):
     """Row tags cut by a piece's end are found: the checkpoints are where they are in the
-    part held whole."""
-    data = _large(600)
+    part held whole, whether the rows are read from the window or the part is parsed."""
+    data = _large(600, styled)
     with monkeypatch.context() as held:
         _held(held)
         whole = Workbook.open(data).scan("Stock").index
     monkeypatch.setattr(stream, "_READ", read)
     streamed = Workbook.open(data).scan("Stock").index
-    assert whole is not None and len(whole.checkpoints) > 10
+    assert whole is not None and len(whole.checkpoints) > 3
     assert streamed is not None
     assert (streamed.header, streamed.checkpoints) == (whole.header, whole.checkpoints)
+    wb = Workbook.open(data)
+    assert list(wb.read("Stock!A500:C502")) == list(Workbook.open(data).read("Stock!A500:C502"))
+    wb.scan("Stock")
+    with monkeypatch.context() as held:
+        _held(held)
+        assert list(wb.read("Stock!A500:C502")) == list(Workbook.open(data).read("Stock!A500:C502"))
 
 
 def test_a_first_pass_inflates_the_sheet_once(monkeypatch):

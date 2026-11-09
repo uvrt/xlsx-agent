@@ -461,3 +461,22 @@ def test_rows_alike_but_for_more_than_their_number_are_read_each(monkeypatch, ce
     _same_scan(found, long_scan)
     assert (cells, reads) == (long_cells, long_reads)
     assert len({v.format for v in long_cells if v.column == 1}) > 1 or "B1" in cell
+
+
+def test_a_sheet_with_no_style_only_row_is_parsed_as_before(monkeypatch):
+    """No row to read from the bytes: the part is parsed whole with ``iterparse``, as
+    before (no push parser, whose objects wait for the cycle collector), and its merges
+    are still read from the part's tail."""
+    rows = "".join(f'<row r="{n}"><c r="A{n}"><v>{n}</v></c></row>' for n in range(1, 300))
+    data = _book(f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                 f'<worksheet xmlns="{NS_MAIN}"><sheetData>{rows}</sheetData>'
+                 '<mergeCells><mergeCell ref="B2:C2"/></mergeCells></worksheet>')
+    wb = Workbook.open(data)
+    plan = wb._reader(wb._cell_sheet("Stock")).plan()
+    assert plan is not None and not plan.skims
+    pushed = []
+    monkeypatch.setattr(stream.etree, "XMLPullParser",
+                        lambda *a, **k: pushed.append(1) or (_ for _ in ()).throw(AssertionError))
+    assert [m.ref for m in wb.merges("Stock")] == ["B2:C2"] and "xl/worksheets/sheet1.xml" \
+        not in wb._scans
+    assert wb.used_range("Stock").ref == "A1:A299" and pushed == []

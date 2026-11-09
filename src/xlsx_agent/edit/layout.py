@@ -214,7 +214,12 @@ def stored_width(characters: float, digit: int) -> float:
 def default_face(workbook: Any) -> Face:
     """The workbook's default font: the ``Normal`` style's (``cellStyleXfs`` 0)."""
     styles = workbook.editor.cells.styles
-    root = styles.package.tree(styles.part) if styles is not None else None
+    return face_from_styles(styles.package.tree(styles.part) if styles is not None else None)
+
+
+def face_from_styles(root: Any) -> Face:
+    """The default font of a stylesheet's tree (``None``: no stylesheet), as
+    :func:`default_face`."""
     font = None
     if root is not None:
         base = root.find(_X + "cellStyleXfs")
@@ -518,17 +523,20 @@ def set_row_heights(workbook: Any, target: Any, height: Any) -> Formatted:
 
 def _sheet_target(workbook: Any, sheet: Any, problems: Problems) -> Target | None:
     text = sheet if isinstance(sheet, str) else getattr(sheet, "name", None)
-    if not isinstance(text, str) or not text.strip():
+    if not isinstance(text, str) or not text:
         problems.add("bad_target", "sheet", "a sheet's name, as Stock")
         return None
-    address = text if text.rstrip().endswith("!") else _quoted(text.strip()) + "!"
+    # A name is taken as given, its spaces too (a sheet may be called "Stock "); only an
+    # address's spaces around its quotes are not the name's.
+    address = text if text.rstrip().endswith("!") else _quoted(text) + "!"
     found = targets(workbook, address, problems, spans=("sheet",))
     return found[0] if found else None
 
 
 def _quoted(name: str) -> str:
-    if name.startswith("'") and name.endswith("'"):
-        return name
+    body = name.strip()
+    if len(body) >= 2 and body.startswith("'") and body.endswith("'"):
+        return body
     return "'" + name.replace("'", "''") + "'"
 
 
