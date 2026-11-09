@@ -100,7 +100,7 @@ from .read.regions import (Region, RegionError, Regions, Selection, UnclearRegio
                            filled)
 from .read.comments import Comment, read_comments
 from .read.stream import (Hyperlink, SheetBytes, SheetLayout, SheetReader, SheetScan, _area,
-                          layout, merges_only, read_area, scan, scanning)
+                          _Facts, layout, merges_only, read_area, scan, scanning)
 from .read.strings import SharedStrings
 from .read.styles import NumberFormat, Styles
 from .read.tables import TablePart, read_table
@@ -1956,7 +1956,12 @@ class Workbook:
             return node is not None and _true(node.get("content" if kind == "chartsheet"
                                                        else "sheet"))
         source = SheetBytes(self._part_bytes(part))
-        if not _parsed(part, lambda: _may_name(source, b"sheetProtection")):
+        # One streamed look at the part: what a pass will need of it is kept (by part, as a
+        # reader would keep it), so the first pass need not look again.
+        facts = self._plans.get(part)
+        if facts is None:
+            facts = self._plans[part] = _parsed(part, lambda: _Facts.of(source))
+        if not facts.protection:
             return False  # the element's name is spelt out in any 8-bit encoding
         attribute = "content" if kind == "chartsheet" else "sheet"
         return _parsed(part, lambda: _scan_protection(source.stream(), attribute))
@@ -2019,22 +2024,6 @@ def _guarded(part: str, run) -> Iterator:
 
 #: A part kept compressed whose data a read found damaged (it is checked as it is read).
 _UNREADABLE = "{part}'s compressed data is damaged"
-
-
-def _may_name(source: SheetBytes, name: bytes) -> bool:
-    """Whether a part may hold an element called ``name``: it is in UTF-16 (or has a NUL
-    in its first 64 bytes) or ``name`` stands in its bytes -- streamed, a piece at a time,
-    for a part kept compressed."""
-    head = tail = b""
-    for chunk in source.chunks():
-        if len(head) < 64:
-            head += chunk[:64 - len(head)]
-            if head[:2] in (b"\xff\xfe", b"\xfe\xff") or b"\x00" in head:
-                return True
-        if name in chunk or (tail and name in tail + chunk[:len(name) - 1]):
-            return True
-        tail = (tail + chunk)[-(len(name) - 1):]
-    return False
 
 
 def _scan_protection(data, attribute: str) -> bool:

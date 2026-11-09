@@ -239,6 +239,9 @@ class _Facts:
     end: int | None
     xmlns: bool
     merges: bool
+    #: Whether the part may hold ``sheetProtection``: UTF-16, a NUL in its first 64 bytes,
+    #: or the name in its bytes (spelt out so in any 8-bit encoding).
+    protection: bool
     #: The part's :class:`_Plan`, made of these.
     plan: "_Plan | None" = field(default=None, compare=False)
 
@@ -266,9 +269,11 @@ class _Facts:
                 end = found.start()
                 xmlns = data.find(b"xmlns", start.end(), end) >= 0
                 merges = data.find(b"mergeCell", start.end(), end) >= 0
+        protection = data[:2] in (b"\xff\xfe", b"\xfe\xff") or b"\x00" in data[:64] \
+            or _PROTECTION_NAME in data
         return cls(plain, data.startswith((b"\xfe\xff", b"\xff\xfe")),
                    declared.group(1) if declared is not None else None,
-                   header, prefix, end, xmlns, merges)
+                   header, prefix, end, xmlns, merges, protection)
 
     @classmethod
     def _of_stream(cls, chunks: Iterator[bytes]) -> "_Facts":
@@ -284,13 +289,22 @@ class _Facts:
         end: int | None = None
         closing: bytes | None = None    # what follows the second "sheetData", until ">"
         first = b""
+        head64 = b""
+        protection = False
         tail = b""
         offset = 0                      # where ``buffer`` starts in the part
         for chunk in chunks:
+            if len(head64) < 64:
+                head64 += chunk[:64 - len(head64)]
+                if head64[:2] in (b"\xff\xfe", b"\xfe\xff") or b"\x00" in head64:
+                    protection = True
             if len(first) < 4:
                 first = (first + chunk)[:4]
             buffer = tail + chunk if tail else chunk
             new = len(tail)
+            if not protection and buffer.find(_PROTECTION_NAME,
+                                              max(new - len(_PROTECTION_NAME) + 1, 0)) >= 0:
+                protection = True
 
             if not bang and buffer.find(b"<!", max(new - 1, 0)) >= 0:
                 bang = True
@@ -356,7 +370,7 @@ class _Facts:
         if header is None or end is None:
             xmlns = merges = True
         return cls(plain, first.startswith((b"\xfe\xff", b"\xff\xfe")), declared, header,
-                   prefix, end, xmlns, merges)
+                   prefix, end, xmlns, merges, protection)
 
 
 class SheetBytes:
@@ -387,9 +401,9 @@ class SheetBytes:
         stream.seek(offset)
         return stream
 
-    def chunks(self, offset: int = 0) -> Iterator[bytes]:
+    def chunks(self, offset: int = 0, tap: "_Tags | None" = None) -> Iterator[bytes]:
         """The bytes from ``offset`` on: a held part's at once, a streamed part's
-        :data:`_READ` at a time."""
+        :data:`_READ` at a time; each streamed piece shown to ``tap`` first."""
         if self.entry is None:
             if offset < len(self.data):
                 yield self.data[offset:] if offset else self.data
@@ -398,7 +412,11 @@ class SheetBytes:
             while True:
                 piece = reader.read(_READ)
                 if not piece:
+                    if tap is not None:
+                        tap.done = True
                     return
+                if tap is not None:
+                    tap.feed(piece)
                 yield piece
 
 
@@ -407,12 +425,12 @@ class _Window:
     whole (``base`` 0, never refilled); for a streamed one, the bytes from ``base`` on, read
     on by :meth:`cover` as the pass moves (those before the pass are let go)."""
 
-    def __init__(self, source: SheetBytes, offset: int) -> None:
+    def __init__(self, source: SheetBytes, offset: int, tap: "_Tags | None" = None) -> None:
         self._chunks: "Iterator[bytes] | None"
         if source.entry is None:
             self.data, self.base, self._chunks = source.data, 0, None
         else:
-            self.data, self.base, self._chunks = b"", offset, source.chunks(offset)
+            self.data, self.base, self._chunks = b"", offset, source.chunks(offset, tap)
 
     def cover(self, pos: int) -> None:
         """Hold the bytes from ``pos`` on: refilled to :data:`_FILL` of them (fewer at the
@@ -660,6 +678,21 @@ class RowIndex:
         wanted = {mark[0]: mark for mark in marks}
         checkpoints = []
         count = 0
+        tags = reader._tags
+        if tags is not None and tags.done and not tags.failed \
+                and all(n % CHECKPOINT_ROWS == 0 for n in wanted):
+            if tags.count != reader.row_elements:
+                return None
+            for k, at in enumerate(tags.every):
+                mark = wanted.get(k * CHECKPOINT_ROWS)
+                if mark is not None:
+                    checkpoints.append(Checkpoint(at, *mark[1:]))
+            if len(checkpoints) != len(marks):
+                return None
+            return cls(facts.header, checkpoints, list(reader.hidden_order),
+                       bool(reader._shared))
+        if tags is not None and tags.failed:
+            return None
         for at in _row_tags(source, len(facts.header)):
             if at < 0:
                 return None
@@ -701,6 +734,67 @@ def _row_tags(source: "SheetBytes", begin: int) -> Iterator[int]:
 
 #: A tag's ``<`` and as much of a name as a piece may end in.
 _NAME_SO_FAR = re.compile(rb"<[-\w.:]*")
+_PROTECTION_NAME = b"sheetProtection"
+
+
+class _Tags:
+    """The row start tags (:data:`_ROW_TAG`) a pass from the top meets in a streamed part,
+    counted as its pieces go by (:meth:`SheetBytes.chunks`'s ``tap``) from ``begin`` on --
+    what :func:`_row_tags` would find, without inflating the part again for
+    :meth:`RowIndex.build`: ``every``, where each :data:`CHECKPOINT_ROWS`-th stands, and
+    ``count``.  ``done`` once the last piece went by; ``failed`` as :func:`_row_tags`
+    stops (a name longer than :data:`_CONTEXT` cut by a piece's end)."""
+
+    def __init__(self, begin: int, offset: int) -> None:
+        self.begin = begin
+        self.offset = offset
+        self.carried = b""
+        self.count = 0
+        self.every: list[int] = []
+        self.done = self.failed = False
+
+    def feed(self, piece: bytes) -> None:
+        start = self.offset
+        self.offset += len(piece)
+        if self.failed or self.offset <= self.begin:
+            return
+        if start < self.begin:
+            piece, start = piece[self.begin - start:], self.begin
+        carried = self.carried
+        buffer = carried + piece if carried else piece
+        base = start - len(carried)
+        last = 0
+        every = self.every
+        for match in _ROW_TAG.finditer(buffer):
+            if self.count % CHECKPOINT_ROWS == 0:
+                every.append(base + match.start())
+            self.count += 1
+            last = match.end()
+        opened = buffer.rfind(b"<", last)
+        self.carried = buffer[opened:] if opened >= 0 \
+            and _NAME_SO_FAR.fullmatch(buffer, opened) else b""
+        if len(self.carried) > _CONTEXT:
+            self.failed = True
+
+
+class _Pieces:
+    """An iterator of byte pieces as a binary file, for the parser."""
+
+    def __init__(self, pieces: Iterator[bytes]) -> None:
+        self._pieces = pieces
+        self._piece = b""
+        self._at = 0
+
+    def read(self, size: int = -1) -> bytes:
+        if self._at >= len(self._piece):
+            self._piece, self._at = next(self._pieces, b""), 0
+            if not self._piece:
+                return b""
+        if size is None or size < 0:
+            size = len(self._piece)
+        out = self._piece[self._at:self._at + size]
+        self._at += len(out)
+        return out
 
 
 class _Resumed:
@@ -801,6 +895,8 @@ class SheetReader:
         #: ``None``.
         self.plans: "tuple[dict, str] | None" = None
         self._facts: "_Facts | None" = None
+        #: The row tags the last pass from the top counted (:class:`_Tags`), or ``None``.
+        self._tags: "_Tags | None" = None
         self._plan: Any = _MISSING
         #: The rows read from the bytes kept as templates (:meth:`_learn`), and a
         #: :class:`_StyleOnly` per style.
@@ -846,9 +942,22 @@ class SheetReader:
         its cells' bytes or ``None``)."""
         source = self.source
         plan = self.plan()
+        # A pass from the top that will index the part (scan's) counts the row tags of a
+        # streamed part as it goes, so the index need not inflate it again.
+        tap = None
+        self._tags = None
+        if start is None and self.marks is not None and source.entry is not None:
+            facts = self.facts()
+            if facts.plain and facts.header is not None:
+                tap = self._tags = _Tags(len(facts.header),
+                                         plan.begin if plan is not None else 0)
         if plan is None or (start is not None and len(start[0].header) != plan.begin):
-            stream = source.stream() if start is None else \
-                _Resumed(start[0].header, source, start[1].offset)
+            stream: Any
+            if tap is not None:
+                stream = _Pieces(source.chunks(0, tap))
+            else:
+                stream = source.stream() if start is None else \
+                    _Resumed(start[0].header, source, start[1].offset)
             for _, node in iterparse_xml(stream, tag=_STREAMED):
                 yield node, None, None
             return
@@ -859,7 +968,7 @@ class SheetReader:
         at, end = (plan.begin if start is None else start[1].offset), plan.end
         search, match, prefixes = plan.row.search, plan.following.match, plan.prefixes
         known = self._known
-        window = _Window(source, at)
+        window = _Window(source, at, tap)
         # Positions below are in ``data``, the window's bytes, which start at ``base`` in
         # the part: a part held whole is all there; a streamed one's window is refilled
         # as the pass moves on, holding what lies ahead (rows cut by its end are found

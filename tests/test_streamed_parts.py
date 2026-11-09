@@ -222,3 +222,22 @@ def test_the_row_index_of_a_streamed_sheet_is_the_held_one(monkeypatch, read):
     assert whole is not None and len(whole.checkpoints) > 10
     assert streamed is not None
     assert (streamed.header, streamed.checkpoints) == (whole.header, whole.checkpoints)
+
+
+def test_a_first_pass_inflates_the_sheet_once(monkeypatch):
+    """What a pass needs of the whole part was found at open (with the protection), and
+    the row index is counted on the way: a scan inflates the sheet once more, no more."""
+    data = _large(600)
+    wb = Workbook.open(data)
+    opened = []
+    original = ZipPart.open
+
+    def counted(self, offset=0):
+        opened.append((self.name, offset))
+        return original(self, offset)
+
+    monkeypatch.setattr(ZipPart, "open", counted)
+    found = wb.scan("Stock")
+    assert found.index is not None and len(found.index.checkpoints) > 10
+    assert [name for name, _ in opened] == [SHEET]
+    assert wb.used_range("Stock").ref == "A1:C600" and len(opened) == 1
