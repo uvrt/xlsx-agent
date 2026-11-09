@@ -126,15 +126,19 @@ def _reached(workbook: Any, text: str) -> Any:
     """The sheet the model names, among those it may see (withheld ones are not)."""
     from ..edit.sheets import find_sheet
 
+    from ..formula.sheets import pick_sheet
+
     shown = workbook.sheets
     stripped = text.strip()
     if stripped.startswith("#") and stripped[1:].isdigit():
         found = [s for s in shown if s.id == int(stripped[1:])]
     else:
-        body = stripped[:-1] if stripped.endswith("!") else stripped
-        if len(body) >= 2 and body.startswith("'") and body.endswith("'"):
-            body = body[1:-1].replace("''", "'")
-        found = [s for s in shown if s.name.casefold() == body.casefold()]
+        found = [shown[i] for i in pick_sheet([s.name for s in shown], text)]
+        if len(found) > 1:
+            raise ToolError("not_found", f"no sheet {text!r}; "
+                            + ", ".join(repr(s.name) for s in found)
+                            + " differ from it only in their outer spaces: name one as "
+                            "stored", field="sheet", valid_options=[s.name for s in found])
     if not found:
         raise ToolError("not_found", f"no sheet {text!r}", field="sheet",
                         valid_options=_shown(workbook))

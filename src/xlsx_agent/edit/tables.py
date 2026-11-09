@@ -630,7 +630,7 @@ def append_rows(workbook: Any, target: Any, rows: "Sequence[Any]") -> Appended:
     if isinstance(rows, (str, bytes)) or not isinstance(rows, Sequence) or not rows:
         raise EditError("bad_value", "rows is a list of rows, at least one",
                         addresses=[target.strip()[:80]])
-    table, sheet, region = _target(workbook, target.strip())
+    table, sheet, region = _target(workbook, target)
     if table is not None:
         return _append_table(workbook, table, rows)
     return _append_sheet(workbook, sheet, region, rows)
@@ -640,6 +640,8 @@ def _target(workbook: Any, text: str) -> "tuple[_TableFacts | None, Any, Area | 
     from ..address import NameNotFound
     from . import EditError
 
+    # A sheet's name is taken as given, its spaces too (a sheet may be called "Log ").
+    given, text = text, text.strip()
     tables = {t.name.casefold(): t for t in workbook._table_parts()}
     if text.startswith("t:"):
         found = tables.get(text[2:].strip().casefold())
@@ -665,7 +667,7 @@ def _target(workbook: Any, text: str) -> "tuple[_TableFacts | None, Any, Area | 
         return None, sheet, None if parsed.span == "sheet" else parsed.area
     table = tables.get(text.casefold())
     try:
-        sheet = workbook.sheet(text)
+        sheet = workbook.sheet(given)
     except (NameNotFound, KeyError):
         sheet = None
     if table is not None and sheet is not None:

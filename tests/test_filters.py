@@ -266,6 +266,20 @@ def test_another_range_replaces_the_sheet_s_filter():
     assert _names(wb) == [("_xlnm._FilterDatabase", "0", "1", "Stock!$A$1:$F$5")]
 
 
+def test_each_call_sets_every_column_s_criteria_so_columns_go_together():
+    """As set_autofilter's docstring says: a second call on the same range replaces the
+    first's criteria -- a column it leaves out is no longer filtered -- and one call
+    with both columns filters on both."""
+    wb = Workbook.open(filter_book.stock_book())
+    wb.set_autofilter("Stock", "A1:F8", {"Item": ["Lamp", "Desk"]})
+    first = _filter(wb)
+    wb.set_autofilter("Stock", "A1:F8", {"Shelf": ["A"]})
+    assert len(_filter(wb)) == 2 and _filter(wb)[1][0] != first[1][0]
+    both = Workbook.open(filter_book.stock_book())
+    both.set_autofilter("Stock", "A1:F8", {"Item": ["Lamp", "Desk"], "Shelf": ["A"]})
+    assert len(_filter(both)) == 3
+
+
 def test_a_result_s_lists_are_capped_and_counted():
     change = FilterChange("set_autofilter", "Stock", "Stock!A1:A200",
                           hidden=tuple(str(n) for n in range(2, 200, 2)))
