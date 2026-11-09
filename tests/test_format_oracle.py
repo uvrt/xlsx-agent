@@ -148,3 +148,39 @@ def test_excel_opens_named_styles_applied_and_keeps_them(excel):
         cell = [c for c in saved["xl/worksheets/sheet1.xml"].iter(X + "c") if c.get("r") == ref][0]
         xf = styles.find(X + "cellXfs")[int(cell.get("s"))]
         assert names[xf.get("xfId")] == name, ref
+
+
+@pytest.mark.oracle
+def test_excel_opens_a_new_workbook_fitted_in_aptos_narrow_with_dates_given_the_short_date(excel):
+    """Round 44, lane N: a new workbook (Aptos Narrow 12, Excel's own body face) whose
+    columns are fitted in Aptos Narrow at three sizes, regular and bold, and dates written
+    into new cells and a percentage cell (given the short date, as Excel gives a typed
+    date), opens without a repair; Excel keeps the widths and the short date."""
+    import datetime as dt
+
+    wb = Workbook.new(["Stock"])
+    wb.write_table("Stock", "A1", ["Item", "Received", "Rate"],
+                   [["Desk lamp with a long name", None, 0.07], ["Fan", None, 0.2]])
+    wb.format("Stock!C2:C3", number_format=10)
+    wb.format("Stock!A1:C1", font={"bold": True})
+    wb.format("Stock!A3", font={"size": 20})
+    written_dates = wb.set_cells({"Stock!B2": dt.date(2026, 1, 5), "Stock!B3": dt.date(2026, 2, 6),
+                                  "Stock!D2": dt.date(2026, 3, 7), "Stock!C3": dt.date(2026, 4, 8)})
+    assert written_dates.short_date == ("Stock!B2", "Stock!B3", "Stock!D2", "Stock!C3")
+    fitted = wb.set_column_widths("Stock!A:D", "fit")
+    assert fitted.widths
+    data = wb.to_bytes()
+    outcome = excel.resave(data, name="new-narrow-fit")
+    assert outcome.ok, outcome
+    ours, saved = _parts(data), _parts(outcome.saved.read_bytes())
+
+    def widths(parts):
+        cols = parts["xl/worksheets/sheet1.xml"].find(X + "cols")
+        return {(c.get("min"), c.get("max")): c.get("width") for c in cols}
+
+    assert widths(saved) == widths(ours)
+    for ref in ("B2", "B3", "D2", "C3"):
+        assert Workbook.open(outcome.saved.read_bytes()).cell(f"Stock!{ref}").t == "date", ref
+        assert Workbook.open(outcome.saved.read_bytes()).styles.format_id(
+            Workbook.open(outcome.saved.read_bytes()).editor.cells.sheet("Stock")
+            .style(Cell.parse(ref))) == 14, ref

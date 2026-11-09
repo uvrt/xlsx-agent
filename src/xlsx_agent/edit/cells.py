@@ -31,14 +31,19 @@ a two-digit year, a locale without a date order, a time in the string, or a day 
 calendar has is refused.  A ``datetime`` with a time zone is refused (a cell has none: a
 time zone is never dropped silently); a naive one is taken as its date when its time is
 midnight, and refused otherwise: times and durations come later.  A ``time`` and a
-``timedelta`` are refused.  The cell must show a date: its number format (its own, or for a
-new cell the one its row or column gives it) is one whose code shows a day
-(xlsx-agent's reading, :mod:`xlsx_agent.read.styles`: its code read by
-:func:`ooxml_common.numfmt.classify`, or a language-dependent built-in id read in the
-workbook's locale);
-a format that shows only a time, or none that shows a day, is refused naming the cell,
-unless the call gives one: ``{"date": "2026-10-20", "format": "yyyy-mm-dd"}`` (a code that
-shows a day), which the cell is given, reusing an identical format.
+``timedelta`` are refused.  The cell's number format (its own, or for a new cell the one its
+row or column gives it) decides, as it does for a date typed in Excel (measured, Excel for
+Mac 16.106, 2026-11-09): one whose code shows a day keeps it (xlsx-agent's reading,
+:mod:`xlsx_agent.read.styles`: its code read by :func:`ooxml_common.numfmt.classify`, or a
+language-dependent built-in id read in the workbook's locale); General -- a new cell's --
+and the built-in formats Excel replaces (currency, accounting, percentage, scientific,
+fraction and time: :data:`TAKES_SHORT_DATE`) give the cell the built-in short date
+(``numFmtId`` 14), the rest of its format kept, listed in the result (``short_date``);
+any other -- a number format such as ``0.00`` or ``#,##0``, text (``@``), a custom code
+that shows no day -- is refused naming the cell, since the cell would show the date's
+serial number (or only a time), unless the call gives a format:
+``{"date": "2026-10-20", "format": "yyyy-mm-dd"}`` (a code that shows a day), which the
+cell is given, reusing an identical format.
 
 **Markdown** (``{"markdown": "**Total** due *now*"}``, :mod:`xlsx_agent.markdown`): the
 cell's text as runs -- ``**bold**``, ``*italic*``, ``***both***``, ``~~struck~~``,
@@ -131,6 +136,18 @@ MAX_EXACT = 2 ** 53
 
 #: The most refusals one error lists.
 MAX_LISTED = 50
+#: The built-in short date (ECMA-376 Part 1 §18.8.30, id 14): what Excel gives a date typed
+#: into a cell of the General format (measured, see the module).
+SHORT_DATE = 14
+#: The built-in number formats Excel replaces with the short date when a date is typed into
+#: a cell of one (measured, Excel for Mac 16.106, 2026-11-09, "2026-01-05" and "1/5/2026"
+#: typed): General (0), the currency and accounting ones (5 to 8, 44), percentages (9, 10),
+#: scientific (11, 48), fractions (12, 13) and times (18 to 21, 45 to 47).  It keeps the
+#: number ones (1 to 4, 37 to 40), dates (14 to 17, 22), text (49) and every custom code
+#: (``0.0``, ``0.0%``, ``h:mm:ss``: the serial or a time shown) but one that reads
+#: ``General``.
+TAKES_SHORT_DATE = frozenset({0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 18, 19, 20, 21, 44, 45, 46,
+                              47, 48})
 
 _ISO_DAY = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
 _LOCAL_DAY = re.compile(r"([0-9]{1,4})([/.-])([0-9]{1,2})\2([0-9]{1,4})")
@@ -148,8 +165,9 @@ class Planned:
     old: str
     #: The format the cell is given: an index, or ``None`` to keep its own.
     style: int | None = None
-    #: A date's format code to give the cell (resolved inside the step).
-    format: str | None = None
+    #: A date's format to give the cell (resolved inside the step): a code, or the
+    #: built-in short date's id (:data:`SHORT_DATE`) for a cell of the General format.
+    format: str | int | None = None
     #: The cell is the master of a shared formula group, handed on before it is written.
     release: bool = False
     #: Text with a line break: the cell is given a format that wraps it.
@@ -169,8 +187,9 @@ class Written:
     started in a table's capacity (``new_rows``), the cells whose value their data
     validation does not allow (``invalid``) and those under a rule that cannot be checked
     without evaluating it (``unchecked``; :func:`xlsx_agent.validations.check`: warnings,
-    never refusals), and the workbook's calculation status after (``invalidated`` once
-    anything was written).  Never a value."""
+    never refusals), the cells a date gave the short date (``short_date``), and the
+    workbook's calculation status after (``invalidated`` once anything was written).
+    Never a value."""
 
     cells: tuple[str, ...]
     changed: int
@@ -185,6 +204,9 @@ class Written:
     #: reads as an escape, written ``_xHHHH_`` as Excel writes them (R63b): read back as
     #: given, by xlsx-agent and by Excel.
     escaped: tuple[str, ...] = ()
+    #: The cells a date was written into whose format Excel replaces with the short date
+    #: (``numFmtId`` 14) for a typed date (General, a new cell's), given it.
+    short_date: tuple[str, ...] = ()
 
     def as_dict(self, limit: int = MAX_LISTED) -> dict[str, Any]:
         """As plain data, at most ``limit`` cells listed (the rest counted)."""
@@ -199,7 +221,7 @@ class Written:
             out["fixed_height"] = list(self.fixed_height[:limit])
         if self.new_rows:
             out["new_rows"] = list(self.new_rows[:limit])
-        for name in ("invalid", "unchecked", "escaped"):
+        for name in ("invalid", "unchecked", "escaped", "short_date"):
             found = getattr(self, name)
             if found:
                 out[name] = list(found[:limit])
@@ -277,7 +299,8 @@ def set_cells(workbook: Any, cells: Any, *, replace_formulas: bool = False,
     return Written(cells=tuple(w.address for w in planned), changed=changed,
                    old={w.address: w.old for w in planned}, released=tuple(released),
                    calculation=workbook.calculation_status, fixed_height=fixed,
-                   new_rows=rows, invalid=invalid, unchecked=unchecked, escaped=escaped)
+                   new_rows=rows, invalid=invalid, unchecked=unchecked, escaped=escaped,
+                   short_date=tuple(w.address for w in planned if w.format == SHORT_DATE))
 
 
 def stored(value: Any) -> Any:
@@ -861,6 +884,9 @@ def _dated(workbook: Any, facts: _SheetFacts, label: str, sheet: Any, cell: Cell
             return None
         return Planned(label, sheet, cell, day, "date", old, format=date_format)
     shows = _shows_day(workbook, style)
+    if shows is None:
+        # General: a typed date gets the short date, and keeps the rest of the format.
+        return Planned(label, sheet, cell, day, "date", old, format=SHORT_DATE)
     if shows is not True:
         refusals.add("date_format", label, shows)
         return None
@@ -871,22 +897,26 @@ def _dated(workbook: Any, facts: _SheetFacts, label: str, sheet: Any, cell: Cell
 _GIVE = '{"date": ..., "format": "yyyy-mm-dd"}'
 
 
-def _shows_day(workbook: Any, style: int) -> "Literal[True] | str":
-
-    """``True`` when cell format ``style`` shows a day; else what to do (the refusal's
-    detail)."""
+def _shows_day(workbook: Any, style: int) -> "Literal[True] | str | None":
+    """``True`` when cell format ``style`` shows a day; ``None`` when its number format is
+    one Excel replaces with the short date for a typed date (:data:`TAKES_SHORT_DATE`,
+    General); else why not and what to do (the refusal's detail)."""
     styles = workbook.editor.cells.styles
     if styles is None:
         return f"the workbook has no cell formats; give one: {_GIVE}"
     found = workbook.styles.format(style)
     if found.kind in ("date", "datetime"):
         return True
+    if style < styles.count and (found.id in TAKES_SHORT_DATE or found.kind == "general"):
+        return None
     if found.kind == "time":
         return f"it shows only a time; give a date format: {_GIVE}"
     if found.builtin and styles.is_date(style) is None:
         # A built-in id whose code depends on the application's language.
         return f"it is not known to show one in the workbook's language; give one: {_GIVE}"
-    return f"give one: {_GIVE}"
+    shown = f" ({found.code})" if found.code else ""
+    return (f"its number format{shown} would show the date as a serial number; give a "
+            f"date format: {_GIVE}")
 
 
 def _format_problem(code: Any) -> str | None:

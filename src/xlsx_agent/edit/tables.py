@@ -96,7 +96,7 @@ from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell, Formula
 
 from ..address import AddressError, RangeAddress, format_range, format_sheet, parse_address
 from ..read.strings import encode_xstring
-from .cells import MAX_LISTED, Written
+from .cells import MAX_LISTED, SHORT_DATE, Written
 from .content import with_content
 
 NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -112,9 +112,6 @@ MAX_TABLE_NAME = 255
 #: The table style a workbook without ``tableStyles defaultTableStyle`` gives a table: a
 #: new workbook's (measured).
 FALLBACK_TABLE_STYLE = "TableStyleMedium2"
-#: The built-in short date (ECMA-376 Part 1 §18.8.30, id 14), what Excel gives a date typed
-#: into a cell that shows none (measured, see the module).
-SHORT_DATE = 14
 
 _NAME_START = re.compile(r"[^\W\d]|[_\\]")
 _NAME_REST = re.compile(r"[\w\\.?\u0080-\U0010ffff]*")

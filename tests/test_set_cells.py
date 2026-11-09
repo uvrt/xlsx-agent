@@ -19,7 +19,7 @@ import pytest
 from lxml import etree
 
 from ooxml_common.locales import Locale
-from ooxml_edit.sheets import outside_footprint
+from ooxml_edit.sheets import Cell, outside_footprint
 from ooxml_edit.tools import Toolbox
 
 from xlsx_agent import Workbook
@@ -140,11 +140,74 @@ def test_a_date_before_the_date_system_is_refused():
     assert _refused(wb, {"Stock!H10": dt.date(1903, 12, 31)}).code == "bad_date"
 
 
-def test_a_date_into_a_cell_that_shows_no_date_is_refused_unless_a_format_is_given():
+def test_a_date_into_a_general_cell_gets_the_short_date_as_a_typed_one_does():
+    """Excel gives a date typed into a new cell or one of the General format the built-in
+    short date (numFmtId 14), keeping the rest of the cell's format (measured)."""
+    _, wb = _open()
+    written = wb.set_cells({"Stock!D10": {"date": "2026-10-20"}, "Stock!H16": dt.date(2026, 1, 1),
+                            "Stock!H10": dt.date(2026, 1, 2)})
+    assert written.short_date == ("Stock!D10", "Stock!H16")       # H10 shows dates already
+    assert written.as_dict()["short_date"] == ["Stock!D10", "Stock!H16"]
+    for ref, day in (("Stock!D10", "2026-10-20"), ("Stock!H16", "2026-01-01")):
+        assert wb.cell(ref).v == day and wb.cell(ref).t == "date"
+    data = wb.to_bytes()
+    xfs = etree.fromstring(_parts(data)["xl/styles.xml"]).find(X + "cellXfs")
+    d10 = xfs[int(_cell(data, "D10").get("s"))]
+    # D10's own format (General, unlocked) with the short date: the protection stays
+    assert d10.get("numFmtId") == "14" and d10.get("applyNumberFormat") == "1"
+    assert d10.find(X + "protection").get("locked") == "0"
+    assert xfs[int(_cell(data, "H16").get("s"))].get("numFmtId") == "14"
+    # Written again, the cell shows a date: nothing to give it, nothing changed.
+    again = wb.set_cells({"Stock!D10": {"date": "2026-10-20"}})
+    assert again.changed == 0 and again.short_date == ()
+
+
+#: A date typed into a cell of each number format, as Excel for Mac 16.106 took it
+#: (2026-11-09): the short date given, the format kept (a date shown), or the format kept
+#: showing the serial or a time (refused here).
+TYPED_INTO = [
+    *((("id", i), "short") for i in (0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 18, 19, 20, 21, 44, 45,
+                                      46, 47, 48)),
+    (("code", "General"), "short"),
+    *((("id", i), "kept") for i in (14, 16, 22)), (("code", "yyyy\\-mm\\-dd"), "kept"),
+    *((("id", i), "refused") for i in (1, 2, 3, 4, 37, 38, 39, 40, 49)),
+    *((("code", c), "refused") for c in ("0.0", "0.0%", "0.000E+00", "h:mm:ss", "[h]:mm",
+                                          '"EUR "#,##0.00', "#,##0.00;[Red]-#,##0.00")),
+]
+
+
+def test_a_date_takes_the_short_date_where_excel_gives_a_typed_one_it():
+    from build import WorkbookBuilder
+
+    book = WorkbookBuilder()
+    sheet = book.sheet("Log")
+    for row, ((kind, fmt), _) in enumerate(TYPED_INTO, 1):
+        style = book.style(num_fmt_id=fmt) if kind == "id" else book.style(num_fmt=fmt)
+        sheet.cell(f"A{row}", 7, style=style)
+    for row, ((kind, fmt), outcome) in enumerate(TYPED_INTO, 1):
+        wb = Workbook.open(book.to_bytes())
+        before = wb.editor.cells.sheet("Log").style(Cell(row, 1))
+        if outcome == "refused":
+            error = _refused(wb, {f"Log!A{row}": dt.date(2026, 1, 5)})
+            assert error.code == "date_format", fmt
+            continue
+        written = wb.set_cells({f"Log!A{row}": dt.date(2026, 1, 5)})
+        assert wb.cell(f"Log!A{row}").serial == 46027, fmt
+        after = wb.editor.cells.sheet("Log").style(Cell(row, 1))
+        if outcome == "short":
+            assert written.short_date == (f"Log!A{row}",), fmt
+            assert wb.styles.format_id(after) == 14, fmt
+        else:
+            assert written.short_date == () and after == before, fmt
+
+
+def test_a_date_into_a_cell_whose_format_shows_no_date_is_refused_unless_a_format_is_given():
     data, wb = _open()
-    error = _refused(wb, {"Stock!D10": {"date": "2026-10-20"}, "Stock!H16": dt.date(2026, 1, 1)})
-    assert error.code == "date_format" and error.addresses == ("Stock!D10", "Stock!H16")
+    error = _refused(wb, {"Stock!E10": {"date": "2026-10-20"}, "Stock!E11": dt.date(2026, 1, 1)})
+    assert error.code == "date_format" and error.addresses == ("Stock!E10", "Stock!E11")
     assert '"format": "yyyy-mm-dd"' in str(error)
+    assert "would show the date as a serial number" in str(error) and "#,##0.00" in str(error)
+    assert wb.to_bytes() == data
     wb.set_cells({"Stock!H16": {"date": "2026-01-02", "format": "yyyy\\-mm\\-dd"}})
     assert wb.cell("Stock!H16").v == "2026-01-02" and wb.cell("Stock!H16").t == "date"
     # the workbook's own format with that code (id 164) is reused: one new cell format
@@ -318,11 +381,11 @@ def test_addresses_are_checked():
 def test_a_mixed_call_refuses_every_bad_cell_and_writes_none():
     original, wb = _open()
     error = _refused(wb, {"Stock!B10": "Spare fan", "Stock!D11": float("nan"),
-                          "Stock!A12": "x", "Stock!D13": {"date": "2026-01-01"},
+                          "Stock!A12": "x", "Stock!E13": {"date": "2026-01-01"},
                           "Stock!B1": "merged"})
     assert error.code == "bad_number"
     assert error.problems == (("bad_number", "Stock!D11"), ("formula_cell", "Stock!A12"),
-                              ("date_format", "Stock!D13"), ("merged_cell", "Stock!B1"))
+                              ("date_format", "Stock!E13"), ("merged_cell", "Stock!B1"))
     assert "3 other refusal(s)" in str(error)
     assert wb.to_bytes() == original and not wb.history.can_undo()
     assert wb.calculation_status == "cached_unverified"
@@ -505,11 +568,11 @@ def test_xlsx_set_cells_refuses_with_every_problem_and_changes_nothing(box):
     result = box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "cells": [
         {"address": "Stock!B10", "text": "ok"},
         {"address": "Stock!A10", "text": "over a formula"},
-        {"address": "Stock!D12", "date": "2026-10-20"}]})
+        {"address": "Stock!E12", "date": "2026-10-20"}]})
     assert result.error.code == "refused"
     assert result.error.details["code"] == "formula_cell"
     assert result.error.details["problems"] == [{"code": "formula_cell", "a": "Stock!A10"},
-                                                {"code": "date_format", "a": "Stock!D12"}]
+                                                {"code": "date_format", "a": "Stock!E12"}]
     assert "over a formula" not in json.dumps(result.to_json())
     assert session.entry("d1").version == 0
     for cell, field in [({"address": "Stock!B10"}, "cells[0]"),

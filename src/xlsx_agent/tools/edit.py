@@ -9,8 +9,10 @@ each item of ``cells`` is an ``address`` (``Stock!D10``, ``#1!D10``) and exactly
 * ``number``;
 * ``bool``;
 * ``date`` -- ``YYYY-MM-DD`` (or the session locale's date order with a four-digit
-  year), into a cell whose number format shows a date, or with ``format`` (a date format
-  code, ``yyyy-mm-dd``) that the cell is given;
+  year), into a cell whose number format shows a date; a General cell (a new one) and one
+  of a format Excel replaces for a typed date (percentage, currency, time...) gets the
+  short date as in Excel, listed in ``short_date``; a cell of a number format (``0.00``)
+  needs ``format`` (a date format code, ``yyyy-mm-dd``), which the cell is given;
 * ``formula`` -- ``=D10*2``: the only way to write one, with no cached value (it reads
   ``cache: absent`` until Excel calculates it);
 * ``blank: true`` -- the value goes, the cell's format stays; never a 0;
@@ -21,7 +23,7 @@ each item of ``cells`` is an ``address`` (``Stock!D10``, ``#1!D10``) and exactly
 The model's types are separate fields because a type union is outside the definitions'
 common subset: a value is never inferred from its spelling.  ``replace_formulas: true``
 writes over cells that hold a formula; without it such a cell refuses the call.  So does
-any value refused (text over 32,767 characters, a date into a cell that shows no date, a
+any value refused (text over 32,767 characters, a date into a cell of a number format, a
 time zone...), a cell of an array formula or a merged area other than its first, a
 table's header cell, a cell named twice, and a cell of a column the application withholds
 from the model (:mod:`xlsx_agent.declare`): every refusal before anything changes, the
@@ -91,7 +93,8 @@ GROUP = "xlsx_edit"
 
 @tool("xlsx_set_cells",
       "Write cells, typed: each item an address and exactly one of text (always literal, "
-      "=x too), number, bool, date (YYYY-MM-DD; the cell must show dates, or give format), "
+      "=x too), number, bool, date (YYYY-MM-DD; a General cell gets a short date, a number "
+      "format needs format), "
       "formula (=D10*2), blank or markdown. One step; any refusal changes nothing. "
       "Afterwards every formula value reads cache invalidated: Excel recalculates on open. "
       "describe's writable is all you may write.",

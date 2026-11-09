@@ -226,10 +226,12 @@ def find_sheet(workbook: Any, which: Any) -> Any:
                      options=[s.stored_name for s in every])
 
 
-def name_problems(workbook: Any, name: Any, *, keep: Any = None) -> list[str]:
+def name_problems(workbook: Any, name: Any, *, keep: Any = None,
+                  taken: Sequence[str] = ()) -> list[str]:
     """Why ``name`` cannot name a sheet of ``workbook`` (see the module), each as a short
     reason; empty when it can.  ``keep``: the sheet being renamed, whose own name is no
-    clash."""
+    clash.  ``workbook`` ``None``: a workbook not made yet (:meth:`Workbook.new
+    <xlsx_agent.Workbook.new>`), whose sheets are ``taken``."""
     if not isinstance(name, str):
         return ["a sheet's name is text"]
     problems = []
@@ -247,7 +249,14 @@ def name_problems(workbook: Any, name: Any, *, keep: Any = None) -> list[str]:
     if _ESCAPE_LIKE.search(name):
         problems.append("text that reads as an _xHHHH_ escape (as _x0041_) is not written "
                         "in a sheet's name")
-    if not problems:
+    if not problems and workbook is None:
+        key = refs.fold_name(name)
+        for other in taken:
+            if refs.fold_name(other) == key:
+                problems.append(f"the workbook has a sheet {other!r} already, which Excel "
+                                "takes for the same name")
+                break
+    elif not problems:
         key = refs.fold_name(name)
         for sheet in workbook._every_sheet:
             if keep is not None and sheet.part == keep.part and sheet.id == keep.id:
