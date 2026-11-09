@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import base64
 import io
-import math
 import zipfile
 
 import pytest
@@ -23,7 +22,7 @@ from ooxml_common.locales import Locale
 from build import WorkbookBuilder
 from xlsx_agent import Workbook
 from xlsx_agent.edit import EditError
-from xlsx_agent.edit.layout import (Face, digit_width, fitted_width, password_hash,
+from xlsx_agent.edit.layout import (Face, digit_width, fit_padding, fitted_width, password_hash,
                                     stored_width, text_pixels)
 
 X = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
@@ -442,13 +441,14 @@ def test_fitted_widths_are_excel_s_autofit_on_the_probe_s_columns(default):
 
 
 #: Excel's AutoFit of four texts in other fonts in a Calibri 11 workbook (measured), for
-#: the cell formats 1-9 of styles_xml (Aptos Narrow, format 6, is refused instead).
+#: the cell formats 1-9 of styles_xml.
 FONT_TEXTS = ["Stock level by warehouse", "0000000000", "WWWWWWWWWW", "iiiiiiiiii"]
 FONT_MEASURED = {1: [20.6640625, 11.1640625, 18, 6.1640625],
                  2: [24.83203125, 12.83203125, 21.5, 6.1640625],
                  3: [21, 11.1640625, 16.33203125, 4.5],
                  4: [21.6640625, 11.1640625, 19.6640625, 6.1640625],
                  5: [25.5, 11.1640625, 11.1640625, 11.1640625],
+                 6: [19.83203125, 11.1640625, 16.33203125, 4.5],
                  7: [21.5, 11.1640625, 18, 6.1640625],
                  8: [21, 11.1640625, 18, 6.1640625],
                  9: [30.83203125, 14.5, 23.1640625, 7.83203125]}
@@ -460,26 +460,80 @@ def test_fitted_widths_in_other_fonts_and_sizes():
         for text in FONT_TEXTS:
             name, size, *bold = FONTS[style - 1]
             face = Face(name, size, bool(bold and bold[0]))
-            got.append(fitted_width(text_pixels(face, text, 6), 6))
+            got.append(fitted_width(text_pixels(face, text, 6), 6, fit_padding(face)))
         assert got == measured, FONTS[style - 1]
-    # the stated error: 8 and 20 point Calibri, 2 px off (0.33 of a character at 6 px)
-    for size, measured, sign in ((8, [14.83203125, 7.5, 12.5, 4.1640625], -1),
-                                 (20, [37.33203125, 18.33203125, 32.1640625, 9.83203125], 1)):
-        for text, width in zip(FONT_TEXTS, measured):
-            model = fitted_width(text_pixels(Face("Calibri", size), text, 6), 6)
-            assert math.isclose(width - model, sign * 2 / 6, abs_tol=0.01)
+    # 8 and 20 point Calibri: the padding is the cell font's, 5 and 9 px (measured)
+    for size, measured in ((8, [14.83203125, 7.5, 12.5, 4.1640625]),
+                           (20, [37.33203125, 18.33203125, 32.1640625, 9.83203125])):
+        face = Face("Calibri", size)
+        assert [fitted_width(text_pixels(face, text, 6), 6, fit_padding(face))
+                for text in FONT_TEXTS] == measured
+
+
+#: Excel's AutoFit padding by the cell font's size (measured 2026-11-09 in Calibri 11 and
+#: Aptos 11 workbooks, eight texts a size, every one exact with it).
+PADDING_MEASURED = {"Calibri": {6: 5, 7: 5, 8: 5, 9: 7, 10: 7, 11: 7, 12: 7, 14: 7, 16: 7,
+                                18: 9, 20: 9, 24: 9, 28: 11, 36: 13},
+                    "Aptos": {6: 5, 7: 5, 8: 5, 9: 7, 10: 7, 11: 7, 12: 7, 14: 7, 16: 9,
+                              18: 9, 20: 9, 24: 11, 28: 11, 36: 13},
+                    "Aptos Narrow": {8: 5, 9: 7, 10: 7, 11: 7, 12: 7, 14: 7, 16: 7, 18: 9,
+                                     20: 9, 24: 9}}
+
+
+def test_the_fit_padding_grows_with_the_cell_font_as_excel_s():
+    for name, sizes in PADDING_MEASURED.items():
+        for size, padding in sizes.items():
+            assert fit_padding(Face(name, size)) == padding, (name, size)
+            assert fit_padding(Face(name, size, True)) == padding, (name, size)
+
+
+#: Excel's AutoFit in Aptos Narrow, Excel's default body face, in an Aptos Narrow 11
+#: workbook (measured 2026-11-09), regular and bold.
+NARROW_TEXTS = ["0", "a", "Stock", "WWWWW", "iiiiiiiiii", "0000000000",
+                "Stock level by warehouse", "x" * 40]
+NARROW_MEASURED = {
+    (8, False): [1.5, 1.5, 3.83203125, 6.6640625, 4.1640625, 7.5, 13.83203125, 21.1640625],
+    (11, False): [2.1640625, 2, 5.33203125, 8.6640625, 4.5, 11.1640625, 19.83203125,
+                  28.33203125],
+    (24, False): [3.5, 3.5, 10.5, 18.33203125, 9.83203125, 21.83203125, 42.5, 70],
+    (11, True): [2.1640625, 2, 5.5, 8.6640625, 6.1640625, 11.1640625, 20.83203125,
+                 35.1640625],
+}
+
+
+def test_fitted_widths_in_aptos_narrow():
+    for (size, bold), measured in NARROW_MEASURED.items():
+        face = Face("Aptos Narrow", size, bold)
+        got = [fitted_width(text_pixels(face, text, 6), 6, fit_padding(face))
+               for text in NARROW_TEXTS]
+        assert got == measured, (size, bold)
+
+
+def test_a_default_font_without_measured_widths_refuses_a_width_rather_than_fail():
+    """The column width unit is the default font's widest digit: unknown for a face with
+    no widths at all (refused, naming the fonts that have them); a face measured with a
+    clone's (Calibri Light) gives its digit, while its text is not fitted."""
+    wb = Workbook.open(stock_book(("Rockwell", 11)).to_bytes())
+    for width in (12, "fit"):
+        with pytest.raises(EditError) as error:
+            wb.set_column_widths("Stock!A:A", width)
+        assert error.value.code == "unmeasured_font" and "Rockwell" in str(error.value)
+    wb = Workbook.open(stock_book(("Calibri Light", 11)).to_bytes())
+    assert wb.set_column_widths("Stock!A:A", 12).widths == {"Stock!A": 12.83203125}
 
 
 def test_a_fit_refuses_a_font_without_measured_widths_and_lists_what_it_skips():
     """Rule 2: the refusal names the font, the fonts measured and the way out."""
     book = stock_book()
     sheet = book.sheets[0]
-    sheet.cell("F1", "Narrow text", style=6)        # Aptos Narrow
+    sheet.cell("F1", "Light text")
     sheet.cell("G1", "Wrapped", style=PRE)
     wb = Workbook.open(book.to_bytes())
+    wb.format("Stock!F1", font={"name": "Calibri Light"})    # measured as Carlito: 1.3% off
     with pytest.raises(EditError) as error:
         wb.set_column_widths("Stock!F:F", "fit")
-    assert error.value.code == "unmeasured_font" and "Aptos Narrow" in str(error.value)
+    assert error.value.code == "unmeasured_font" and "Calibri Light" in str(error.value)
+    assert "Aptos Narrow" in str(error.value)          # among the fonts measured
     assert "Calibri" in str(error.value) and "width instead" in str(error.value)
     wb.format("Stock!G1", alignment={"wrap": True})
     done = wb.set_column_widths("Stock!G:G", "fit")

@@ -682,7 +682,7 @@ written = wb.set_cells({
     "Stock!D15": 12,                             # a number (finite; whole ones exact)
     "Stock!G15": True,                           # a boolean
     "Stock!H10": {"date": "2026-10-20"},         # a date (or a Python date), 1900 or 1904
-    "Stock!H15": {"date": "2026-10-21", "format": "yyyy-mm-dd"},   # a cell without one
+    "Stock!H15": {"date": "2026-10-21", "format": "yyyy-mm-dd"},   # a format of its own
     "Stock!B4": None,                            # a blank: the value goes, the format stays
     "Stock!J15": {"formula": "=D15*2"},          # a formula only when given as one
 })
@@ -698,11 +698,16 @@ wb.set_cells({"Stock!F10": 50}, replace_formulas=True)   # over a formula: only 
   past 2^53, empty text (write `None`), a date before the date system's first day, a date
   string that is not ISO 8601 or the locale's order with a four-digit year
   (`wb.locale`: `3/4/2026` is 3 April under nl-BE, 4 March under en-US), a time zone or a
-  time of day (times come later), a date into a cell whose format shows no day without
-  `"format"`, a formula over a formula cell without `replace_formulas`, a cell of an
+  time of day (times come later), a date into a cell of a number format (`0.00`, `#,##0`,
+  text, a custom code that shows no day: it would show the serial) without `"format"`,
+  a formula over a formula cell without `replace_formulas`, a cell of an
   array formula or a data table, a merged area's cell other than its first, a table's
   header cell, a cell named twice, a shared group's master whose formula the lexer cannot
   move safely. A new cell takes its row's or column's format, as one typed there does.
+- **A date into a General cell** -- a new one, or one of a format Excel replaces for a typed
+  date (currency, accounting, percentage, scientific, fraction, time) -- gets Excel's short
+  date (`numFmtId` 14), the rest of its format kept, and is listed in `short_date`
+  (measured: a date typed into each built-in format and several custom ones).
 - **Shared formulas.** Writing the master of a shared group hands the group to its next
   member the call does not write, its formula moved by `xlsx_agent.formula.shift`
   (`shift("D10*E10", 1, 0) == "D11*E11"`; `$` parts, names, structured references and
@@ -980,6 +985,7 @@ Only what is asked changes (bold keeps the fill and the number format), and equa
 fills, borders, number formats and cell formats are reused, never added per cell. A fit
 measures each cell's shown text in its own font with ooxml-common's advance widths (exact
 against Excel's AutoFit for Calibri, Arial, Times New Roman, Courier New, Cambria and
-Aptos at 10-16 points); a cell in a font without measured widths (Aptos Narrow) refuses
-it, and the cells not measured (merged, wrapped, dates) are listed in `skipped`. The
+Aptos at 10-16 points, Calibri and Aptos at 6-36, Aptos Narrow -- Excel's default body
+face -- at 8-24, the padding growing with the cell font as Excel's); a cell in a font
+without its own measured widths (Calibri Light, Rockwell) refuses it, and the cells not measured (merged, wrapped, dates) are listed in `skipped`. The
 agent tool is `xlsx_format`, in the deferred `xlsx_format` group.

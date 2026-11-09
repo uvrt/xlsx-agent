@@ -13,8 +13,8 @@ from typing import Any
 
 from ..address import format_cell
 from .format import Problems, Target
-from .layout import (MEASURED_FONTS, Face, digit_width, face_of, fitted_width, measurable,
-                     text_pixels)
+from .layout import (MEASURED_FONTS, Face, digit_width, face_of, fit_padding, fitted_width,
+                     measurable, text_pixels)
 
 #: The most cells one fit reads.
 MAX_FIT_CELLS = 2_000_000
@@ -105,7 +105,8 @@ def fit_columns(workbook: Any, found: list[Target], digit: int,
                 skip("not_measured")
                 continue
             key = (item.sheet.part, cell.column)
-            widths[key] = max(widths.get(key, 0.0), fitted_width(pixels, digit))
+            widths[key] = max(widths.get(key, 0.0),
+                              fitted_width(pixels, digit, fit_padding(face)))
     for name, cells in unmeasured.items():
         problems.add("unmeasured_font", cells[0], f"{len(cells)} cell(s) in {name}, whose "
                      "widths are not measured; fonts that are: " + ", ".join(MEASURED_FONTS)

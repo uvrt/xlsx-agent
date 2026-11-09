@@ -26,7 +26,7 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
-## 0.1.25 (unreleased) -- AutoFilters, hidden rows and columns, pivot refresh on open
+## 0.1.26 (unreleased) -- AutoFilters, hidden rows and columns, pivot refresh on open
 
 - **AutoFilters** (production round 44, lane A, R55): `wb.set_autofilter(target, ref=None,
   criteria={column: values}, hide=True)` and `wb.clear_autofilter(target, keep=False)`
@@ -60,6 +60,43 @@ has the detail of every milestone. Why each dependency is needed at its version:
 - New edit codes: `filter_range`, `filter_column`, `filter_table`, `filter_unmeasured`,
   `filter_formulas`, `no_pivot`, `pivot_part`. No agent tool (the core is at its budget).
   The oracle's `Session.operate` takes another script (`tools/excel_filter.applescript`).
+
+## 0.1.25 (unreleased) -- Aptos Narrow fitted, one sheet-name rule, dates into General cells
+
+- **Fitted widths in Aptos Narrow**, Excel's default body face (production round 44, wave
+  2): a fit refused it (`unmeasured_font`). It is measured now with its own advance widths,
+  which ooxml-common 0.42.0 adds (`own_metrics`, generated from the face Office installs,
+  as Aptos's are; no font file anywhere). Fonts are looked up with `own_metrics`, the very
+  face's widths: Calibri Light and Aptos Light, which the renderers measure with a near
+  face's widths, now refuse a fit instead of being fitted 1.3% or more off. A workbook
+  whose default font has no widths at all (Rockwell) refuses a column width
+  (`unmeasured_font`: the width's unit, its widest digit, is unknown) where it failed with
+  an `AssertionError`.
+- **The fit's padding is the cell font's** (`layout.fit_padding`): 5 px, and 2 more for
+  every 4 px of the font's own widest digit past the first -- 7 for Calibri, Aptos and
+  Aptos Narrow at 9 to 14 points, as before; 5 at 6 to 8 points, 9 at 18 to 24 (Calibri),
+  11 at 28, 13 at 36. Measured (Excel for Mac 16.106, 2026-11-09): Calibri and Aptos at
+  6 to 36 points in Calibri 11 and Aptos 11 workbooks, 578 columns, all exact (were 2 to
+  6 px off below 9 and above 16 points); Aptos Narrow regular at 8 to 24 points in Aptos
+  Narrow 11 and 12 workbooks, and bold Aptos Narrow, Aptos and Calibri at 9 to 18 points:
+  exact but for a word with accented letters (1 px) and Aptos Narrow bold 12, which Excel
+  measures unrounded (3 px on "Stock level by warehouse", 14 px on 40 letters).
+- **`Workbook.new()` names sheets by the measured rules** that `add_sheet` and
+  `rename_sheet` apply (`edit.sheets.name_problems`, now with `taken` for a workbook not
+  made yet): control characters and text reading as an `_xHHHH_` escape refused, names
+  compared as Excel compares them (`Ａ1` is `A1`), a lone space and `History` taken.
+  `blank.sheet_name_problems` keeps its name and calls it.
+- **A date into a General cell gets the short date** (`set_cells`, and so the tool): a new
+  cell, a General one, or one of a built-in format Excel replaces for a typed date --
+  currency and accounting (5-8, 44), percentages (9, 10), scientific (11, 48), fractions
+  (12, 13), times (18-21, 45-47) -- is given `numFmtId` 14, the rest of its format kept,
+  and listed in the result's `short_date`; a number format (1-4, 37-40), text (49) or a
+  custom code that shows no day is still refused, saying that the cell would show the
+  date's serial number. Measured: "2026-01-05" and "1/5/2026" typed into cells of 46
+  formats (Excel for Mac 16.106, 2026-11-09). `xlsx_set_cells`' description says so:
+  519 -> 525 estimated tokens (deferred group; the core unchanged at 4,938; every
+  definition 7,076 -> 7,082).
+- Needs ooxml-common 0.42.0 (`own_metrics`, Aptos Narrow's table).
 
 ## 0.1.24 (unreleased) -- edits on large sheets pay for what they touch
 
@@ -1344,10 +1381,11 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   `Dataset.formats`; round 36, R28); 0.95.0 a cell's format and a row's height and format
   set on their own (`Worksheet.set_style`, `set_row_height`, `set_row_style`, `cells_in`,
   `Styles.add_format`; round 44, R53) -- the floor.
-- `ooxml-common>=0.29.0`: standard library only, named for what is imported from it
+- `ooxml-common>=0.42.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
-  widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, and from
-  0.29.0 the shared reading of a number format code (`numfmt`) -- the floor.
+  widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, from
+  0.29.0 the shared reading of a number format code (`numfmt`), and from 0.42.0 a face's
+  own advance widths (`text.fontmap.own_metrics`) with Aptos Narrow's -- the floor.
 - `lxml>=4.9`: the XML tree every part is read and written in.
 - `pptx-agent` and `pptx2svg>=0.2.0` (`test` extra only): a deck filled from a workbook's
   table in one session (`tests/test_sources_deck.py`), and a deck's text checked against a

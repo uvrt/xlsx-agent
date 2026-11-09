@@ -66,7 +66,9 @@ issues (cell facts such as numbers stored as text are `describe`'s).
 **Writing cells** (`xlsx_set_cells`, E3). Each item of `cells` is an `address` and
 exactly one of `text` (always literal, `"=x"` too), `number`, `bool`, `date` (`YYYY-MM-DD`,
 or the session locale's order with a four-digit year, into a cell whose format shows a
-date, or with `format`), `formula` (`=D10*2`, the only way to write one), `blank: true`
+date; a General cell, a new one too, and one of a format Excel replaces for a typed date --
+percentage, currency, time -- gets the short date as in Excel, listed in `short_date`; a
+number format such as `0.00` needs `format`), `formula` (`=D10*2`, the only way to write one), `blank: true`
 (the value goes, the format stays) or `markdown` (rich text: `**bold**`, `*italic*`,
 `~~strike~~`, each line a line of the cell, `-` and `1.` items shown as `•` and numbers;
 `xlsx_agent.markdown`). `xlsx_read`'s `markdown: true` gives text as that Markdown --
