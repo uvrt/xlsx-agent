@@ -1938,8 +1938,6 @@ def restructure(workbook: Any, sheet: Any, operation: str, first: Any, count: An
         raise EditError("not_a_worksheet", f"{label} holds no cells to move")
     if workbook.strict:
         raise EditError("strict")
-    if found.protected:
-        raise EditError("protected", addresses=[label])
     if workbook._allowed() is not None:
         raise EditError("not_writable", f"the host's write policy is set: {noun} are "
                         "inserted, deleted or moved only in a workbook without one",
@@ -1965,6 +1963,13 @@ def restructure(workbook: Any, sheet: Any, operation: str, first: Any, count: An
         if target_end != target:
             raise EditError("bad_position", "before: one line, the one the moved "
                             f"{noun} are placed before")
+    if found.protected:
+        from .protection import lines_problem
+
+        problem = lines_problem(workbook, found, kind, "row" if axis == ROW else "column",
+                                a, a + count - 1)
+        if problem is not None:
+            raise EditError("protected", problem, addresses=[label])
     change = Change(kind, axis, a, count, target)
     shown = _shown(axis, a, a + count - 1)
     if kind == "move" and a <= target <= a + count:

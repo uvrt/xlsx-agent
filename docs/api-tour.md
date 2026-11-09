@@ -697,9 +697,10 @@ wb.set_cells({"Stock!F10": 50}, replace_formulas=True)   # over a formula: only 
   text over 32,767 characters (never cut), a number that is not finite or a whole number
   past 2^53, empty text (write `None`), a date before the date system's first day, a date
   string that is not ISO 8601 or the locale's order with a four-digit year
-  (`wb.locale`: `3/4/2026` is 3 April under nl-BE, 4 March under en-US), a time zone or a
-  time of day (times come later), a date into a cell of a number format (`0.00`, `#,##0`,
-  text, a custom code that shows no day: it would show the serial) without `"format"`,
+  (`wb.locale`: `3/4/2026` is 3 April under nl-BE, 4 March under en-US; a time may follow,
+  `2026-01-05 14:30`, or stand alone, `14:30`), a time zone or a duration, a date into a
+  cell of a number format (`0.00`, `#,##0`, text, a custom code that shows no day: it would
+  show the serial) without `"format"`,
   a formula over a formula cell without `replace_formulas`, a cell of an
   array formula or a data table, a merged area's cell other than its first, a table's
   header cell, a cell named twice, a shared group's master whose formula the lexer cannot
@@ -745,7 +746,8 @@ wb.undo(); wb.undo(); wb.cell("Totals!B1").cache    # 'cached_unverified' again
 
 - **Guards** (X4). The host says where the workbook may be written, once, at open
   (`policy=`: cells, ranges, whole sheets, a table's columns; `{"cells": []}` writes
-  nothing), and may only narrow it; a protected sheet is never written; a value by key
+  nothing), and may only narrow it; a protected sheet's locked cells are never written (its
+  unlocked ones are, as Excel lets them be typed into: R71); a value by key
   is the row holding the key, and keys are values the application supplies (a key column
   of formulas is refused, `formula_key`); a new row goes only into the free row of a
   declared table's empty `capacity` that the host allocates to its key (X6, `allocate`); an

@@ -9,10 +9,14 @@ each item of ``cells`` is an ``address`` (``Stock!D10``, ``#1!D10``) and exactly
 * ``number``;
 * ``bool``;
 * ``date`` -- ``YYYY-MM-DD`` (or the session locale's date order with a four-digit
-  year), into a cell whose number format shows a date; a General cell (a new one) and one
-  of a format Excel replaces for a typed date (percentage, currency, time...) gets the
-  short date as in Excel, listed in ``short_date``; a cell of a number format (``0.00``)
-  needs ``format`` (a date format code, ``yyyy-mm-dd``), which the cell is given;
+  year), with a time of day after it (``YYYY-MM-DD hh:mm``, ``hh:mm:ss``, a fraction of a
+  second: kept to the millisecond as Excel keeps one), or a time of day alone (``hh:mm``),
+  into a cell whose number format shows it; a General cell (a new one) and one of a format
+  Excel replaces for a typed value (percentage, currency, time...) gets Excel's format as
+  in Excel -- the short date (listed in ``short_date``), ``m/d/yyyy h:mm`` or ``h:mm``/
+  ``h:mm:ss`` (listed in ``time_format``); a cell of a number format (``0.00``) needs
+  ``format`` (a format code, ``yyyy-mm-dd``, ``yyyy-mm-dd hh:mm``, ``hh:mm``), which the
+  cell is given;
 * ``formula`` -- ``=D10*2``: the only way to write one, with no cached value (it reads
   ``cache: absent`` until Excel calculates it);
 * ``blank: true`` -- the value goes, the cell's format stays; never a 0;
@@ -51,7 +55,8 @@ Both are flat fields of the item: a nested object made the strict schema too com
 Claude (HTTP 400 "Schema is too complex", measured online by the main session).
 ``revision`` (the version a result gave) refuses it when the workbook has changed since.
 The application's write policy (``xlsx_agent.tools.policy``; ``describe``'s ``writable``)
-and a protected sheet refuse the cells outside it, by key too.  All of them before
+refuses the cells outside it, by key too, and a protected sheet its locked cells (its
+unlocked ones are written, the protection untouched; the refusal names them).  All of them before
 anything changes.
 
 **The result**: ``written`` and ``changed`` (cells that held something else), ``cells``
@@ -93,8 +98,8 @@ GROUP = "xlsx_edit"
 
 @tool("xlsx_set_cells",
       "Write cells, typed: each item an address and exactly one of text (always literal, "
-      "=x too), number, bool, date (YYYY-MM-DD; a General cell gets a short date, a number "
-      "format needs format), "
+      "=x too), number, bool, date (YYYY-MM-DD, YYYY-MM-DD hh:mm[:ss] or hh:mm; a General "
+      "cell gets Excel's format, a number format needs format), "
       "formula (=D10*2), blank or markdown. One step; any refusal changes nothing. "
       "Afterwards every formula value reads cache invalidated: Excel recalculates on open. "
       "describe's writable is all you may write.",

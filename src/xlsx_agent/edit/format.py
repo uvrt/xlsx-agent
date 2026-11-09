@@ -906,6 +906,16 @@ def targets(workbook: Any, target: Any, problems: Problems, *,
 #: ``None`` (the default) is refused on any protected sheet.
 PROTECTED_ALLOWS = ("view", "formatCells", "formatColumns", "formatRows")
 
+#: Each option of ``sheetProtection`` and what it means when left out (ECMA-376 Part 1,
+#: 18.3.1.85): ``"1"`` protected (the action not allowed), ``"0"`` allowed.  Excel reads a
+#: left-out ``objects`` as ``0`` (measured, Excel for Mac 16.106, 2026-11-09: a sheet saved
+#: with ``objects="0"`` was written back without it, and took notes).
+PROTECTS = {"objects": "0", "scenarios": "0", "formatCells": "1", "formatColumns": "1",
+            "formatRows": "1", "insertColumns": "1", "insertRows": "1",
+            "insertHyperlinks": "1", "deleteColumns": "1", "deleteRows": "1",
+            "selectLockedCells": "0", "sort": "1", "autoFilter": "1", "pivotTables": "1",
+            "selectUnlockedCells": "0"}
+
 
 def protection_allows(workbook: Any, sheet: Any, action: "str | tuple[str, ...] | None") -> bool:
     """Whether ``sheet``'s protection lets ``action`` (one of :data:`PROTECTED_ALLOWS`, or
@@ -921,7 +931,8 @@ def protection_allows(workbook: Any, sheet: Any, action: "str | tuple[str, ...] 
     if node is None:
         return True
     needed = (action,) if isinstance(action, str) else action
-    return all((node.get(name) or "1").strip().lower() in ("0", "false") for name in needed)
+    return all((node.get(name) or PROTECTS[name]).strip().lower() in ("0", "false")
+               for name in needed)
 
 
 def guard(workbook: Any, found: list[Target], problems: Problems, *,
