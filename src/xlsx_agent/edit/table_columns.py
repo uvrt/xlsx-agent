@@ -624,8 +624,9 @@ def move_table_columns(workbook: Any, sheet: Any, table_part: str, first: int, c
     label = format_sheet(sheet.stored_name, sheet.id)
     if workbook.strict:
         raise EditError("strict")
-    if sheet.protected:
-        raise EditError("protected", addresses=[label])
+    if sheet.protected:      # moves on a protected sheet are not measured (round 46, lane W)
+        raise EditError("protected", "a table's columns are not moved on a protected sheet: "
+                        "unprotect it first (wb.unprotect_sheet)", addresses=[label])
     if workbook._allowed() is not None:
         raise EditError("not_writable", "the host's write policy is set: columns are moved "
                         "only in a workbook without one", addresses=[label])
