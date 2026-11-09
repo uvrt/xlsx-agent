@@ -190,6 +190,16 @@ EDIT_CODES = {
     "bad_table_style": "not a table style the workbook has",
     "totals_referenced": "something refers to the table's totals row by address, and the "
                          "row would move down from under it",
+    # AutoFilters, hidden rows and columns (round 44, R55: xlsx_agent.edit.filters)
+    "filter_range": "not a filter's range (a header row and rows below it) or target",
+    "filter_column": "not a column of the filter: its header's text or its letters",
+    "filter_table": "the range overlaps a table, which has its own filter",
+    "filter_unmeasured": "a filtered column's cell whose shown text Excel's filter compares "
+                         "is not measured (a date, a boolean, an error)",
+    "filter_formulas": "a filtered column holds formulas whose cached values may be stale",
+    # pivot caches refreshed on open (round 44, R61: xlsx_agent.edit.pivots)
+    "no_pivot": "the workbook has no such pivot table or cache",
+    "pivot_part": "a pivot cache definition that cannot be edited as text",
 }
 
 #: The content type of a VBA project part ([MS-OFFMACRO2]; what Excel writes).
