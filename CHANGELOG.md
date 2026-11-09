@@ -26,6 +26,18 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.32 (unreleased) -- a rule's formula after inserting, deleting or moving columns
+
+- **A data validation's or conditional format's formula is rewritten as Excel rewrites
+  it** (round 46, found by the `rearrange_columns` oracle): for each part the rule's cells
+  move as, the formula written for the part's first cell is rewritten and the part's other
+  cells read relative to it -- the rule is no longer cut cell by cell where a relative
+  reference would cross the change. Measured in Excel for Mac on eight cases
+  (`tests/golden/structure/set8.json`): a format over C3:D6 reading `C3>A3`, with A moved
+  before F, reads `B3>E3` and `C3>F3` (it read `C3>A3` on the second column); with B moved
+  before A, A before C, F before A, B inserted or B deleted likewise (deleting B kept the
+  second column's part, which was dropped). The rearrangement property test now holds a
+  two-column format to this; the oracle's three-move cycle agrees with Excel.
 ## 0.1.31 (unreleased) -- large formatted sheets read the short way; banners and merged data cells
 
 - **Large sheets** (production round 46, R73; `xlsx_agent.read.stream`): a row that holds

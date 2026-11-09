@@ -25,8 +25,9 @@ and ``tests/test_table_columns.py``, oracle cases there):
   Structured references name columns, so they stay.  Measured for one column moved at a
   time, which is how :func:`~.rearrange.rearrange_columns` moves a table's columns.
 * *Rules, hyperlinks, comments* follow their cells: the part of a data validation or a
-  conditional format in the table's rows moves (its formulas keeping their meaning for
-  every cell, split as Excel splits it), the rest stays.  A moved column also takes the
+  conditional format in the table's rows moves (each part's formula rewritten for its
+  first cell, the others reading relative to it, as :func:`~.grid.anchored`), the rest
+  stays.  A moved column also takes the
   data validations and conditional formats of the table column it now follows when they
   cover that column's data rows exactly, and a data format (``dataDxfId``): its cells' own
   number format, else that column's (as Excel gives a table column it inserts).
