@@ -26,7 +26,7 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
-## 0.1.33 (unreleased) -- a rule's formula after inserting, deleting or moving columns
+## 0.1.32 (unreleased) -- a rule's formula after inserting, deleting or moving columns
 
 - **A data validation's or conditional format's formula is rewritten as Excel rewrites
   it** (round 46, found by the `rearrange_columns` oracle): for each part the rule's cells
