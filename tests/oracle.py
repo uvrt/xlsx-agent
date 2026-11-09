@@ -81,6 +81,8 @@ PROCESS = "Microsoft Excel"
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "excel_resave.applescript"
 #: The script that inserts, deletes and moves rows and columns before saving (round 44).
 STRUCTURE_SCRIPT = SCRIPT.with_name("excel_structure.applescript")
+#: The script that sets and clears AutoFilters before saving (round 44, R55).
+FILTER_SCRIPT = SCRIPT.with_name("excel_filter.applescript")
 
 GROUP_CONTAINER = Path.home() / "Library" / "Group Containers" / "UBF8T346G9.Office"
 #: The machine-wide Excel lock.
@@ -545,17 +547,20 @@ class Session:
                                           "detail": outcome.detail}))
         return outcome
 
-    def operate(self, data: bytes, steps: Sequence[str], *, name: str = "book") -> Outcome:
+    def operate(self, data: bytes, steps: Sequence[str], *, name: str = "book",
+                script: Path | None = None) -> Outcome:
         """``data`` opened by Excel, ``steps`` done to it (each ``kind|sheet|range|
         destination``, as ``tools/excel_structure.applescript`` takes them: Excel's own
         insert, delete and cut + insert-cut-cells of rows and columns) and saved as a
         .xlsx; cached by content and steps.  An alert Excel refuses a step with is
-        answered with its only button: the outcome is ``refused``, its text the detail."""
+        answered with its only button: the outcome is ``refused``, its text the detail.
+        ``script`` another script taking the same arguments (:data:`FILTER_SCRIPT`)."""
+        script = script or STRUCTURE_SCRIPT
         causes = repair_causes(data)
         if causes:
             return Outcome("preflight", "; ".join(causes))
         joined = ";".join(steps)
-        digest = hashlib.sha256(data + STRUCTURE_SCRIPT.read_bytes()
+        digest = hashlib.sha256(data + script.read_bytes()
                                 + joined.encode()).hexdigest()[:16]
         record = ORACLE_DIR / f"{name}-{digest}.json"
         saved = ORACLE_DIR / f"{name}-{digest}-saved.xlsx"
@@ -569,7 +574,7 @@ class Session:
         saved.unlink(missing_ok=True)
         try:
             outcome = self._run(staged, saved, sheet_names(data), causes,
-                                script=STRUCTURE_SCRIPT, extra=(joined,))
+                                script=script, extra=(joined,))
         finally:
             staged.unlink(missing_ok=True)
             self._clear_locks()
