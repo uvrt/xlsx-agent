@@ -37,7 +37,12 @@ has the detail of every milestone. Why each dependency is needed at its version:
   `merges()` after it make no pass. `wb.merges(sheet, within=None)` reads the merges
   without a pass over the cells (the part's header and what follows `sheetData`), and
   `within` keeps those overlapping a range. Results identical to before for every call
-  (`tests/test_skim.py`, generated sheets, long way against short). Timings: R73_TIMINGS.
+  (`tests/test_skim.py`, generated sheets, long way against short). Measured on a
+  made-up 200,000 x 19 sheet with 19 style-only cells in every row down to 1,048,576 (534
+  MB of sheet XML), CPU seconds per fresh process on a heavily loaded machine (before ->
+  after): `cells()` 190 -> 119, `cells(values_only=True)` 68, `merges()` 174 -> 5,
+  `merges(within)` 5, `used_range()` 155 -> 61; peak memory unchanged (about 1.25 GB, the
+  package's own copy of the part).
 - **Regions** (R74; `xlsx_agent.read.regions`): a merged banner over a header row is the
   region's `title` (a caption at its own cell); a merged area of one column in a region's
   data rows fills each of its rows in the region's reading (`FilledSheet`) and is flagged

@@ -1251,7 +1251,7 @@ within=None)` reads the part's header and what follows `sheetData` when no pass 
 made (a `mergeCell` among the rows: a pass), and `within` (`A1:S40` or `Stock!A1:S40`)
 keeps those overlapping a range. `tests/test_skim.py` compares every call with the long
 way (every row parsed, every cell typed) on generated sheets that trip it, through windows
-and pieces small enough to split rows anywhere. Timings: see CHANGELOG.
+and pieces small enough to split rows anywhere. Timings (0.1.31): see CHANGELOG.
 
 *Banners and merged data cells* (production feedback, round 46, R74). `find_regions`: a
 merged area of one row and two or more columns holding text, with nothing beside it in
