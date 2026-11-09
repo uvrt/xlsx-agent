@@ -28,7 +28,7 @@ has the detail of every milestone. Why each dependency is needed at its version:
 
 ## 0.1.33 (unreleased) -- a sheet read from its compressed entry, never held whole
 
-- **Memory per workbook** (production round 46, lane Z): ooxml-edit 0.100.0 keeps every
+- **Memory per workbook** (production round 46, lane Z): ooxml-edit 0.99.0 keeps every
   part it has not edited as its compressed ZIP entry, and every pass over a sheet
   (`cells`, `values_only`, `scan`, `used_range`, `merges`, `read`, `find_text`...) now reads
   the sheet from it, inflating a piece at a time (`read.stream.SheetBytes`): a pass holds
@@ -1571,7 +1571,7 @@ each earlier version added is in that package's CHANGELOG. `pyproject.toml`'s ve
 the one this file's top version section names, and `xlsx_agent.__version__` the same
 (`tools/check_version.py`, run by CI's `build` job).
 
-- `ooxml-edit>=0.100.0`: the format-neutral editing core the siblings share (the OPC
+- `ooxml-edit>=0.99.0`: the format-neutral editing core the siblings share (the OPC
   package with parts as their original bytes, the safe parser, the history, the tool
   layer with workbooks a kind of the shared tools, the session's locale and datasets, the
   sources resolver hook, and `ooxml_edit.sheets`, the lossless cell writer the edits and
@@ -1585,7 +1585,7 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   `Dataset.formats`; round 36, R28); 0.95.0 a cell's format and a row's height and format
   set on their own (`Worksheet.set_style`, `set_row_height`, `set_row_style`, `cells_in`,
   `Styles.add_format`; round 44, R53); 0.96.0 the shared document properties
-  (`ooxml_edit.properties`; round 44, R62); 0.100.0 parts kept as their compressed ZIP
+  (`ooxml_edit.properties`; round 44, R62); 0.99.0 parts kept as their compressed ZIP
   entries until edited (`OpcPackage.part_entry`; round 46) -- the floor.
 - `ooxml-common>=0.44.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text

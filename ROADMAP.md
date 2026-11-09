@@ -1253,7 +1253,7 @@ keeps those overlapping a range. `tests/test_skim.py` compares every call with t
 way (every row parsed, every cell typed) on generated sheets that trip it, through windows
 and pieces small enough to split rows anywhere. Timings (0.1.31): see CHANGELOG.
 
-*A sheet never held whole* (round 46, lane Z, 2026-11-09). ooxml-edit (0.100.0) keeps every
+*A sheet never held whole* (round 46, lane Z, 2026-11-09). ooxml-edit (0.99.0) keeps every
 part it has not edited as its compressed ZIP entry, so a pass reads a sheet from the entry
 (`read.stream.SheetBytes`), inflating it a piece at a time: what it holds is a window of
 the part (64 KB, refilled once fewer than 16 KB are left ahead), never the part. What a
