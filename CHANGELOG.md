@@ -26,6 +26,45 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.25 (unreleased) -- notes on cells, document properties
+
+- **Notes** (production round 44, R57; `xlsx_agent.edit.notes`): `wb.set_comment(cell, text,
+  author=None)`, `wb.set_comments({cell: text, ...}, author=None)` (many in one step) and
+  `wb.remove_comment(cell or range)` -- Excel's notes (legacy comments) as Excel for Mac
+  16.106 wrote its own (measured 2026-11-09 through its object model, on made-up sheets):
+  the comments part (`xl/commentsN.xml`, an `Override`), the VML drawing
+  (`xl/drawings/vmlDrawingN.vml`, the `vml` `Default`), both related from the sheet, the
+  sheet's `legacyDrawing`; comments in reading order with `shapeId="0"`, the text one run
+  in Excel's note font (bold Tahoma 10, black); one hidden 104 x 69 pt shape per note in
+  Excel's note colours, its id block (`o:idmap`) and ids as Excel numbers them (the highest
+  plus one, even after a deletion), and the shape placed and anchored where Excel put it
+  -- 15 pt right of the cell, 10 pt above it (2 pt below the top in row 1), hidden rows and
+  columns taking no room, to the cell's left in the last column and lifted in the last row:
+  every margin and `x:Anchor` equal to Excel's on default, wide, narrow, tall and hidden
+  lines and the sheet's edges. Text as an ST_Xstring (`_xHHHH_`, as cells). Replacing keeps
+  the shape, `author=None` keeps the author (a new note's is empty); a note already so is
+  `changed` false; removing the last note takes the parts, relationships and
+  `legacyDrawing` away, as Excel did; authors no note names are dropped. A comment another
+  program wrote without a shape, which Excel dropped on saving (measured), is given one on
+  the sheets written (`shaped`). A cell holding a threaded comment is refused
+  (`threaded_comment`) by both calls; `Workbook.comments` marks such comments `threaded`.
+  Inserting, deleting and moving rows and columns move new notes like any (lane M's
+  rewrite). The host's write policy and sheet protection guard them. Oracle: notes
+  written, replaced and removed, over hidden lines, beside a threaded comment, an
+  unshaped comment shaped, moved with rows, all removed: each opens unprompted and Excel's
+  re-save keeps every note, author and anchor.
+- **Document properties** (production round 44, R62; `xlsx_agent.edit.properties`, on
+  ooxml-edit 0.96.0's shared `ooxml_edit.properties`, which docx-agent and pptx-agent can
+  move onto): `wb.properties()` (`core` by name, `custom` with value and type) and
+  `wb.set_properties(title=..., creator=..., custom={"Run": 42, "Old": None})`, one step,
+  `None` removing, every problem listed (`bad_property`), already so `changed` false;
+  redacted workbooks read redacted. The modified date is never changed unless set: a save
+  writes `docProps/core.xml` as it is. Excel, measured, sets `modified` and
+  `lastModifiedBy` on every save; its Comments is `description`, Author `creator`, and
+  Manager and Company are extended properties (not set here). Oracle: Excel reads the core
+  properties written and keeps the custom ones with their types.
+- `ooxml-edit>=0.96.0` (the shared properties).
+
 ## 0.1.24 (unreleased) -- edits on large sheets pay for what they touch
 
 - **Each edit step pays for what it touched** (production round 44, lane P: on a sheet of
@@ -1295,7 +1334,7 @@ each earlier version added is in that package's CHANGELOG. `pyproject.toml`'s ve
 the one this file's top version section names, and `xlsx_agent.__version__` the same
 (`tools/check_version.py`, run by CI's `build` job).
 
-- `ooxml-edit>=0.95.0`: the format-neutral editing core the siblings share (the OPC
+- `ooxml-edit>=0.96.0`: the format-neutral editing core the siblings share (the OPC
   package with parts as their original bytes, the safe parser, the history, the tool
   layer with workbooks a kind of the shared tools, the session's locale and datasets, the
   sources resolver hook, and `ooxml_edit.sheets`, the lossless cell writer the edits and
@@ -1308,7 +1347,8 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   in a deck's or document's text against the open workbooks (`value_sources`,
   `Dataset.formats`; round 36, R28); 0.95.0 a cell's format and a row's height and format
   set on their own (`Worksheet.set_style`, `set_row_height`, `set_row_style`, `cells_in`,
-  `Styles.add_format`; round 44, R53) -- the floor.
+  `Styles.add_format`; round 44, R53); 0.96.0 the shared document properties
+  (`ooxml_edit.properties`; round 44, R62) -- the floor.
 - `ooxml-common>=0.29.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
   widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, and from

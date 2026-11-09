@@ -844,6 +844,29 @@ same name breaks them all (Excel writes `#REF!` into each, and a new sheet of th
 not bring them back), which is why `delete_sheet` refuses while anything refers to the
 sheet. Names follow Excel's rules (1 to 31 characters, none of `: \ / ? * [ ]`, no `'` at
 either end, unique as Excel compares them); control characters are refused in a name.
+### Notes and document properties (round 44: R57, R62)
+
+Notes are Excel's notes (its legacy comments), written as Excel writes its own: the
+comments part, the hidden VML shape that pops up over the sheet, placed and anchored where
+Excel puts it (measured; `xlsx_agent.edit.notes`). Properties are the package's core and
+custom ones, through ooxml-edit's shared reader and writer (`xlsx_agent.edit.properties`).
+Each call is one undoable step:
+
+```python
+wb.set_comment("Stock!B3", "Check count", author="Stock team").as_dict()
+# {'action': 'set', 'changed': True, 'added': ['Stock!B3']}
+wb.set_comments({"Stock!B3": "Recount", "Stock!B9": "Ordered"})   # replaced / added
+wb.remove_comment("Stock!A1:D20")              # every note in the range; none: changed False
+[(c.cell, c.author, c.threaded) for c in wb.comments("Stock")]
+wb.set_comment("Stock!B2", "...")              # EditError threaded_comment on a thread's cell
+
+wb.properties().as_dict()
+# {'core': {'title': 'Stock list', 'creator': 'Ann', 'created': '2026-11-09T08:00:00Z', ...},
+#  'custom': {'Run': {'value': 42, 'type': 'integer'}}}
+wb.set_properties(title="Stock list", subject=None, custom={"Run": 43, "Draft": None})
+wb.set_properties(modified=datetime.now(timezone.utc))   # only when asked: a save keeps it
+```
+
 ## New workbooks, tables written, rows appended (round 44: R51, R54, E4)
 
 ```python

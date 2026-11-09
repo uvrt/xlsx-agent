@@ -178,6 +178,10 @@ EDIT_CODES = {
     "merge_table": "the range overlaps a table, whose cells Excel does not merge",
     "merge_array": "the range overlaps an array formula",
     "merge_content": "cells other than the range's first hold content, which a merge drops",
+    # notes (R57: xlsx_agent.edit.notes) and document properties (R62: .properties)
+    "threaded_comment": "the cell holds a threaded comment, which is not written or "
+                        "removed here",
+    "bad_property": "not a document property, or not a value it takes",
     # a table written, rows appended (round 44, xlsx_agent.edit.tables)
     "not_empty": "the cell holds a value or a formula, which a block is not written over "
                  "unless asked",
