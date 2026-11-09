@@ -26,7 +26,31 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
-<<<<<<< Updated upstream
+## 0.1.33 (unreleased) -- a sheet read from its compressed entry, never held whole
+
+- **Memory per workbook** (production round 46, lane Z): ooxml-edit 0.100.0 keeps every
+  part it has not edited as its compressed ZIP entry, and every pass over a sheet
+  (`cells`, `values_only`, `scan`, `used_range`, `merges`, `read`, `find_text`...) now reads
+  the sheet from it, inflating a piece at a time (`read.stream.SheetBytes`): a pass holds
+  a 64 KB window of the part, never the part. What a pass needs of the whole part before
+  it starts (`read.stream._Facts`, kept per part as the plans were) is found by one
+  streamed look at open (with the sheet's protection) and kept; a pass from the top counts
+  the row index's tags as it goes; a read from a checkpoint inflates from ooxml-common's
+  last note before it. So the first pass after open inflates the sheet once (a
+  damaged sheet is still refused at open, `damaged`, naming the part). Shared strings are
+  streamed too; a part whose compressed data a later read finds damaged is refused as
+  `damaged` with the part's name. Results identical to the part held whole for every
+  read (`tests/test_streamed_parts.py`). Peak memory and CPU seconds per fresh process on
+  the made-up 200,000 x 19 sheet formatted to row 1,048,576 (534 MB of sheet XML, 70 MB
+  file; a loaded machine; 0.1.31's reading with every part inflated -> this):
+  `cells(values_only=True)` 1,248 -> 118 MB at 76 -> 75 s, `cells()` 1,247 -> 118 MB at
+  118 -> 117 s, `merges()` 1,248 -> 113 MB at 6.7 -> 4.1 s, `used_range()` 1,248 -> 118 MB
+  at 73 -> 73 s, values + merges + used 1,248 -> 118 MB at 75 -> 63 s, open 1,248 -> 112
+  MB at 2.8 -> 4.1 s (the sheet is looked at once there now, for what a pass needs).
+  openpyxl read-only on the same: 133 MB, 139 s. An edit still parses the whole sheet
+  (one `set_cells` on a 200,000-row sheet without style-only rows: 5.6 GB either way).
+- No tool definition changed.
+
 ## 0.1.32 (unreleased) -- a rule's formula after inserting, deleting or moving columns
 
 - **A data validation's or conditional format's formula is rewritten as Excel rewrites
@@ -39,24 +63,6 @@ has the detail of every milestone. Why each dependency is needed at its version:
   before A, A before C, F before A, B inserted or B deleted likewise (deleting B kept the
   second column's part, which was dropped). The rearrangement property test now holds a
   two-column format to this; the oracle's three-move cycle agrees with Excel.
-=======
-## 0.1.33 (unreleased) -- a sheet read from its compressed entry, never held whole
-
-- **Memory per workbook** (production round 46, lane Z): ooxml-edit 0.100.0 keeps every
-  part it has not edited as its compressed ZIP entry, and every pass over a sheet
-  (`cells`, `values_only`, `scan`, `used_range`, `merges`, `read`, `find_text`...) now reads
-  the sheet from it, inflating a piece at a time (`read.stream.SheetBytes`): a pass holds
-  a 64 KB window of the part, never the part. What a pass needs of the whole part before
-  it starts (`read.stream._Facts`, kept per part as the plans were) is found by one
-  streamed look; the row index by another; a read from a checkpoint inflates from
-  ooxml-common's last note before it. Open streams each sheet for its protection (a
-  damaged sheet is still refused at open, `damaged`, naming the part); shared strings are
-  streamed too; a part whose compressed data a later read finds damaged is refused as
-  `damaged` with the part's name. Results identical to the part held whole for every
-  read (`tests/test_streamed_parts.py`). MEASURED
-- No tool definition changed.
-
->>>>>>> Stashed changes
 ## 0.1.31 (unreleased) -- large formatted sheets read the short way; banners and merged data cells
 
 - **Large sheets** (production round 46, R73; `xlsx_agent.read.stream`): a row that holds
