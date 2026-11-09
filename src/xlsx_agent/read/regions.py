@@ -83,6 +83,18 @@ stays a cell that ``find_text`` and a read reach.  When it is text and lies over
 region's columns two rows above its header (one blank row between), it is that region's
 ``title``.  A region of one column is a region whenever it has data rows.
 
+**Banners and merged data cells.**  A merged area of one row and two or more columns whose
+first cell holds text, with nothing beside it in its row (the cells left and right of it
+blank, no merged area against it), is a banner: a title.  Over a header row (directly, or
+with one blank row between) and covering all its columns, it is the region's ``title``,
+never part of its header (no ``merged_header`` for it); detected at its own cell it is a
+caption, which :meth:`Regions.find` leaves out.  A merged area of one column and two or more
+rows that starts in a region's data rows (a group's label beside its rows) does not make
+the header unclear either: the region's reading gives each of its rows the merged area's
+value (its first cell's, as Excel shows it), and the region says so in its ``flags``
+(``merged_cells_filled`` at the merged area, ``count`` the cells filled).  Any other merged
+area that touches the header row, the row above it or the row below it is ``merged_header``.
+
 **Selectors and key sets** (:mod:`xlsx_agent.address`).  ``t:Products/*/Price`` resolves
 as ``t:Products[Price]``, ``t:Products/*`` and ``t:Products/*/*`` as the table, and
 ``t:Products/SKU-0042/*`` as the row, each keeping its own text.  A key set
@@ -164,6 +176,25 @@ class RegionError(ValueError):
         self.valid_options = list(valid_options)
 
 
+@dataclass(frozen=True, eq=False)
+class FilledSheet(SheetRef):
+    """A sheet as a region with merged data cells reads it (:attr:`Region.fills`): every
+    read of a range on it gives each cell of a merged area in ``fills`` but its first the
+    first's value (:meth:`Workbook._read <xlsx_agent.workbook.Workbook._read>`).  Equal
+    to the plain :class:`~xlsx_agent.address.SheetRef` of the same sheet, and hashed alike:
+    the fills are how it is read, not which sheet it is."""
+
+    fills: tuple[Area, ...] = field(default=(), repr=False)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, SheetRef):
+            return NotImplemented
+        return (self.name, self.id) == (other.name, other.id)
+
+    def __hash__(self) -> int:
+        return hash((self.name, self.id))
+
+
 @dataclass(frozen=True)
 class Region:
     """A table, a defined name over a range, a declared region or a detected one.
@@ -196,9 +227,11 @@ class Region:
     data rows on its one sheet: the rows below its data down to the last of them are its
     empty capacity, where a new row by key is written (:func:`capacity_rows`).
 
-    A detected region with a title cell over it (one blank row between) has ``title``, its
-    text; :attr:`caption` is true of a region that is one cell and no data rows, a title or
-    caption that :meth:`Regions.find` leaves out.
+    A detected region with a title cell over it (one blank row between), or a banner over
+    its header (see the module's notes), has ``title``, its text; :attr:`caption` is true
+    of a region that is one cell and no data rows, a title or caption that
+    :meth:`Regions.find` leaves out.  ``fills``: the merged areas of one column in its
+    data rows whose value its reading gives each of their rows (:class:`FilledSheet`).
 
     A region the workbook gave knows its workbook, so that its columns can be read:
     :meth:`column` and :meth:`profile`."""
@@ -228,6 +261,7 @@ class Region:
     title: str | None = None
     capacity: int | None = None
     derived: tuple[str | None, ...] = ()
+    fills: tuple[Area, ...] = ()
     workbook: "Workbook | None" = field(default=None, repr=False, compare=False)
 
     def source_of(self, name: str) -> str | None:
@@ -239,6 +273,11 @@ class Region:
 
     @property
     def sheet_ref(self) -> SheetRef:
+        """The sheet, as a read of the region's cells gives it: a :class:`FilledSheet`
+        when the region has :attr:`fills`."""
+        if self.fills:
+            return FilledSheet(name=self.sheet, fills=self.fills) if self.sheet else \
+                FilledSheet(id=self.sheet_id, fills=self.fills)
         return SheetRef(name=self.sheet) if self.sheet else SheetRef(id=self.sheet_id)
 
     @property
@@ -1372,6 +1411,12 @@ s for s in self.workbook._every_sheet if s.name == part.sheet)
         if header[0].t == "blank":
             raise RegionError("no_header", f"{address}: nothing is at the header cell",
                               address=address)
+        merges = self.workbook.merges(sheet)
+        if any(m.first == cell for m in merges) and self._banner(sheet, cell, merges):
+            # A banner: a title, read as a caption (one cell, no data rows).
+            return Region(kind="detected", name=None, sheet=sheet.name, area=Area(cell, cell),
+                          columns=tuple(_header_names(header[:1], cell.column, [], written)),
+                          header_rows=1, sheet_id=sheet.id, workbook=self.workbook)
         width = 0
         for offset, value in enumerate(header):
             under = below[offset] if below is not None else None
@@ -1387,9 +1432,21 @@ s for s in self.workbook._every_sheet if s.name == part.sheet)
                                reason=reason)
 
         span = Area(Cell(max(cell.row - 1, 1), cell.column), Cell(cell.row + 1, right))
-        if any(_overlaps(merge, span) for merge in self.workbook.merges(sheet)):
+        # Merged areas of one column starting in the data rows: filled, not unclear.
+        downward = [m for m in merges if m.first.column == m.last.column
+                    and cell.column <= m.first.column <= right
+                    and cell.row < m.first.row < m.last.row]
+        banner = None
+        for merge in merges:
+            if not _overlaps(merge, span) or merge in downward:
+                continue
+            if banner is None and merge.first.row == merge.last.row == cell.row - 1 \
+                    and merge.first.column <= cell.column and merge.last.column >= right:
+                banner = self._banner(sheet, merge.first, merges)
+                if banner is not None:
+                    continue
             raise unclear("merged_header")
-        if above is not None and any(v.t != "blank" for v in above[:width]):
+        if banner is None and above is not None and any(v.t != "blank" for v in above[:width]):
             raise unclear("rows_above")
         if any(v.t not in ("text", "blank") for v in header[:width]):
             pairs = _key_value(header[:width], below, rows, width)
@@ -1406,19 +1463,51 @@ s for s in self.workbook._every_sheet if s.name == part.sheet)
         if below is not None and any(v.t != "blank" for v in below[:width]):
             data.append(below[:width])
             for row in rows:
-                if all(v.t == "blank" for v in row[:width]):
+                if all(v.t == "blank" for v in row[:width]) and not any(
+                        m.first.row < row[0].row <= m.last.row for m in downward):
                     break
                 data.append(row[:width])
+        bottom = cell.row + len(data)
+        fills = tuple(m for m in downward if m.first.row <= bottom)
+        _fill(data, fills, cell.row + 1, cell.column)
         if len(data) > 1 and _second_header(data):
             raise unclear("multi_row_header")
         flags: list[Problem] = []
         columns = _header_names(header[:width], cell.column, flags, written)
-        bottom = cell.row + len(data)
-        return self._titled(sheet, Region(kind="detected", name=None, sheet=sheet.name,
-                                          area=Area(cell, Cell(bottom, right)),
-                                          columns=tuple(columns), header_rows=1,
-                                          sheet_id=sheet.id, flags=tuple(flags),
-                                          workbook=self.workbook))
+        for merge in fills:
+            last = min(merge.last.row, bottom)
+            flags.append(Problem("merged_cells_filled", RangeAddress(
+                SheetRef(name=sheet.name) if sheet.name else SheetRef(id=sheet.id),
+                Area(merge.first, Cell(last, merge.last.column))).text,
+                last - merge.first.row))
+        found = Region(kind="detected", name=None, sheet=sheet.name,
+                       area=Area(cell, Cell(bottom, right)), columns=tuple(columns),
+                       header_rows=1, sheet_id=sheet.id, flags=tuple(flags), title=banner,
+                       fills=fills, workbook=self.workbook)
+        return found if banner is not None else self._titled(sheet, found)
+
+    def _banner(self, sheet: "Sheet", cell: Cell, merges: list[Area]) -> str | None:
+        """The text of the banner whose first cell is ``cell`` (see the module's notes);
+        ``None`` when the merged area there is none."""
+        merge = next((m for m in merges if m.first == cell), None)
+        if merge is None or merge.first.row != merge.last.row \
+                or merge.first.column == merge.last.column:
+            return None
+        row = cell.row
+        if any(m is not merge and m.first.row <= row <= m.last.row
+               and (m.last.column == merge.first.column - 1
+                    or m.first.column == merge.last.column + 1) for m in merges):
+            return None
+        left, right = max(merge.first.column - 1, 1), min(merge.last.column + 1, MAX_COLUMN)
+        values = next(iter(self.workbook.read(RangeAddress(SheetRef(name=sheet.name), Area(
+            Cell(row, left), Cell(row, right))))))
+        first = values[merge.first.column - left]
+        if first.t != "text" or not isinstance(first.v, str):
+            return None
+        if (left < merge.first.column and values[0].t != "blank") \
+                or (right > merge.last.column and values[-1].t != "blank"):
+            return None
+        return first.v
 
     def _titled(self, sheet: "Sheet", region: Region) -> Region:
         """``region`` with its ``title``: the one text cell over its columns two rows above
@@ -1429,6 +1518,14 @@ s for s in self.workbook._every_sheet if s.name == part.sheet)
             return region
         two, one = self.workbook.read(RangeAddress(SheetRef(name=sheet.name), Area(
             Cell(first.row - 2, first.column), Cell(first.row - 1, last.column))))
+        if all(v.t == "blank" for v in one):   # a banner two rows above, over its columns
+            merges = self.workbook.merges(sheet)
+            banner = next((m for m in merges if m.first.row == m.last.row == first.row - 2
+                           and m.first.column <= first.column
+                           and m.last.column >= last.column), None)
+            text = self._banner(sheet, banner.first, merges) if banner is not None else None
+            if text is not None:
+                return replace(region, title=text)
         held = [v for v in two if v.t != "blank"]
         if any(v.t != "blank" for v in one) or len(held) != 1 or held[0].t != "text":
             return region
@@ -1947,6 +2044,28 @@ def _key_value(first: list[Value], below: "list[Value] | None", rows: Iterator[l
 def _chain(first: list, rest: Iterator) -> Iterator:
     yield from first
     yield from rest
+
+
+def _fill(data: list[list[Value]], fills: "Sequence[Area]", top: int, left: int) -> None:
+    """Give each cell of ``data`` (rows from ``top``, columns from ``left``) in a merged
+    area of ``fills`` but its first the first's value, as a region's reading does."""
+    for merge in fills:
+        k, column = merge.first.row - top, merge.first.column - left
+        if not 0 <= k < len(data):
+            continue
+        first = data[k][column]
+        for row in data[k + 1:merge.last.row - top + 1]:
+            if row[column].t == "blank" and not row[column].formula:
+                row[column] = filled(first, row[column])
+
+
+def filled(first: Value, cell: Value) -> Value:
+    """``cell``, blank in a merged area, given the area's value: ``first``'s (the merged
+    area's first cell), as a value and never a formula, at its own place."""
+    return replace(first, row=cell.row, column=cell.column, hidden=cell.hidden,
+                   formula=False, formula_text=None, shared_from=None, array=None,
+                   volatile=False, cache=None, external=False, formula_withheld=False,
+                   origin=cell.origin)
 
 
 def _second_header(data: list[list[Value]]) -> bool:

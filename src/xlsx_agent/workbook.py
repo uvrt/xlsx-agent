@@ -95,10 +95,11 @@ from .package import OpenError, open_package, read_source, workbook_part
 from .profile import Column, ColumnStats, profile
 from .read.names import DefinedName, read_names
 from .schema import ValidationReport, validate
-from .read.regions import Region, RegionError, Regions, Selection, UnclearRegion, _overlaps
+from .read.regions import (Region, RegionError, Regions, Selection, UnclearRegion, _overlaps,
+                           filled)
 from .read.comments import Comment, read_comments
 from .read.stream import (Hyperlink, SheetLayout, SheetReader, SheetScan, _area, layout,
-                          read_area, scan)
+                          merges_only, read_area, scan, scanning)
 from .read.strings import SharedStrings
 from .read.styles import NumberFormat, Styles
 from .read.tables import TablePart, read_table
@@ -204,6 +205,9 @@ class Workbook:
         self._strings: SharedStrings | None = None
         self._styles: Styles | None = None
         self._scans: dict[str, SheetScan] = {}
+        #: Where each sheet part's rows lie (:class:`~xlsx_agent.read.stream._Plan`), by
+        #: part: found once per state of the package.
+        self._plans: dict[str, Any] = {}
         #: Each sheet's merges, array blocks and validation rules read from the tree an
         #: edit parsed (:meth:`_layout`), by part.
         self._layouts: dict[str, SheetLayout] = {}
@@ -931,6 +935,7 @@ class Workbook:
         self._strings = None
         self._styles = None
         self._scans.clear()
+        self._plans.clear()
         self._layouts.clear()
         self._comments.clear()
         self._table_parts_read = None
@@ -1573,15 +1578,19 @@ class Workbook:
                 markdown: bool = False, data: bytes | None = None) -> SheetReader:
         """A reader of ``sheet``'s cells; ``data``: other bytes than the part's (``b""``
         for one that types cells it is handed, never passes over the sheet)."""
+        given = data
         if data is None:
             data = self.package.read(sheet.part) if sheet.part is not None else None
         name = format_sheet(sheet.name, sheet.id)
-        return SheetReader(data or b"", sheet=name, hidden=not sheet.visible,
-                           strings=self.strings, styles=self.styles, date1904=self.date1904,
-                           locale=self.locale, formats=formats, grouping=self.grouping,
-                           local_dates=self.local_dates, redaction=self._redaction,
-                           cache=self.calculation_status,
-                           external_names=self._external_names, markdown=markdown)
+        reader = SheetReader(data or b"", sheet=name, hidden=not sheet.visible,
+                             strings=self.strings, styles=self.styles, date1904=self.date1904,
+                             locale=self.locale, formats=formats, grouping=self.grouping,
+                             local_dates=self.local_dates, redaction=self._redaction,
+                             cache=self.calculation_status,
+                             external_names=self._external_names, markdown=markdown)
+        if sheet.part is not None and given is None:   # the part's own bytes
+            reader.plans = (self._plans, sheet.part)
+        return reader
 
     def _stream(self, sheet: Sheet, run):
         """``run()`` over a sheet's part, with the parser's refusal turned into
@@ -1604,9 +1613,48 @@ class Workbook:
         are none."""
         return self.scan(sheet).used
 
-    def merges(self, sheet: "Sheet | str | SheetRef") -> list[Area]:
-        """The sheet's merged areas, in the order the file gives them."""
-        return list(self._layout(sheet).merges)
+    def merges(self, sheet: "Sheet | str | SheetRef",
+               within: "str | Area | None" = None) -> list[Area]:
+        """The sheet's merged areas, in the order the file gives them; ``within`` (a range
+        of the sheet, ``A1:S40`` or ``Stock!A1:S40``): those that overlap it only.
+
+        Read without a pass over the cells when none has been made (``mergeCells`` comes
+        after them: the part is parsed as its header and what follows the cells), so a
+        sheet of a million rows gives its merges at once; a pass made already, or the
+        tree an edit parsed, gives them as before.  A range on another sheet, or none,
+        is refused (``ValueError``)."""
+        sheet = self._cell_sheet(sheet)
+        area = self._merges_within(sheet, within) if within not in (None, "") else None
+        key = sheet.part or f"#{sheet.id}"
+        found: "list[Area] | None" = None
+        trees = getattr(self.package, "_trees", None)
+        if key not in self._layouts and key not in self._scans and sheet.part is not None \
+                and not (isinstance(trees, dict) and sheet.part in trees):
+            part = sheet.part
+            found = _parsed(part, lambda: merges_only(self._reader(sheet)))
+        if found is None:
+            found = list(self._layout(sheet).merges)
+        if area is None:
+            return found
+        return [merge for merge in found if _overlaps(merge, area)]
+
+    def _merges_within(self, sheet: Sheet, within: "str | Area") -> Area:
+        """``within`` of :meth:`merges` as an area of ``sheet``."""
+        if isinstance(within, Area):
+            return within
+        text = within.strip() if isinstance(within, str) else within
+        try:
+            parsed = parse_address(text if "!" in text
+                                   else f"{format_sheet(sheet.name, sheet.id)}!{text}")
+        except (ValueError, TypeError):
+            parsed = None
+        if not isinstance(parsed, RangeAddress):
+            raise ValueError(f"within is a range of the sheet, as A1:S40; not {within!r}")
+        if self._cell_sheet(self.sheet_of(parsed)).part != sheet.part:
+            raise ValueError(f"within ({within}) is on another sheet than "
+                             f"{format_sheet(sheet.name, sheet.id)}; give a range of it, "
+                             "as A1:S40")
+        return parsed.area
 
     def arrays(self, sheet: "Sheet | str | SheetRef") -> list[Area]:
         """The blocks the sheet's array formulas fill (a dynamic array's spill among them),
@@ -1697,13 +1745,36 @@ class Workbook:
         return list(self._comments[key])
 
     def cells(self, sheet: "Sheet | str | SheetRef", *, formats: bool = False,
-              markdown: bool = False) -> Iterator[Value]:
+              markdown: bool = False, values_only: bool = False) -> Iterator[Value]:
         """Every cell the sheet stores, typed, in the order of the file, streamed (a cell
         with only a style comes as ``blank``).  ``formats`` puts each value's format code on
-        it; ``markdown`` gives text as Markdown (as :meth:`read`)."""
+        it; ``markdown`` gives text as Markdown (as :meth:`read`).
+
+        ``values_only``: the cells that hold a value or a formula only (those a used range
+        counts), the others passed over untyped -- a sheet formatted to its last row gives
+        its values without a blank for each formatted cell.
+
+        A pass to the end also scans the sheet when no scan is kept (:meth:`scan`): the
+        :meth:`used_range` and :meth:`merges` after it read nothing again."""
         sheet = self._cell_sheet(sheet)
-        values = self._stream(sheet, lambda: self._reader(sheet, formats=formats,
-                                                          markdown=markdown).values())
+        key = sheet.part or f"#{sheet.id}"
+
+        def run() -> Iterator[Value]:
+            reader = self._reader(sheet, formats=formats, markdown=markdown)
+            if key in self._scans:
+                values = reader.values(blanks=not values_only)
+            else:
+                stamp = (self._forgotten, self._locale, self._redaction)
+
+                def keep(found: SheetScan) -> None:
+                    if (self._forgotten, self._locale, self._redaction) == stamp:
+                        self._scans.setdefault(key, found)
+                values = scanning(reader, blanks=not values_only, done=keep)
+            if values_only:
+                return (v for v in values if v.t != "blank" or v.formula)
+            return values
+
+        values = self._stream(sheet, run)
         return (_as_markdown(value) for value in values) if markdown else values
 
     def read(self, address: "str | RangeAddress | TableAddress", *,
@@ -1767,6 +1838,10 @@ class Workbook:
             return read_area(readers[0], area, found.ordered, found.index, columns)
 
         rows = self._stream(sheet, run)
+        fills = [m for m in getattr(address.sheet, "fills", ()) if _overlaps(area, m)
+                 and (columns is None or m.first.column in columns)]
+        if fills:   # a region with merged data cells, read as the region: each filled
+            rows = self._filled(rows, sheet, fills, formats)
         withheld = [a for a in self.regions.withheld(sheet.name) if _overlaps(area, a)] \
             if sheet.name else []
         if withheld:
@@ -1774,6 +1849,31 @@ class Workbook:
         if sheet.name and self.regions.withholds:
             rows = self._formulas_withheld(rows, sheet.name, readers)
         return rows
+
+    def _filled(self, rows: Iterator[list[Value]], sheet: Sheet, fills: list[Area],
+                formats: bool) -> Iterator[list[Value]]:
+        """``rows`` with each blank cell of a merged area in ``fills`` but its first given
+        the first's value (:class:`~xlsx_agent.read.regions.FilledSheet`); the first cell
+        read on its own when the rows start below it."""
+        firsts: dict[Cell, Value] = {}
+        ref = SheetRef(name=sheet.name) if sheet.name else SheetRef(id=sheet.id)
+        for row in rows:
+            for n, value in enumerate(row):
+                for merge in fills:
+                    if value.column != merge.first.column \
+                            or not merge.first.row <= value.row <= merge.last.row:
+                        continue
+                    if value.row == merge.first.row:
+                        firsts[merge.first] = value
+                    elif value.t == "blank" and not value.formula:
+                        first = firsts.get(merge.first)
+                        if first is None:
+                            first = firsts[merge.first] = next(iter(self._read(
+                                RangeAddress(ref, Area(merge.first, merge.first)),
+                                formats=formats)))[0]
+                        row[n] = filled(first, value)
+                    break
+            yield row
 
     def _formulas_withheld(self, rows: Iterator[list[Value]], sheet: str,
                            readers: "list[SheetReader]") -> Iterator[list[Value]]:

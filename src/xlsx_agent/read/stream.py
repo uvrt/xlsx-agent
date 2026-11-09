@@ -34,12 +34,14 @@ import math
 import re
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell
 
 from ..formula import is_external
-from ..xml import iterparse_xml
+from lxml import etree
+
+from ..xml import SAFE_OPTIONS, iterparse_xml
 from ooxml_edit.markdown import Run
 
 from .strings import SharedStrings, decode_xstring, item_runs, item_text, text_markdown
@@ -99,7 +101,159 @@ _CACHE_LIMIT = 1024
 CHECKPOINT_ROWS = 128
 #: A ``row`` start tag and the ``sheetData`` start tag, as bytes, with any prefix.
 _ROW_TAG = re.compile(rb"<(?:[A-Za-z_][-\w.]*:)?row[\s/>]")
-_SHEET_DATA_TAG = re.compile(rb"<(?:[A-Za-z_][-\w.]*:)?sheetData(?:\s[^>]*)?>")
+_SHEET_DATA_TAG = re.compile(rb"<([A-Za-z_][-\w.]*:)?sheetData(?:\s[^>]*)?>")
+
+#: Whether a pass reads the rows that hold only styles from the bytes (:class:`_Plan`):
+#: off, every row is parsed (the tests compare the two).
+SKIM = True
+#: How many bytes a pass looks ahead for such rows at a time: a read that stops early
+#: never searches the whole part.
+_WINDOW = 1 << 20
+#: How many bytes the parser is given at a time (as ``iterparse`` reads them).
+_PIECE = 1 << 15
+_S = rb"[ \t\r\n]"
+#: An attribute as a row of :class:`_Plan` may have it: a name (with a prefix or not) and
+#: a value of printable ASCII, no reference in it (so as written is as read).
+_ATTR = (rb"[A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?" + _S + rb"*=" + _S
+         + rb"*(?:\"[ !#-%'-;=-~]*\"|'[ -%(-;=-~]*')")
+_ATTRS = re.compile(rb"([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)" + _S + rb"*=" + _S
+                    + rb"*(?:\"([^\"]*)\"|'([^']*)')")
+_ENCODING = re.compile(rb"<\?xml[^>]*?encoding" + _S + rb"*=" + _S + rb"*[\"']([^\"']*)[\"']")
+_PATTERNS: dict[bytes, tuple["re.Pattern[bytes]", ...]] = {}
+_LETTERS: dict[bytes, int] = {}
+
+
+def _skim_patterns(prefix: bytes) -> "tuple[re.Pattern[bytes], ...]":
+    """A row that holds only styles, written with ``prefix`` (``b""`` or ``b"x:"``): the
+    row (group ``row``, 1), its attributes (2) and cells (3, ``None`` for an empty row),
+    each cell ``c``
+    with ``r`` (column letters and row number, as Excel writes them) and at most ``s``;
+    the same with whitespace before it; and one such cell's letters, digits and style."""
+    found = _PATTERNS.get(prefix)
+    if found is None:
+        p = re.escape(prefix)
+        cell = (rb"<" + p + rb"c" + _S + rb"+r" + _S + rb"*=" + _S
+                + rb"*(?:\"[A-Z]{1,3}[0-9]{1,7}\"|'[A-Z]{1,3}[0-9]{1,7}')(?:" + _S + rb"+s" + _S
+                + rb"*=" + _S + rb"*(?:\"[0-9]{1,9}\"|'[0-9]{1,9}'))?" + _S + rb"*/>")
+        written = (rb"(?P<row><" + p + rb"row((?:" + _S + rb"+" + _ATTR + rb")*)" + _S
+                   + rb"*(?:/>|>((?:" + _S + rb"*" + cell + rb")*)" + _S + rb"*</" + p
+                   + rb"row" + _S + rb"*>))")
+        one = re.compile(rb"<" + p + rb"c" + _S + rb"+r" + _S + rb"*=" + _S
+                         + rb"*[\"']([A-Z]{1,3})([0-9]{1,7})[\"'](?:" + _S + rb"+s" + _S
+                         + rb"*=" + _S + rb"*[\"']([0-9]{1,9})[\"'])?")
+        found = _PATTERNS[prefix] = (re.compile(written), re.compile(_S + rb"*" + written),
+                                     one)
+    return found
+
+
+@dataclass(frozen=True)
+class _Plan:
+    """Where a part's rows lie, for a pass that reads a row holding only styles (each
+    cell ``<c r="B9" s="3"/>``, or no cell: the rows a sheet formatted to its last row has
+    by the hundred thousand) from the bytes instead of parsing it.  ``begin`` is where the
+    rows start (after the ``sheetData`` start tag), ``end`` where its end tag starts;
+    ``row``, ``following`` and ``cell`` match such a row, one after whitespace, and its
+    cells (:func:`_skim_patterns`);
+    ``prefixes`` those bound in the header, which a row's attribute may use.
+
+    Made only for a part where every ``<`` is a tag (no comment, CDATA section, document
+    type or processing instruction), in UTF-8, with one ``sheetData`` of the main
+    namespace and no namespace bound inside it: a row matched there is a row element,
+    well-formed, read as the parser reads it (a row's attributes are checked for repeats
+    and unbound prefixes, which the parser refuses, by :func:`_row_attributes`)."""
+
+    begin: int
+    end: int
+    row: "re.Pattern[bytes]"
+    following: "re.Pattern[bytes]"
+    cell: "re.Pattern[bytes]"
+    prefixes: frozenset[bytes]
+    #: A row's start with its number first (``<row r="9"``), and its end tag.
+    head: "re.Pattern[bytes]"
+    end_tag: bytes
+    #: Whether the part has a row that holds only styles: a part with none is parsed
+    #: whole, as before (``iterparse``); its plan still serves :func:`merges_only`.
+    skims: bool = True
+
+    @classmethod
+    def of(cls, data: bytes) -> "_Plan | None":
+        if b"<!" in data or data.count(b"<?") > 1 or data.find(b"<?") not in (-1, 0, 3) \
+                or data.startswith((b"\xfe\xff", b"\xff\xfe")) or data.count(b"sheetData") != 2:
+            return None
+        declared = _ENCODING.match(data, 3 if data.startswith(b"\xef\xbb\xbf") else 0)
+        if declared is not None and declared.group(1).lower() not in (b"utf-8", b"utf8",
+                                                                      b"us-ascii", b"ascii"):
+            return None
+        start = _SHEET_DATA_TAG.search(data)
+        if start is None:
+            return None
+        prefix = start.group(1) or b""
+        closing = re.compile(rb"</" + re.escape(prefix) + rb"sheetData" + _S + rb"*>")
+        end = closing.search(data, start.end())
+        header = data[:start.end()]
+        if end is None or data.find(b"xmlns", start.end(), end.start()) >= 0:
+            return None
+        bound = re.findall(rb"xmlns(?::([A-Za-z_][\w.-]*))?" + _S + rb"*=" + _S
+                           + rb"*[\"']([^\"']*)[\"']", header)
+        main = [uri for name, uri in bound if name + (b":" if name else b"") == prefix]
+        if len(main) != 1 or main[0].decode("ascii", "replace") not in NS_MAIN:
+            return None
+        row, following, cell = _skim_patterns(prefix)
+        return cls(start.end(), end.start(), row, following, cell,
+                   frozenset(name for name, _ in bound if name) | {b"xml"},
+                   re.compile(rb"<" + re.escape(prefix) + rb'row r="([1-9][0-9]{0,6})"'),
+                   b"</" + prefix + b"row>",
+                   row.search(data, start.end(), end.start()) is not None)
+
+
+def _row_attributes(written: bytes, prefixes: frozenset[bytes]) -> "dict[bytes, bytes] | None":
+    """A matched row's attributes by name, as the parser reads them; ``None`` when it would
+    refuse them (a name given twice, a prefix not bound) or one binds a namespace."""
+    out: dict[bytes, bytes] = {}
+    count = 0
+    for name, double, single in _ATTRS.findall(written):
+        count += 1
+        prefix, colon, _ = name.partition(b":")
+        if prefix == b"xmlns" or (colon and prefix not in prefixes):
+            return None
+        out[name] = double or single
+    return out if len(out) == count else None
+
+
+#: How many :class:`_Template` a reader keeps (a sheet has a few kinds of row).
+_TEMPLATES = 64
+
+
+@dataclass(frozen=True)
+class _Template:
+    """A row read from the bytes, kept to read the rows alike but for their number
+    (:meth:`SheetReader._known`): whether it is ``hidden``, its ``cells`` on the grid as
+    ``(column, style-only cell)`` in the file's order, and whether their columns
+    increase."""
+
+    hidden: bool
+    cells: tuple
+    increasing: bool
+
+
+class _StyleOnly:
+    """A ``c`` element with only a style, as a row read from the bytes gives it: what a
+    cell's reader asks of it (its ``t``, its ``s``, its children: none)."""
+
+    __slots__ = ("_style",)
+    tag = f"{{{NS_MAIN[0]}}}c"
+
+    def __init__(self, style: str | None) -> None:
+        self._style = style
+
+    def get(self, name: str, default: Any = None) -> Any:
+        return self._style if name == "s" and self._style is not None else default
+
+    def __iter__(self) -> Iterator:
+        return iter(())
+
+    def __len__(self) -> int:
+        return 0
 
 
 def _column(letters: str) -> int:
@@ -109,6 +263,11 @@ def _column(letters: str) -> int:
         for char in letters.upper():
             index = index * 26 + ord(char) - 64
         _COLUMNS[letters] = index
+    return index
+
+
+def _letters_column(letters: bytes) -> int:
+    index = _LETTERS[letters] = _column(letters.decode())
     return index
 
 
@@ -370,22 +529,177 @@ class SheetReader:
         # table, which is held already); dates by serial, at most _CACHE_LIMIT at a time.
         self._string_cache: dict[int, tuple[str, str | None, bool]] = {}
         self._date_cache: dict[tuple, str | None] = {}
+        #: The workbook's plans by part and this part's key (:meth:`plan`), or ``None``.
+        self.plans: "tuple[dict, str] | None" = None
+        self._plan: Any = _MISSING
+        #: The rows read from the bytes kept as templates (:meth:`_learn`), and a
+        #: :class:`_StyleOnly` per style.
+        self._templates: dict[bytes, _Template] = {}
+        self._styled: dict[str | None, _StyleOnly] = {}
 
     # -- the pass ----------------------------------------------------------------------
 
-    def values(self) -> Iterator[Value]:
+    def values(self, *, blanks: bool = True) -> Iterator[Value]:
         """Every cell in the sheet, typed, in the order of the file (a cell with only a
-        style comes as ``blank``)."""
+        style comes as ``blank``).  ``blanks`` off: a cell with no child (no value, formula
+        or inline text) is passed over untyped -- placed, never made a value -- unless its
+        ``t`` is ``s`` (typed: a shared string with no index is ``missing_string``); so
+        are the rows read from the bytes (:class:`_Plan`)."""
         value = self.value
-        for row, column, row_hidden, node in self._walk():
+        for row, column, row_hidden, node in self._walk(blanks=blanks):
             yield value(row, column, row_hidden, node)
 
-    def _walk(self, start: "tuple[RowIndex, Checkpoint] | None" = None):
+    def plan(self) -> "_Plan | None":
+        """The part's :class:`_Plan` (``None``: every row is parsed), made once per reader,
+        or taken from ``plans`` (the workbook's, by part) when given."""
+        if not SKIM or not self.data:
+            return None
+        if self._plan is _MISSING:
+            plans, key = self.plans if self.plans is not None else ({}, "")
+            if key not in plans:
+                plans[key] = _Plan.of(self.data)
+            self._plan = plans[key]
+        return self._plan   # type: ignore[return-value]
+
+    def _events(self, start: "tuple[RowIndex, Checkpoint] | None"):
+        """In the order of the file: ``(element, None, None)`` for each element of
+        :data:`_STREAMED` the parser ends; for each row read from the bytes instead,
+        ``(None, number, template)`` when it is a row met before but for its number
+        (:class:`_Template`), else ``(None, attributes, cells)`` (its attributes by name,
+        its cells' bytes or ``None``)."""
+        data = self.data
+        plan = self.plan()
+        if plan is None or not plan.skims \
+                or (start is not None and len(start[0].header) != plan.begin):
+            source: "bytes | _Resumed" = data if start is None else \
+                _Resumed(start[0].header, data, start[1].offset)
+            for _, node in iterparse_xml(source, tag=_STREAMED):
+                yield node, None, None
+            return
+        parser = etree.XMLPullParser(events=("end",), tag=_STREAMED, **SAFE_OPTIONS)
+        parser.feed(data[:plan.begin])
+        for _, node in parser.read_events():
+            yield node, None, None
+        pos, end = (plan.begin if start is None else start[1].offset), plan.end
+        search, match, prefixes = plan.row.search, plan.following.match, plan.prefixes
+        known = self._known
+        while pos < end:
+            window = min(end, pos + _WINDOW)
+            found = search(data, pos, window)
+            fed = window if found is None else found.start()
+            while pos < fed:   # in pieces, each drained: a few rows are held at a time
+                piece = min(fed, pos + _PIECE)
+                parser.feed(data[pos:piece])
+                for _, node in parser.read_events():
+                    yield node, None, None
+                pos = piece
+            while found is not None:
+                again = known(data, pos, end, plan)
+                while again is not None:   # rows met before: no pattern matched
+                    pos = again[0]
+                    yield None, again[1], again[2]
+                    again = known(data, pos, end, plan)
+                if found.start("row") < pos:
+                    found = match(data, pos, end)
+                    if found is None:
+                        break
+                attributes = _row_attributes(found.group(2), prefixes)
+                if attributes is None:   # the parser's to refuse
+                    parser.feed(data[pos:found.end()])
+                    for _, node in parser.read_events():
+                        yield node, None, None
+                else:
+                    self._learn(found, attributes, plan)
+                    yield None, attributes, found.group(3)
+                pos = found.end()
+                found = match(data, pos, end)
+        parser.feed(data[end:])
+        parser.close()
+        for _, node in parser.read_events():
+            yield node, None, None
+
+    def _known(self, data: bytes, pos: int, end: int,
+               plan: "_Plan") -> "tuple[int, int, _Template] | None":
+        """The row starting at ``pos`` when it is a row met before but for its number:
+        where it ends, its number and its :class:`_Template`; else ``None``.  The row is
+        its bytes up to its first ``>`` (ending ``/>``) or its first end tag; with its
+        number (``r``, first, as Excel writes it) put as ``#`` it is a template's key, and
+        a template is made only of a row in which the number stands nowhere else and
+        ``#`` nowhere: so the bytes are that row's with another number."""
+        templates = self._templates
+        if not templates:
+            return None
+        head = plan.head.match(data, pos, end)
+        if head is None:
+            return None
+        close = data.find(b">", head.end(), end)
+        if close < 0:
+            return None
+        if data[close - 1] == 0x2F:   # "/>"
+            stop = close + 1
+        else:
+            stop = data.find(plan.end_tag, close, end)
+            if stop < 0:
+                return None
+            stop += len(plan.end_tag)
+        written = data[pos:stop]
+        digits = head.group(1)
+        if b"#" in written:
+            return None
+        template = templates.get(written.replace(digits + b'"', b'#"'))
+        if template is None:
+            return None
+        number = int(digits)
+        return (stop, number, template) if number <= MAX_ROW else None
+
+    def _learn(self, found: "re.Match[bytes]", attributes: "dict[bytes, bytes]",
+               plan: "_Plan") -> None:
+        """Keep the row ``found`` matched as a :class:`_Template` when it may be one: its
+        number written first, as Excel writes it (no zero before it, on the grid), every
+        cell's reference in its row, the number nowhere else and ``#`` nowhere."""
+        written = found.group("row")
+        digits = attributes.get(b"r")
+        head = plan.head.match(written)
+        if digits is None or head is None or head.group(1) != digits or b"#" in written \
+                or int(digits) > MAX_ROW:
+            return
+        cells = plan.cell.findall(found.group(3) or b"")
+        if any(cell_digits != digits for _, cell_digits, _ in cells) \
+                or written.count(digits + b'"') != len(cells) + 1:
+            return
+        hidden = attributes.get(b"hidden")
+        placed = []
+        for letters, _, style in cells:
+            column = _LETTERS.get(letters) or _letters_column(letters)
+            if column <= MAX_COLUMN:
+                placed.append((column, self._style_only(style)))
+        columns = [column for column, _ in placed]
+        templates = self._templates
+        if len(templates) >= _TEMPLATES:
+            templates.clear()
+        templates[written.replace(digits + b'"', b'#"')] = _Template(
+            hidden is not None and _true(hidden.decode()), tuple(placed),
+            all(a < b for a, b in zip(columns, columns[1:])))
+
+    def _style_only(self, style: bytes) -> "_StyleOnly":
+        key = style.decode() if style else None
+        found = self._styled.get(key)
+        if found is None:
+            found = self._styled[key] = _StyleOnly(key)
+        return found
+
+    def _walk(self, start: "tuple[RowIndex, Checkpoint] | None" = None, *,
+              blanks: bool = True):
         """``(row, column, row hidden, c element)`` for each cell.  The pass asks for the
         ``end`` of each row (and of ``col``, ``mergeCell``, ``dimension``), takes the row's
         cells, then drops the row: one row is held at a time.  ``start``: a sheet's
         :class:`RowIndex` and one of its checkpoints, where the pass starts instead of the
-        top, as it would be there."""
+        top, as it would be there.
+
+        A row that holds only styles is read from the bytes where the part allows
+        (:class:`_Plan`), its cells given as :class:`_StyleOnly`, read as the parsed cell
+        is.  ``blanks`` off: a cell with no child and no ``t="s"`` (blank, no issue) is
+        placed (it counts for the order and the next cell's column) but not given."""
         if not self.data:
             return
         row = 0
@@ -397,13 +711,67 @@ class SheetReader:
         cell_tags, row_tags = _C, _ROW
         marks, hidden_order = self.marks, self.hidden_order
         elements = 0
-        source: "bytes | _Resumed" = self.data
         if start is not None:
             index, checkpoint = start
-            source = _Resumed(index.header, self.data, checkpoint.offset)
             row, last_row, last_column = checkpoint.row, checkpoint.last_row, checkpoint.last_column
             hidden_rows.update(index.hidden[:checkpoint.hidden])
-        for _, node in iterparse_xml(source, tag=_STREAMED):
+        for node, skimmed, written in self._events(start):
+            if node is None and type(written) is _Template:
+                # A row met before but for its number: its cells are in it, in the order
+                # the first was found in.
+                if marks is not None and elements % CHECKPOINT_ROWS == 0:
+                    marks.append((elements, row, last_row, last_column, len(hidden_order)))
+                elements += 1
+                self.row_elements = elements
+                row = skimmed
+                row_hidden = written.hidden
+                if row_hidden and row not in hidden_rows:
+                    hidden_rows.add(row)
+                    hidden_order.append(row)
+                placed = written.cells
+                if not placed:
+                    continue
+                if row < last_row or (row == last_row and placed[0][0] <= last_column) \
+                        or not written.increasing:
+                    self.ordered = False
+                if blanks:
+                    for column, blank in placed:
+                        yield row, column, row_hidden, blank
+                last_row, last_column = row, placed[-1][0]
+                continue
+            if node is None:
+                # A row read from the bytes: placed as a parsed one is, its cells (each
+                # with letters and digits, no ``$``) given as style-only cells.
+                if marks is not None and elements % CHECKPOINT_ROWS == 0:
+                    marks.append((elements, row, last_row, last_column, len(hidden_order)))
+                elements += 1
+                self.row_elements = elements
+                attributes = skimmed
+                written_r, written_hidden = attributes.get(b"r"), attributes.get(b"hidden")
+                number = _int(written_r.decode()) if written_r is not None else None
+                row = number if number is not None and 1 <= number <= MAX_ROW else row + 1
+                row_hidden = written_hidden is not None and _true(written_hidden.decode())
+                if row_hidden and row not in hidden_rows:
+                    hidden_rows.add(row)
+                    hidden_order.append(row)
+                if not written:
+                    continue
+                row_digits = str(row).encode()
+                for written_letters, cell_digits, style in self._cells(written):
+                    column = _LETTERS.get(written_letters) or _letters_column(written_letters)
+                    if cell_digits == row_digits:
+                        cell_row, cell_hidden = row, row_hidden
+                    else:
+                        cell_row = int(cell_digits)
+                        cell_hidden = row_hidden if cell_row == row else cell_row in hidden_rows
+                    if not (1 <= cell_row <= MAX_ROW and 1 <= column <= MAX_COLUMN):
+                        continue
+                    if cell_row < last_row or (cell_row == last_row and column <= last_column):
+                        self.ordered = False
+                    last_row, last_column = cell_row, column
+                    if blanks:
+                        yield cell_row, column, cell_hidden, self._style_only(style)
+                continue
             tag = node.tag
             if tag in row_tags:
                 if marks is not None and elements % CHECKPOINT_ROWS == 0:
@@ -439,7 +807,8 @@ class SheetReader:
                     if cell_row < last_row or (cell_row == last_row and column <= last_column):
                         self.ordered = False
                     last_row, last_column = cell_row, column
-                    yield cell_row, column, cell_hidden, cell
+                    if blanks or len(cell) or cell.get("t") == "s":
+                        yield cell_row, column, cell_hidden, cell
                 node.clear()
                 parent = node.getparent()
                 if parent is not None:
@@ -468,6 +837,12 @@ class SheetReader:
                 self.conditional_formats.append(_conditional(node, tag in _X14_CONDITIONAL))
             elif tag in _X14_VALIDATION:
                 self.validations.append(_x14_validation(node))
+
+    def _cells(self, written: bytes) -> "list[tuple[bytes, bytes, bytes]]":
+        """A skimmed row's cells: each one's column letters, row digits and style."""
+        plan = self._plan
+        assert isinstance(plan, _Plan)
+        return plan.cell.findall(written)
 
     def column_hidden(self, column: int) -> bool:
         spans = self.hidden_columns
@@ -700,15 +1075,29 @@ class SheetReader:
 
 def scan(reader: SheetReader) -> SheetScan:
     """One full pass over ``reader``'s sheet: the used range, merges, ordering and the
-    issues met (see :class:`SheetScan`)."""
+    issues met (see :class:`SheetScan`).  Cells with nothing in them are placed, never
+    typed (``blanks`` off: :meth:`SheetReader.values`)."""
+    found: list[SheetScan] = []
+    for _ in scanning(reader, done=found.append):
+        pass
+    return found[0]
+
+
+def scanning(reader: SheetReader, *, blanks: bool = False,
+             done: "Callable[[SheetScan], Any]") -> Iterator[Value]:
+    """``reader.values(blanks=blanks)``, each value passed on as it comes, while the
+    :class:`SheetScan` of :func:`scan` is made of them: ``done`` is called with it when
+    the pass ends (never when it is stopped early).  A pass that gives every cell (a
+    :meth:`Workbook.cells <xlsx_agent.workbook.Workbook.cells>`) scans the sheet too."""
     result = SheetScan(reader.sheet)
     reader.marks = []
     top = left = MAX_ROW + MAX_COLUMN
     bottom = right = 0
-    for value in reader.values():
+    for value in reader.values(blanks=blanks):
         if value.t == "blank" and not value.formula:
             if value.issue is not None:
                 result._count(value.issue, value)
+            yield value
             continue
         result.cells += 1
         row, column = value.row, value.column
@@ -728,6 +1117,7 @@ def scan(reader: SheetReader) -> SheetScan:
             result._count("volatile", value)
         if value.external:
             result._count("external_formula", value)
+        yield value
     if result.cells:
         result.used = Area(Cell(top, left), Cell(bottom, right))
     result.dimension = reader.dimension
@@ -740,7 +1130,27 @@ def scan(reader: SheetReader) -> SheetScan:
     if reader.ordered:
         result.index = RowIndex.build(reader.data, reader)
     reader.marks = None
-    return result
+    done(result)
+
+
+def merges_only(reader: SheetReader) -> "list[Area] | None":
+    """The sheet's merged areas, in the file's order, as :func:`scan` finds them, without
+    a pass over the cells: ``mergeCells`` comes after ``sheetData`` (ECMA-376 Part 1,
+    §18.3.1.55), so the part is parsed as its header and what follows the cells.  ``None``
+    when the part has no :class:`_Plan` or a ``mergeCell`` among its rows (a pass is
+    needed)."""
+    plan = reader.plan() if reader.data else None
+    if plan is None:
+        return None
+    data = reader.data
+    if data.find(b"mergeCell", plan.begin, plan.end) >= 0:
+        return None
+    out: list[Area] = []
+    for _, node in iterparse_xml(_Resumed(data[:plan.begin], data, plan.end), tag=tuple(_MERGE)):
+        area = _area(node.get("ref"))
+        if area is not None:
+            out.append(area)
+    return out
 
 
 @dataclass(frozen=True)
