@@ -48,6 +48,7 @@ has the detail of every milestone. Why each dependency is needed at its version:
   data rows fills each of its rows in the region's reading (`FilledSheet`) and is flagged
   `merged_cells_filled`. Other merged areas at the header stay `merged_header`.
 - No tool definition changed.
+
 ## 0.1.30 (unreleased) -- rearranging columns fixed; a table's columns reordered
 
 - **`rearrange_columns` puts columns that are not next to each other where they were asked
