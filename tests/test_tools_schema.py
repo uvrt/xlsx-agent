@@ -189,8 +189,10 @@ CORE_COUNTED_BUDGET = 7000
 #: definition 6,578 -> about 7,077; the core unchanged.
 #: Round 44, lane N: xlsx_set_cells' date (a General cell gets a short date), 519 -> 525,
 #: every definition 7,076 -> 7,082; the core unchanged.
+#: Round 46, lane W: xlsx_set_cells' date takes a date and time or a time (R72), 525 -> 535,
+#: every definition 7,082 -> 7,092; the core unchanged.
 CORE_GUARD = 4940
-ALL_GUARD = 7085
+ALL_GUARD = 7095
 
 
 @pytest.fixture(scope="module")

@@ -249,13 +249,13 @@ def test_the_revision_guard_refuses_a_call_made_for_another_version():
 # -- protected sheets ------------------------------------------------------------------------
 
 
-def test_a_protected_sheet_is_never_written_and_says_so():
+def test_a_protected_sheet_s_locked_cells_are_never_written_and_says_so():
     _, wb = _open(tables=(), protected=True)
     assert wb.sheet("Totals").protected and not wb.sheet("Stock").protected
     error = _refused(wb, {"Totals!C1": 1, "Totals!B1": {"formula": "=1"}, "Stock!B4": "x"},
                      replace_formulas=True)
     assert error.code == "protected" and error.addresses == ("Totals!C1", "Totals!B1")
-    assert "sheetProtection" in str(error)
+    assert "sheetProtection" in str(error) and "it has no unlocked cells" in str(error)
     _, ruled = _open({"cells": ["Totals!"]}, tables=(), protected=True)
     assert _refused(ruled, {"Totals!C1": 1}).code == "protected"    # no policy lifts it
     with pytest.raises(EditError) as raised:

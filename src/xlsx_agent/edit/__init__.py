@@ -105,8 +105,8 @@ EDIT_CODES = {
     "text_too_long": "text longer than a cell holds (32,767 characters); it is never cut",
     "bad_formula": "not a formula that can be written",
     "bad_date": "not a date that can be written",
-    "date_time": "a time, a duration or a time zone, which are not written yet",
-    "date_format": "the cell's number format does not show a date",
+    "date_time": "a duration or a time zone, which a cell does not hold",
+    "date_format": "the cell's number format does not show the date or time",
     "formula_cell": "the cell holds a formula: pass replace_formulas to write over it",
     "array_formula": "the cell is part of an array formula or a data table, written as a "
                      "whole in Excel",
@@ -115,7 +115,8 @@ EDIT_CODES = {
     "shared_formula": "the cell holds a shared formula whose references cannot be moved "
                       "safely to the group's other cells",
     # guards (X4, xlsx_agent.edit.policy, .keys, .cells): each refused before anything changes
-    "protected": "the sheet is protected: nothing on it is written",
+    "protected": "the sheet is protected: its locked cells, and what its protection does "
+                 "not allow, are not changed",
     "not_writable": "the host's write policy does not let this cell be written",
     "formulas_not_allowed": "the host's write policy writes no formula here",
     "bad_policy": "the host's write policy names what the workbook does not have",
@@ -400,12 +401,15 @@ class Editor:
             raise EditError("not_a_worksheet", addresses=[address])
         if self.workbook.strict:
             raise EditError("strict")
-        if sheet.protected:
-            raise EditError("protected", addresses=[address])
         with self.batch() as edit:
             writer = self.cells.sheet(sheet.stored_name)
             if writer is None:
                 raise EditError("not_a_worksheet", addresses=[address])
+            if sheet.protected:
+                from .protection import Locks
+
+                if Locks(self.workbook).locked(writer, cell):
+                    raise EditError("protected", "the cell is locked", addresses=[address])
             self._permitted(sheet, cell, value, writer, address)
             if not writer.write(cell, value, style=style):
                 return False

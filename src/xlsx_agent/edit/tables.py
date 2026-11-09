@@ -16,9 +16,11 @@ mapping by header (a table's column names, case aside).  A date written into a c
 format shows no date gets the built-in short date (``numFmtId`` 14), as a date typed into a
 new cell does in Excel (measured, Excel for Mac 16.106, 2026-11-08: ``2026-01-05``,
 ``5-1-2026`` and ``5/1/2026`` typed each got ``numFmtId="14" applyNumberFormat="1"``);
-``{"date": ..., "format": ...}`` gives another.  Every write passes set_cells' checks and
-the host's guards (policy, protection, expectations); the whole call is one step, refused
-whole.
+a date and time gets ``m/d/yyyy h:mm`` and a time ``h:mm`` or ``h:mm:ss``, Excel's formats
+for them typed (round 46, R72); ``{"date": ..., "format": ...}`` gives another.  Every write
+passes set_cells' checks and the host's guards (policy, protection -- a protected sheet's
+unlocked cells are written, its locked ones refused, and no table is made or grown there
+-- expectations); the whole call is one step, refused whole.
 
 **write_table(sheet, origin, headers, rows)** writes ``headers`` (text: a table's column
 names) in the row at ``origin`` and the rows below, and returns the range written.
@@ -86,7 +88,6 @@ the columns filled.
 
 from __future__ import annotations
 
-import datetime as _dt
 import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
@@ -96,7 +97,7 @@ from ooxml_edit.sheets import MAX_COLUMN, MAX_ROW, Area, Cell, Formula
 
 from ..address import AddressError, RangeAddress, format_range, format_sheet, parse_address
 from ..read.strings import encode_xstring
-from .cells import MAX_LISTED, SHORT_DATE, Written
+from .cells import MAX_LISTED, SHORT_DATE, Written, set_cells
 from .content import with_content
 
 NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -289,6 +290,12 @@ def write_table(workbook: Any, sheet: Any, origin: Any, headers: "Sequence[Any] 
         style_name, problem = _style(workbook, style)
         if problem is not None:
             problems.append(("bad_table_style", format_range(label, area), problem))
+        if target.protected:
+            # Measured (Excel for Mac 16.106, 2026-11-09): Excel made no table over unlocked
+            # cells of a protected sheet, whatever its protection allowed.
+            problems.append(("protected", format_range(label, area), "a table is not made "
+                             "on a protected sheet: write the block without as_table, or "
+                             "unprotect the sheet first (wb.unprotect_sheet)"))
         if _sheet_filter(workbook, target, area):
             problems.append(("table_overlap", format_range(label, area),
                              "the sheet's AutoFilter covers it: a table brings its own"))
@@ -307,8 +314,7 @@ def write_table(workbook: Any, sheet: Any, origin: Any, headers: "Sequence[Any] 
     with editor.batch():
         if any(_holds_text(value) for _, value in items):
             ensure_shared_strings(workbook)
-        _date_formats(workbook, target, items)
-        written = workbook.set_cells(items, replace_formulas=overwrite) if items \
+        written = set_cells(workbook, items, replace_formulas=overwrite, typed=True) if items \
             else Written(cells=(), changed=0, calculation=workbook.calculation_status)
         if as_table:
             assert table_name is not None and style_name is not None
@@ -547,30 +553,6 @@ def ensure_shared_strings(workbook: Any) -> bool:
     return True
 
 
-def _date_formats(workbook: Any, sheet: Any, items: list[tuple[str, Any]]) -> None:
-    """Give each cell a date is written into the short date (:data:`SHORT_DATE`) when its
-    format shows no date and the value names no format: as Excel formats a typed date."""
-    styles = workbook.editor.cells.styles
-    if styles is None:
-        return
-    for address, value in items:
-        dated = isinstance(value, _dt.date) or (
-            isinstance(value, Mapping) and "date" in value and value.get("format") is None)
-        if not dated:
-            continue
-        parsed = parse_address(address)
-        assert isinstance(parsed, RangeAddress)
-        cell = parsed.area.first
-        writer = workbook.editor.cells.sheet(sheet.stored_name)
-        base = writer.style(cell, inherited=True)
-        if base >= styles.count or workbook.styles.format(base).kind in (
-                "date", "datetime", "time"):
-            continue     # it shows a date; or a time, which set_cells says what to do with
-        wanted = styles.with_number_format(base, SHORT_DATE)
-        workbook.editor.write(sheet, cell, None, style=wanted)
-        workbook._forget()
-
-
 def _add_table(workbook: Any, sheet: Any, area: Area, name: str, header: list[str],
                style: str) -> str:
     """The table part over ``area`` (see the module), related to the sheet."""
@@ -736,15 +718,21 @@ def _append_table(workbook: Any, table: _TableFacts, rows: Sequence[Any]) -> App
     below = Area(Cell(area.last.row + 1, area.first.column),
                  Cell(area.last.row + count, area.last.column))
     problems: list[tuple[str, str, str | None]] = []
+    if sheet.protected:
+        # Measured (Excel for Mac 16.106, 2026-11-09): on a protected sheet a value typed
+        # below a table leaves the table as it was, and resizing it is refused, whatever the
+        # protection allows.
+        problems.append(("protected", format_range(label, area), "a table does not grow on "
+                         "a protected sheet (Excel neither grows it from a row typed below "
+                         "it nor resizes it there): unprotect the sheet, or write the rows "
+                         f"below it as a range, {format_range(label, below)}, outside the "
+                         "table"))
     _block_problems(workbook, sheet, below, label, problems, empty=True, skip_table=table.part)
     first_new = area.last.row - table.totals_rows + 1
     writer = workbook.editor.cells.sheet(sheet.stored_name)
     totals = None
     if table.totals_rows:
         totals = Area(Cell(area.last.row - table.totals_rows + 1, area.first.column), area.last)
-        if sheet.protected:
-            problems.append(("protected", format_range(label, totals), "the totals row moves "
-                             "down, and the sheet is protected"))
         allowed = workbook._allowed()
         for r in range(totals.first.row, totals.last.row + 1):
             for c in range(totals.first.column, totals.last.column + 1):
@@ -804,8 +792,7 @@ def _append_table(workbook: Any, table: _TableFacts, rows: Sequence[Any]) -> App
                 items.append((format_range(label, at), value))
         if any(_holds_text(value) for _, value in items):
             ensure_shared_strings(workbook)
-        _date_formats(workbook, sheet, items)
-        written = workbook.set_cells(items) if items \
+        written = set_cells(workbook, items, typed=True) if items \
             else Written(cells=(), changed=0, calculation=workbook.calculation_status)
         _grow(workbook, table, new_area)
         editor.touched(sheet, [])
@@ -948,8 +935,7 @@ def _append_sheet(workbook: Any, sheet: Any, region: Area | None,
     with editor.batch():
         if any(_holds_text(value) for _, value in items):
             ensure_shared_strings(workbook)
-        _date_formats(workbook, sheet, items)
-        written = workbook.set_cells(items) if items \
+        written = set_cells(workbook, items, typed=True) if items \
             else Written(cells=(), changed=0, calculation=workbook.calculation_status)
     return Appended(range=format_range(label, block), rows=count, written=written)
 
