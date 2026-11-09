@@ -622,7 +622,7 @@ def undo_scope(workbook: Any, scope: str) -> list[str]:
     from ooxml_edit.tools import ToolError
 
     try:
-        sheet = workbook.sheet(scope.strip().rstrip("!").strip("'").replace("''", "'"))
+        sheet = workbook.sheet(scope) if isinstance(scope, str) else None
     except (KeyError, ValueError):
         sheet = None
     if sheet is None or sheet.part is None:

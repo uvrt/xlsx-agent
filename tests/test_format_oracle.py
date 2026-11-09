@@ -184,3 +184,42 @@ def test_excel_opens_a_new_workbook_fitted_in_aptos_narrow_with_dates_given_the_
         assert Workbook.open(outcome.saved.read_bytes()).styles.format_id(
             Workbook.open(outcome.saved.read_bytes()).editor.cells.sheet("Stock")
             .style(Cell.parse(ref))) == 14, ref
+
+
+@pytest.mark.oracle
+def test_excel_keeps_a_new_workbooks_windows_defaults_and_its_widths(excel):
+    """Round 46: a new workbook as Excel for Windows makes one (Aptos Narrow 11, rows of 15
+    points, descent 0.25, no base column width), columns given and fitted widths in that
+    default, opens without a repair; Excel for Mac's re-save keeps the font, the row
+    height and the widths, and the default width it shows stays 8 characters (it writes
+    its own base 10 with that width as the default, and its own descent)."""
+    wb = Workbook.new(["Stock", "Notes"])
+    wb.write_table("Stock", "A1", ["Item", "Count"],
+                   [["Desk lamp with a long name", 12], ["Fan", 3]])
+    wb.set_column_widths("Stock!A:A", "fit")
+    wb.set_column_widths("Stock!C:C", 14)
+    data = wb.to_bytes()
+    outcome = excel.resave(data, name="r46x-new-windows")
+    assert outcome.ok, outcome
+    saved = _parts(outcome.saved.read_bytes())
+    font = saved["xl/styles.xml"].find(f"{X}fonts/{X}font")
+    assert (font.find(f"{X}name").get("val"), font.find(f"{X}sz").get("val")) == \
+        ("Aptos Narrow", "11")
+    ac = "{http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac}dyDescent"
+    for part in ("xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml"):
+        fmt = saved[part].find(X + "sheetFormatPr")
+        # Excel for Mac writes its own descent (0.2) and base (10, with the 8 characters it
+        # shows as the default width); the row height stays.
+        assert (fmt.get("defaultRowHeight"), fmt.get(ac)) == ("15", "0.2"), part
+        assert (fmt.get("baseColWidth"), fmt.get("defaultColWidth")) == ("10", "8.83203125")
+    ours = _parts(data)
+
+    def widths(parts):
+        cols = parts["xl/worksheets/sheet1.xml"].find(X + "cols")
+        return {(c.get("min"), c.get("max")): c.get("width") for c in cols}
+
+    assert widths(saved) == widths(ours)
+    before = wb.column_widths("Stock!A:D")
+    after = Workbook.open(outcome.saved.read_bytes()).column_widths("Stock!A:D")
+    assert [c.width for c in after.columns] == [c.width for c in before.columns]
+    assert after.default_width == before.default_width == 8.0

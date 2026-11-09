@@ -90,17 +90,36 @@ def test_a_new_workbook_has_the_parts_excel_writes():
         "xl/workbook.xml", "xl/worksheets/sheet1.xml"])
     styles = etree.fromstring(parts["xl/styles.xml"])
     font = styles.find(f"{X}fonts/{X}font")
-    assert font.find(f"{X}sz").get("val") == "12" and font.find(f"{X}name").get("val") == \
+    # Excel for Windows' new workbook (round 46): Aptos Narrow 11.
+    assert font.find(f"{X}sz").get("val") == "11" and font.find(f"{X}name").get("val") == \
         "Aptos Narrow"
     assert styles.find(f"{X}tableStyles").get("defaultTableStyle") == "TableStyleMedium2"
     theme = parts["xl/theme/theme1.xml"].decode()
     assert '<a:minorFont><a:latin typeface="Aptos Narrow"' in theme
     assert '<a:font script="Thai" typeface="Tahoma"/>' in theme
     sheet = etree.fromstring(parts["xl/worksheets/sheet1.xml"])
-    assert sheet.find(f"{X}sheetFormatPr").get("defaultRowHeight") == "16"
+    fmt = sheet.find(f"{X}sheetFormatPr")
+    assert dict(fmt.attrib) == {"defaultRowHeight": "15",
+                                "{http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac}"
+                                "dyDescent": "0.25"}            # no baseColWidth: 8
     assert sheet.find(f"{X}sheetViews/{X}sheetView").get("tabSelected") == "1"
     assert b"absPath" not in parts["xl/workbook.xml"]          # never the machine's
     assert build(created=dt.datetime(2026, 11, 8, 12, 0, tzinfo=dt.timezone.utc)) == data
+
+
+def test_a_new_workbook_measures_widths_in_its_11_point_default():
+    """Widths given, fitted and read in a new workbook are counted in Aptos Narrow 11's
+    widest digit (6 px, measured): 12 characters are stored as Excel stores them, the
+    default reads as the 8 characters of the unwritten base width."""
+    wb = Workbook.new(["Stock"])
+    wb.set_cells({"Stock!A1": "Stock level by warehouse"})
+    assert wb.set_column_widths("Stock!B:B", 12).widths == {"Stock!B": 12.83203125}
+    fitted = wb.set_column_widths("Stock!A:A", "fit").widths["Stock!A"]
+    read = wb.column_widths("Stock!A:C")
+    assert read.digit == 6 and read.default_width == 8.0 and read.default_stored == 8.83203125
+    assert [(c.column, c.width, c.default) for c in read.columns] == [
+        ("A", read["A"].width, False), ("B", 12.0, False), ("C", 8.0, True)]
+    assert read["A"].stored == fitted
 
 
 def test_workbook_new_opens_unchanged_with_its_sheets():

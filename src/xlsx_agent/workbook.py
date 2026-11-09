@@ -90,6 +90,7 @@ from .compare import Diff, compare
 from .dataset import table_dataset
 from .derive import Derived, derive
 from .find import Found, find_text
+from .formula.sheets import pick_sheet
 from .package import OpenError, open_package, read_source, workbook_part
 from .profile import Column, ColumnStats, profile
 from .read.names import DefinedName, read_names
@@ -111,6 +112,7 @@ if TYPE_CHECKING:
     from .edit.cells import Written
     from .edit.filters import FilterChange, HiddenChange
     from .edit.format import Formatted
+    from .read.widths import ColumnWidths
     from .edit.rearrange import Rearranged
     from .edit.restructure import Restructured
     from .edit.merges import MergeChange
@@ -551,6 +553,18 @@ class Workbook:
 
         return set_column_widths(self, target, width)
 
+    def column_widths(self, target: str, *, limit: int = 256) -> "ColumnWidths":
+        """Each column's width, as Excel's Column Width shows it (characters, the unit
+        :meth:`set_column_widths` takes): ``"Stock!A:H"``, ``"Stock!C"``, a range's columns,
+        or a sheet's name alone (every column up to the last used or sized).  Each says
+        whether the width is the column's own (``stored``) or the sheet's default, and
+        whether the column is hidden (:mod:`xlsx_agent.read.widths`; measured in Excel).
+        At most ``limit`` columns (up to 16,384); ``more`` and ``next`` say what was not
+        listed."""
+        from .read.widths import column_widths
+
+        return column_widths(self, target, limit=limit)
+
     def set_row_heights(self, target: "str | Sequence[str]", height: Any) -> "Formatted":
         """Row heights in points (``"Stock!1:1"``, or a range: its rows); ``None`` lets the
         rows fit their text again."""
@@ -776,7 +790,12 @@ class Workbook:
         [None]}``: ``None`` keeps blank cells).  The rows it excludes are hidden here --
         Excel does not apply a saved filter when it opens a file (measured) -- unless
         ``hide`` is false, which writes the criteria only.  Literal values, and formulas'
-        cached values only while they hold (:mod:`xlsx_agent.edit.filters`).  One step."""
+        cached values only while they hold (:mod:`xlsx_agent.edit.filters`).  One step.
+
+        Each call sets the whole filter: ``criteria`` replaces every column's criteria of
+        that range or table, so a column left out of it is no longer filtered.  Pass all
+        the columns to filter in one call (``{"Item": [...], "Shelf": [...]}``); to change
+        one, pass it with the others again."""
         from .edit.filters import set_autofilter
 
         return set_autofilter(self, target, ref, criteria, hide=hide)
@@ -1043,15 +1062,24 @@ class Workbook:
         return bool(name) and (name or "").casefold() in self._withheld_sheets
 
     def sheet(self, name: str) -> Sheet:
-        """The sheet called ``name``, matched as Excel matches names (case aside);
+        """The sheet called ``name``, matched as Excel matches names (case aside; a
+        name's leading and trailing spaces are part of it), or as an address writes it
+        (``'Stock '``); when no sheet is so named, the one sheet equal to ``name`` with
+        outer spaces aside (:func:`~xlsx_agent.formula.sheets.pick_sheet`).
         :class:`~xlsx_agent.address.NameNotFound` (a ``KeyError``) naming the sheets there
         are, with the nearest as ``valid_options``, as an address writes them."""
-        folded = name.casefold()
-        for sheet in self.sheets:
-            if sheet.name.casefold() == folded:
-                return sheet
-        names = [sheet.name for sheet in self.sheets]
-        written = [quote_sheet(sheet.name) for sheet in self.sheets if sheet.name]
+        shown = self.sheets
+        found = pick_sheet([sheet.name for sheet in shown], name) \
+            if isinstance(name, str) else []
+        if len(found) == 1:
+            return shown[found[0]]
+        names = [sheet.name for sheet in shown]
+        written = [quote_sheet(sheet.name) for sheet in shown if sheet.name]
+        if found:
+            alike = [quote_sheet(shown[i].name) for i in found]
+            raise NameNotFound(f"no sheet {name!r}; {', '.join(alike)} differ from it only "
+                               "in their outer spaces: name one as stored", what="sheet",
+                               name=name, candidates=written, valid_options=alike)
         raise NameNotFound(f"no sheet {name!r}; the sheets are {names}", what="sheet",
                            name=name, candidates=written,
                            valid_options=nearest(quote_sheet(name) if name else "", written))

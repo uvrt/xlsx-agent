@@ -205,7 +205,7 @@ def find_sheet(workbook: Any, which: Any) -> Any:
     every = workbook._every_sheet
     if isinstance(which, Sheet):
         which = f"#{which.id}" if which.id is not None else which.stored_name
-    if not isinstance(which, str) or not which.strip():
+    if not isinstance(which, str) or not which:
         raise SheetError("no_sheet", "a sheet is named by its name or #id",
                          options=[s.stored_name for s in every])
     text = which.strip()
@@ -213,16 +213,15 @@ def find_sheet(workbook: Any, which: Any) -> Any:
         for sheet in every:
             if sheet.id == int(text[1:]):
                 return sheet
-    names = [text]
-    body = text[:-1] if text.endswith("!") else text
-    if len(body) >= 2 and body.startswith("'") and body.endswith("'"):
-        names.append(body[1:-1].replace("''", "'"))
-    for name in names:
-        key = refs.fold_name(name)
-        for sheet in every:
-            if refs.fold_name(sheet.stored_name) == key:
-                return sheet
-    raise SheetError("no_sheet", f"no sheet {text!r}",
+    found = refs.pick_sheet([s.stored_name for s in every], which)
+    if len(found) == 1:
+        return every[found[0]]
+    if found:
+        raise SheetError("no_sheet", f"no sheet {which!r}; "
+                         + ", ".join(repr(every[i].stored_name) for i in found)
+                         + " differ from it only in their outer spaces: name one as stored",
+                         options=[every[i].stored_name for i in found])
+    raise SheetError("no_sheet", f"no sheet {which!r}",
                      options=[s.stored_name for s in every])
 
 

@@ -891,9 +891,10 @@ wb.append_rows("Log!B4:D200", [["late", 2]])                 # within a region's
 ```
 
 - **A new workbook** has the nine parts Excel for Mac writes for one (measured: `make new
-  workbook`, saved): its theme (Aptos Narrow body, Excel's script faces), styles (12 pt, the
+  workbook`, saved): its theme (Aptos Narrow body, Excel's script faces), styles (the
   Normal style, `TableStyleMedium2` as the default table style), one sheet with its view and
-  margins, `calcPr calcId`, the document properties. Excel's re-save changes only its own:
+  margins, `calcPr calcId`, the document properties -- with Excel for Windows' defaults
+  (Aptos Narrow 11, rows of 15 points, no base column width), as its readers use it. Excel's re-save changes only its own:
   the application's name, its user, localised names, the folder saved in, ids.
 - **Values** are `set_cells`' (text literal, numbers, booleans, dates, `{"formula": ...}`,
   `{"markdown": ...}`, `None`), `""` a blank; a row is a list, or a mapping by header. A
@@ -998,6 +999,7 @@ wb.format("Stock!A1:H1", style="Heading 1")          # a cell style of the workb
 wb.format("Stock!E:E", protection={"locked": False}) # whole columns (and rows: "Stock!3:3")
 wb.set_column_widths("Stock!A:H", "fit")             # Excel's AutoFit, measured
 wb.set_column_widths("Stock!J:J", 14)                # characters, as Excel's Column Width
+wb.column_widths("Stock!A:K")                        # read back: width, stored or default, hidden
 wb.set_row_heights("Stock!1:1", 30)                  # points; None fits the text again
 wb.freeze_panes("Stock", rows=1, columns=1)          # or at="B2"; rows=0, columns=0 unfreezes
 wb.set_gridlines("Stock", False)
