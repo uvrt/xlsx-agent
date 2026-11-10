@@ -26,6 +26,34 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.35 (unreleased) -- filters for a TRUE/FALSE column: is_true and is_false
+
+- **`is_true` and `is_false`** (production round 49, R95): two more filter tests in
+  `xlsx_query`'s and `xlsx_derive`'s `where` (and the library's `where`), for a TRUE/FALSE
+  column: the rows whose cell is TRUE, or FALSE. They take no value -- written as `blank`
+  is (`{"column": "Kept", "op": "is_true"}`; `{"Kept": {"is_true": true}}` in the mapping
+  form) -- so a caller whose strict schema offers no boolean value needs none; a blank cell
+  is neither (`blank` finds those), and a cell of another type is counted in
+  `not_compared` as for any comparing test. On another column type they are refused
+  (`wrong_type`) with the tests that type takes. `eq` with `"true"`/`"false"` (or Python's
+  `True`/`False` in the library) still matches as before. A value given beside them that
+  says the same (`"true"` with `is_true`) or `""` changes nothing, said in the result's
+  warnings; one that says the other is refused naming the other test, any other refused
+  with "drop value".
+- **`eq` without a value names the way out** (R95): `eq` given `null`, or no value, is
+  refused once the column's type is known: on a TRUE/FALSE column "use is_true or
+  is_false (no value), or eq with value "true" or "false"" (`valid_options`: `is_true`,
+  `is_false`), on another "for its empty cells use blank". It was refused before the
+  column was read, naming neither. A no-value test given a value says which to drop.
+- A JSON `true` as a filter's `value` is still refused by the shared argument check
+  ("must be a string": the schema's `value` is a string, as the common strict subset has
+  no unions); `is_true`/`is_false` are the form that needs none.
+- The two tests are values of `where`'s `op` enum (no other schema change; the names say
+  it, and a value given beside them is read as above): `xlsx_query` 518 -> 524 and
+  `xlsx_derive` 1,286 -> 1,292 estimated, the core 4,938 -> 4,950, every definition 7,092 ->
+  7,104 (the guards 4,940 -> 4,950 and 7,095 -> 7,105). Neither tool is strict: the strict
+  set is unchanged.
+
 ## 0.1.34 (unreleased) -- a rich-text cell read as a dataset's text field comes back as Markdown
 
 - **A cell's lists and emphasis reach a document as lists and emphasis** (production round

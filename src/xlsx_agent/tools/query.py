@@ -2,7 +2,8 @@
 with the columns asked for (ROADMAP.md, "Tools").  In the loaded core, beside ``xlsx_read``.
 
 What it does is :mod:`xlsx_agent.query`'s: the filters (``eq``, ``in``, ``gte``, ``lte``,
-``contains``, ``contains_any``, ``words_gt``, ``blank``, ``not_blank``, combined with *and*;
+``contains``, ``contains_any``, ``words_gt``, ``blank``, ``not_blank``, ``is_true``,
+``is_false``, combined with *and*;
 a filter's ``loose`` compares text ignoring case and white space), each checked
 against its column's type before any row is given -- a test the type does not take, or a value not of
 that type, is refused naming the type, with the tests it takes as ``valid_options`` -- and

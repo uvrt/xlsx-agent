@@ -20,19 +20,24 @@ of the values; round 40, R43 -- ``in`` is taken by equality, and the name says b
 than the value, a whole number: words are the runs of characters between white space, as
 :meth:`str.split` splits them; a test for text too long to place), ``blank`` and
 ``not_blank`` (the reader's ``blank``: no value, a formula without a cached value among
-them; ``True`` in the mapping form, nothing in the list form).
+them; ``True`` in the mapping form, nothing in the list form), ``is_true`` and ``is_false``
+(a TRUE or a FALSE cell; round 49, R95: written as ``blank`` is, so a caller whose
+schema has no boolean value needs none; a blank cell is neither).
 
 **Types.**  Each filtered column's type is its profile's (:mod:`xlsx_agent.profile`: the
 type most of its values have, :func:`~xlsx_agent.profile.majority_type`), and a test is
 checked against it before any row is given: ``gte``/``lte`` take a number, percent, date,
 time or datetime column; ``contains`` and ``words_gt`` a text column; ``eq`` and ``in``
-any column with values; ``blank`` and ``not_blank`` any column.  Any other pairing, and a
+any column with values; ``is_true`` and ``is_false`` a TRUE/FALSE (bool) column; ``blank``
+and ``not_blank`` any column.  Any other pairing, and a
 value that is not of the column's type, is refused (:class:`QueryError`, ``wrong_type``)
 naming the column's type, with the tests it takes as ``valid_options``.  A cell of another type than its
 column's never matches a test that compares values: nothing is coerced (ROADMAP.md, "Design
 rules", 4); such cells are counted per column, with their first addresses
 (:attr:`QueryResult.not_compared`).  A value may be given as Python's (``5``, ``True``) or
 as text in its JSON form (``"5"``, ``"2.5e3"``, ``"true"``), as a tool call gives it.
+``eq`` without a value (``null``, or none) is refused once its column's type is known:
+on a TRUE/FALSE column naming ``is_true`` and ``is_false``, on another naming ``blank``.
 
 * **number** and **percent**: compared as stored; a percent is the stored fraction (25 %
   is ``0.25``).
@@ -103,17 +108,25 @@ if TYPE_CHECKING:  # pragma: no cover
     from .workbook import Workbook
 
 #: Every test a filter can make.
-OPS = ("eq", "in", "gte", "lte", "contains", "contains_any", "words_gt", "blank", "not_blank")
+OPS = ("eq", "in", "gte", "lte", "contains", "contains_any", "words_gt", "blank", "not_blank",
+       "is_true", "is_false")
 
 _ORDERED = ("eq", "in", "gte", "lte", "blank", "not_blank")
 _ANY = ("eq", "in", "blank", "not_blank")
+
+#: The tests that take no value: ``True`` in the mapping form, nothing in the list form.
+_UNVALUED = ("blank", "not_blank", "is_true", "is_false")
+
+#: The tests of a TRUE/FALSE cell (round 49, R95): no value, so a strict caller needs none.
+_TRUTH = ("is_true", "is_false")
 
 #: The tests each column type takes.
 OPS_BY_TYPE: dict[str, tuple[str, ...]] = {
     "number": _ORDERED, "percent": _ORDERED, "date": _ORDERED, "time": _ORDERED,
     "datetime": _ORDERED,
     "text": ("eq", "in", "contains", "contains_any", "words_gt", "blank", "not_blank"),
-    "bool": _ANY, "error": _ANY, "blank": ("blank", "not_blank"),
+    "bool": ("eq", "in", "is_true", "is_false", "blank", "not_blank"), "error": _ANY,
+    "blank": ("blank", "not_blank"),
     "list": ("eq", "in", "contains", "contains_any", "blank", "not_blank")}
 
 #: The tests that take a list of values.
@@ -473,6 +486,8 @@ class _Test:
         self.operand = operand
         self.loose = loose
         self.read_as = read_as
+        #: What the test was read as besides ``read_as``'s (a note for the result).
+        self.said: str | None = None
         self.compares = op not in ("blank", "not_blank")
         self._parsed: dict[str, Any] = {}
         self._exact: _Test | None = None
@@ -516,6 +531,8 @@ class _Test:
         if self.read_as is not None:
             out.append(f"{self.read_as} on {self.column} was given a list: read as {self.op}, "
                        "any of them")
+        if self.said is not None:
+            out.append(self.said)
         if self.loose and (self.op not in LOOSENED or column_type not in ("text", "list")):
             out.append(f"loose on {self.column} changes nothing: it loosens text tests "
                        f"({', '.join(LOOSENED)}), and this is {self.op} on a {column_type} "
@@ -528,6 +545,8 @@ class _Test:
             return value.t == "blank"
         if self.op == "not_blank":
             return value.t != "blank"
+        if self.op in _TRUTH:
+            return value.t == "bool" and value.v is (self.op == "is_true")
         t = value.t
         if t == "blank" or self.op not in OPS_BY_TYPE[t]:
             return False
@@ -572,9 +591,24 @@ class _Test:
     def check(self, column_type: str, date1904: bool) -> None:
         """Refuse the test unless the column's type takes it, with a value of that type."""
         allowed = OPS_BY_TYPE[column_type]
+        if self.operand is None and self.op == "eq":
+            # no value (null, or none given): named here, where the column's type is known
+            if column_type == "bool":
+                raise QueryError("bad_filter", f"eq on {self.column} needs a value: "
+                                 f"{self.column} holds TRUE/FALSE, so use is_true or is_false "
+                                 "(no value), or eq with value \"true\" or \"false\"",
+                                 column=self.column, column_type=column_type,
+                                 valid_options=_TRUTH)
+            raise QueryError("bad_filter", f"eq on {self.column} needs a value; for its empty "
+                             "cells use blank", column=self.column, column_type=column_type,
+                             valid_options=allowed)
         if self.op not in allowed:
             if column_type == "blank":
                 reason = "holds no values"
+            elif self.op in _TRUTH:
+                reason = ("holds no TRUE/FALSE values: is_true and is_false are for a "
+                          "TRUE/FALSE column" + ("; eq matches its text exactly"
+                                                 if column_type in ("text", "list") else ""))
             elif self.op in ("gte", "lte"):
                 reason = "is not ordered here: gte and lte compare numbers, dates and times"
             else:
@@ -582,7 +616,8 @@ class _Test:
             raise QueryError("wrong_type", f"{self.column} is a {column_type} column and "
                              f"{reason}; it takes {', '.join(allowed)}", column=self.column,
                              column_type=column_type, valid_options=allowed)
-        if self.compares and self._value(column_type, date1904) is _BAD:
+        if self.compares and self.op not in _TRUTH \
+                and self._value(column_type, date1904) is _BAD:
             what = "each value of in" if self.op == "in" else f"the value of {self.op}"
             form = "a whole number of words (150)" if self.op == "words_gt" \
                 else _FORMS[column_type]
@@ -640,9 +675,27 @@ def _tests(region: "Region | DatasetTable", where: Any) -> list[_Test]:
                 raise QueryError("bad_filter", f"{op} on {name} takes values, a list",
                                  column=name)
             operand = item.get("values")
-        elif op in ("blank", "not_blank"):
+        elif op in _TRUTH and "value" in item and "values" not in item:
+            # a value beside is_true/is_false: one that says the same, or "" (a strict
+            # caller's placeholder), changes nothing (rule 1, said in the result); one that
+            # says the other, or something else, is refused
+            said = _truth(item["value"])
+            if said is not None and said != (op == "is_true"):
+                other = "is_false" if op == "is_true" else "is_true"
+                raise QueryError("bad_filter", f"{op} on {name} takes no value, and this one "
+                                 f"says the other: use {other}, with no value",
+                                 column=name, valid_options=[other])
+            if said is None and item["value"] != "":
+                raise QueryError("bad_filter", f"{op} on {name} takes no value: drop value",
+                                 column=name)
+            test = _test(region, name, op, True, mapping=False, loose=loose)
+            test.said = f"{op} on {name} takes no value: its value changes nothing"
+            out.append(test)
+            continue
+        elif op in _UNVALUED:
             if "value" in item or "values" in item:
-                raise QueryError("bad_filter", f"{op} on {name} takes no value", column=name)
+                raise QueryError("bad_filter", f"{op} on {name} takes no value: drop "
+                                 + ("value" if "value" in item else "values"), column=name)
             operand = True
         else:
             if "values" in item:
@@ -660,11 +713,12 @@ def _test(region: "Region | DatasetTable", name: str, op: Any, operand: Any, *,
                          f"{', '.join(OPS)}", column=name, valid_options=OPS)
     if op == "contains" and isinstance(operand, (list, tuple)):
         op, read_as = "contains_any", "contains"        # a list for contains: any of them
-    if op in ("blank", "not_blank"):
+    if op in _UNVALUED:
         if operand is not True:
+            other = {"blank": "not_blank", "not_blank": "blank", "is_true": "is_false",
+                     "is_false": "is_true"}[op]
             raise QueryError("bad_filter", f"{op} on {name} is written {op}: true; for the "
-                             "other, use " + ("not_blank" if op == "blank" else "blank"),
-                             column=name)
+                             f"other, use {other}", column=name)
     elif op in _LISTED:
         if isinstance(operand, (str, bytes, Mapping)) or not isinstance(operand, Iterable):
             raise QueryError("bad_filter", f"{op} on {name} takes a list of values",
@@ -677,12 +731,23 @@ def _test(region: "Region | DatasetTable", name: str, op: Any, operand: Any, *,
                                                     and not loose_text(v)) for v in operand):
             raise QueryError("bad_filter", f"contains_any on {name} needs some text in each "
                              "value", column=name)
-    elif operand is None:
+    elif operand is None and op != "eq":     # eq's: refused once its column's type is known
         raise QueryError("bad_filter", f"{op} on {name} needs a value", column=name)
     elif op == "contains" and (operand == "" or (loose and isinstance(operand, str)
                                                  and not loose_text(operand))):
         raise QueryError("bad_filter", f"contains on {name} needs some text", column=name)
     return _Test(name, region.column_index(name), op, operand, loose=loose, read_as=read_as)
+
+
+def _truth(raw: Any) -> bool | None:
+    """A value given beside ``is_true``/``is_false``, read as the truth it states: ``True``
+    for ``true``/``"true"``, ``False`` for ``false``/``"false"`` (case and spaces aside);
+    ``None`` for anything else, which states none."""
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str) and raw.strip().casefold() in ("true", "false"):
+        return raw.strip().casefold() == "true"
+    return None
 
 
 def _words(raw: Any) -> int:
