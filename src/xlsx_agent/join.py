@@ -68,6 +68,7 @@ from ooxml_edit.tools import Dataset
 from .address import RangeAddress
 from .dataset import DatasetTable
 from .read.regions import Region, RegionError
+from .read.strings import FIELD
 from .read.types import Value
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -142,6 +143,11 @@ class JoinedTable(DatasetTable):
 
     def measured_rows(self) -> Any:
         return iter(self.cells)
+
+    def markdown_of(self, position: int, offset: int) -> str | None:
+        """The Markdown of a text value read from a rich cell (round 48), as read."""
+        value = self.cells[position - 1][offset]
+        return value.markdown if value.t == "text" else None
 
 
 def joined_table(workbook: "Workbook | None", left: "Region | DatasetTable",
@@ -279,7 +285,8 @@ def _read(workbook: "Workbook | None", side: "Region | DatasetTable"
     assert workbook is not None   # a table is read in its workbook
     area = Area(Cell(data.first.row, side.area.first.column),
                 Cell(data.last.row, side.area.last.column))
-    rows = [list(row) for row in workbook._read(RangeAddress(side.sheet_ref, area))]
+    rows = [list(row) for row in workbook._read(RangeAddress(side.sheet_ref, area),
+                                                markdown=FIELD)]
     keys = None
     if _keyed(workbook, side) is not None:
         keys = workbook.regions.key_index(side).keys
@@ -318,7 +325,7 @@ def _moved(value: Value, position: int, offset: int) -> JoinedValue:
     return JoinedValue(sheet="", row=position, column=offset + 1, v=value.v, t=value.t,
                        formula=value.formula, issue=value.issue, hidden=value.hidden,
                        cache=value.cache, external=value.external, cleaned=value.cleaned,
-                       at=value.a)
+                       at=value.a, markdown=value.markdown)
 
 
 def _joined(cells: list[Value], lists: bool, position: int, offset: int,
@@ -333,7 +340,7 @@ def _joined(cells: list[Value], lists: bool, position: int, offset: int,
         return JoinedValue(sheet="", row=position, column=offset + 1, v=value.v, t=value.t,
                            formula=value.formula, issue=value.issue, hidden=value.hidden,
                            cache=value.cache, external=value.external,
-                           cleaned=value.cleaned, at=at)
+                           cleaned=value.cleaned, at=at, markdown=value.markdown)
     items: list[Any] = []
     for value in cells:
         if value.t == "list":

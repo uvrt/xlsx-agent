@@ -1578,7 +1578,7 @@ class Workbook:
         return found
 
     def _reader(self, sheet: Sheet, *, formats: bool = False,
-                markdown: bool = False, data: bytes | None = None) -> SheetReader:
+                markdown: "bool | str" = False, data: bytes | None = None) -> SheetReader:
         """A reader of ``sheet``'s cells; ``data``: other bytes than the part's (``b""``
         for one that types cells it is handed, never passes over the sheet)."""
         given = data
@@ -1816,9 +1816,12 @@ class Workbook:
 
     def _read(self, address: "str | RangeAddress | TableAddress", *, formats: bool = False,
               columns: "set[int] | None" = None,
-              markdown: bool = False) -> Iterator[list[Value]]:
+              markdown: "bool | str" = False) -> Iterator[list[Value]]:
         """:meth:`read`, typing the cells of ``columns`` (sheet columns) only, for a pass
-        that looks at no other (:func:`~xlsx_agent.read.stream.read_area`)."""
+        that looks at no other (:func:`~xlsx_agent.read.stream.read_area`); ``markdown``
+        sets each text value's :attr:`~xlsx_agent.read.types.Value.markdown` without
+        giving it as ``v``: ``True`` a cell's Markdown, :data:`~xlsx_agent.read.strings.FIELD`
+        a document's (round 48)."""
         target: Address = parse_address(address) if isinstance(address, str) else address
         if isinstance(target, TableAddress):
             selection = self.resolve(target)
@@ -1918,7 +1921,7 @@ class Workbook:
 
     def _read_rows(self, areas: "list[RangeAddress]", *, formats: bool = False,
                    columns: "set[int] | None" = None,
-                   markdown: bool = False) -> Iterator[list[Value]]:
+                   markdown: "bool | str" = False) -> Iterator[list[Value]]:
         """The rows of ``areas`` (one row each, on one sheet, alike in columns), in their
         order: one read through the rows they span, keeping theirs."""
         wanted = {a.area.first.row for a in areas}

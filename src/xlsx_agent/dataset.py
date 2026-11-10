@@ -75,6 +75,7 @@ from .address import (Address, AddressError, DatasetAddress, NameNotFound, Range
 from .clean import UNMATCHED, CleanedWarning, unmatched_warning
 from .profile import FIRST_ADDRESSES, Count
 from .read.regions import KeyIndex, RegionError, _shape, key_text
+from .read.strings import FIELD
 from .read.types import _MS_PER_DAY, TYPES, Value, _clock, looks_like_date
 
 #: What a dataset without an id (a script's :class:`Derived` made without ``id=``) is called
@@ -162,7 +163,8 @@ def as_dataset(derived: Any) -> Dataset:
     return Dataset(columns, rows, sources=sources, keys=derived.key_columns,
                    types=types, detail=derived,
                    cache=getattr(derived, "cache", None) or None,
-                   formats=tuple(shown.get(c) for c in columns) if shown else None)
+                   formats=tuple(shown.get(c) for c in columns) if shown else None,
+                   markdown=getattr(derived, "markdown", None) or None)
 
 
 def _placed(value: Any) -> Any:
@@ -261,9 +263,16 @@ class DatasetTable:
         out = DatasetValue(sheet="", row=position, column=offset + 1, v=v, t=t,
                            issue=issue, dataset=self.id, name=self.columns[offset],
                            filled=self.filled_from.get((position, offset)))
+        if t == "text":
+            out.markdown = self.markdown_of(position, offset)
         if sources is not None:
             out.sources, out.more = cut_sources(self.cell_sources(position, offset), sources)
         return out
+
+    def markdown_of(self, position: int, offset: int) -> str | None:
+        """The Markdown the dataset holds for one text value (round 48: its cell's rich text
+        or list lines, ``Dataset.markdown``), ``None`` when the value is its text."""
+        return self.dataset.markdown_at(position - 1, offset)
 
     def cell_sources(self, position: int, offset: int) -> tuple[str, ...]:
         """The sources the dataset holds for one value, as given (``()``: none)."""
@@ -518,7 +527,10 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
 
     Values as :meth:`Workbook.read <xlsx_agent.Workbook.read>` types them: a number or a
     percent the stored number, a date, time or datetime its ISO 8601 text, text as text, a
-    logical value a bool, an error its code, a blank ``None``.  Nothing is coerced: a
+    logical value a bool, an error its code, a blank ``None``.  A text cell with bold,
+    italic or struck runs or list lines has its Markdown in ``markdown`` (round 48:
+    :func:`xlsx_agent.markdown.field_markdown`), what a document writing that one value as
+    blocks writes; the value is still its text.  Nothing is coerced: a
     number stored as text (``number_as_text``) stays text, a formula without a cached
     value stays blank.  Each column's type label is its values' one type, else ``None``:
     a deck or document tool writes a ``date`` (``datetime``, ``time``) column's ISO text in
@@ -577,7 +589,7 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
                           "smaller dataset", address=selection.address)
     found: dict[int, dict[int, Value]] = {}
     if positions:
-        for row in workbook.read(address, formats=True):
+        for row in workbook._read(address, formats=True, markdown=FIELD):
             for value in row:
                 found.setdefault(value.row, {})[value.column] = value
     keys, index = None, None
@@ -590,6 +602,7 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
             keys = index.keys
     rows: list[tuple[Any, ...]] = []
     sources: list[tuple[tuple[str, ...], ...]] = []
+    markdown: dict[tuple[int, int], str] = {}
     seen: list[set[str]] = [set() for _ in columns]
     shown: list[dict[str | None, None]] = [{} for _ in columns]
     cleaned: list[str] = []
@@ -624,6 +637,8 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
             else:
                 values.append(value.v)
                 seen[n].add(value.t)
+                if value.t == "text" and value.markdown and not value.cleaned:
+                    markdown[(len(rows), n)] = value.markdown
                 if value.t in NUMBER_TYPES:
                     shown[n].setdefault(format_code(value.format), None)
             if keys is not None:
@@ -651,7 +666,7 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
             unmatched_count, unmatched[0])), stacklevel=2)
     return Dataset(columns, tuple(rows), sources=tuple(sources), keys=1 if first_is_key else 0,
                    types=types, detail=detail, cache=cache or None,
-                   formats=tuple(one_format(codes) for codes in shown))
+                   formats=tuple(one_format(codes) for codes in shown), markdown=markdown or None)
 
 
 #: The types whose values a number format shows (round 36): what ``Dataset.formats`` says.

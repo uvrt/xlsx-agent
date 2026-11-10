@@ -529,7 +529,11 @@ class Derived:
     in order; ``formats`` (round 36) per column whose values come straight from its
     source's cells -- a ``group_by`` column, a ``min``, ``max``, ``first`` or ``last``, a
     join's or fill's rows -- the number format they are shown in there (``None``: General,
-    or several), what ooxml-edit's ``Dataset.formats`` says of the dataset.
+    or several), what ooxml-edit's ``Dataset.formats`` says of the dataset; ``markdown``
+    (round 48) the Markdown of each text value that came from one cell whose text is more
+    than its characters -- bold or italic runs, list lines (:func:`field_markdowns`) --
+    what ooxml-edit's ``Dataset.markdown`` holds, so that the value written into a
+    document as blocks keeps its lists and emphasis.
 
     :meth:`dataset` gives it as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`, what a
     tool session keeps under ``d:<id>`` (:mod:`xlsx_agent.dataset`); ``wb.derive(ds, ...)``
@@ -568,6 +572,9 @@ class Derived:
     joined: "Joined | None" = None
     filled: "tuple[Filled, ...]" = ()
     formats: dict[str, "str | None"] = field(default_factory=dict)
+    #: Round 48: the Markdown of each text value that is one cell's rich text or list lines
+    #: (:func:`field_markdowns`), by (row, column) from 0: ooxml-edit's ``Dataset.markdown``.
+    markdown: dict[tuple[int, int], str] = field(default_factory=dict, repr=False)
 
     def dataset(self) -> "Dataset":
         """This result as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`: the rows as
@@ -665,7 +672,8 @@ def derive(workbook: "Workbook | None",
     plan.check_types(*_type_pass(workbook, region, plan.typed_offsets, plan.coerce))
     state = plan.run()
     derived = plan.finish(state, sort=sort, top=top, round=round)
-    return replace(derived, formats=_formats(workbook, region, plan, derived))
+    return replace(derived, formats=_formats(workbook, region, plan, derived),
+                   markdown=field_markdowns(workbook, derived))
 
 
 #: The measures whose value is one of its cells' (round 36): shown as that column shows it.
@@ -797,7 +805,7 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
                           f"{MAX_CELLS}; give top, filter the rows (where) or fewer joined "
                           "columns", field="top")
     rows = [values for values, _, _ in built]
-    return Derived(
+    made = Derived(
         address=table.address.text, id=id, columns=tuple(columns),
         key_columns=table.left_keys, types={c: types[o] for o, c in enumerate(columns)},
         rows=rows, unrounded=[dict(r) for r in rows],
@@ -812,6 +820,60 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
         hidden=state.hidden.done(), date1904=date1904,
         cache=_cache(state.cache, None), joined=table.joined, filled=filled,
         formats={c: table.column_formats.get(c) for c in columns})
+    return replace(made, markdown=field_markdowns(workbook, made))
+
+
+def field_markdowns(workbook: "Workbook | None", derived: Derived
+                    ) -> dict[tuple[int, int], str]:
+    """Round 48: the Markdown of each text value of ``derived`` that came from one cell
+    whose text is more than its characters -- bold, italic or struck runs, lines that are
+    list items (:func:`xlsx_agent.markdown.field_markdown`) -- by (row, column) from 0.
+
+    A value with one source cell only: a row's own cell (a join's or fill's rows, a group
+    of one row's ``first``), not a measure over several.  Cells of a sheet are read in one
+    more pass over the rows they span, only when one of them could be such a cell (the
+    workbook has rich text, or a value has a line break or starts like a list item); a
+    value derived from a dataset or a join takes the Markdown its source held.  A cell
+    whose text is no longer the value's (changed since) gives none."""
+    from .markdown import _FIELD_ITEM
+    from .read.strings import FIELD
+
+    out: dict[tuple[int, int], str] = {}
+    wanted: dict[SheetRef, dict[tuple[int, int], list[tuple[int, int, str]]]] = {}
+    rich: bool | None = None
+    for i, (row, where) in enumerate(zip(derived.rows, derived.provenance)):
+        for k, name in enumerate(derived.columns):
+            value = row.get(name)
+            if not isinstance(value, str) or not value or derived.types.get(name) != "text":
+                continue
+            p = where.get(name)
+            if p is None or p.count != 1 or len(p.runs) != 2 or p.runs[0] != p.runs[1]:
+                continue
+            if p.via is not None:
+                found = p.via.markdown_of(p.runs[0], p.column)
+                if found:
+                    out[(i, k)] = found
+                continue
+            if workbook is None or not isinstance(p.sheet, SheetRef):
+                continue
+            if "\n" not in value and _FIELD_ITEM.match(value) is None:
+                if rich is None:
+                    rich = workbook.strings.maybe_rich
+                if not rich:
+                    continue
+            wanted.setdefault(p.sheet, {}).setdefault((p.runs[0], p.column), []).append(
+                (i, k, value))
+    for sheet, cells in wanted.items():
+        assert workbook is not None     # a sheet's cells are wanted only with one
+        rows = [r for r, _ in cells]
+        columns = {c for _, c in cells}
+        area = Area(Cell(min(rows), min(columns)), Cell(max(rows), max(columns)))
+        for line in workbook._read(RangeAddress(sheet, area), columns=columns, markdown=FIELD):
+            for cell in line:
+                for i, k, text in cells.get((cell.row, cell.column), ()):
+                    if cell.markdown and cell.v == text and not cell.cleaned:
+                        out[(i, k)] = cell.markdown
+    return out
 
 
 def _row_sort_key(value: Value, date1904: bool) -> Any:

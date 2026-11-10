@@ -181,7 +181,10 @@ class Value:
     ``v`` is the text cleaned, or a tuple of items for ``t="list"``), and ``original`` is
     the text as stored.  ``markdown``: a text value's Markdown, when the read asked for it
     (:mod:`xlsx_agent.markdown`: bold, italic and strikethrough runs, list lines, every
-    other character escaped); a read with ``markdown`` gives it as ``v``."""
+    other character escaped); a read with ``markdown`` gives it as ``v``.  A read in the
+    ``field`` mode (:data:`~xlsx_agent.read.strings.FIELD`, round 48) gives instead the
+    Markdown a document's text is written from (:func:`xlsx_agent.markdown.field_markdown`),
+    ``None`` for a value that is its text."""
 
     sheet: str
     row: int

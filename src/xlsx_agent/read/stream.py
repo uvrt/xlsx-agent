@@ -46,7 +46,8 @@ from lxml import etree
 from ..xml import SAFE_OPTIONS, iterparse_xml
 from ooxml_edit.markdown import Run
 
-from .strings import SharedStrings, decode_xstring, item_runs, item_text, text_markdown
+from .strings import (FIELD, SharedStrings, could_list, decode_xstring, item_runs, item_text,
+                      text_field, text_markdown)
 from .styles import DATE_KINDS, NumberFormat, Styles
 
 from ..address import _letters, format_cell
@@ -850,7 +851,7 @@ class SheetReader:
                  grouping: bool = True, local_dates: bool = False,
                  redaction: Any = None, cache: str = "cached_unverified",
                  external_names: "frozenset[str]" = frozenset(),
-                 markdown: bool = False) -> None:
+                 markdown: "bool | str" = False) -> None:
         #: The part's bytes, held or streamed (:class:`SheetBytes`).
         self.source = data if isinstance(data, SheetBytes) else SheetBytes(data)
         self.sheet = sheet
@@ -863,7 +864,9 @@ class SheetReader:
         self.local_dates = local_dates
         self.formats = formats
         #: Give each text value its Markdown too (:attr:`Value.markdown
-        #: <xlsx_agent.read.types.Value.markdown>`, :mod:`xlsx_agent.markdown`).
+        #: <xlsx_agent.read.types.Value.markdown>`, :mod:`xlsx_agent.markdown`); in the
+        #: :data:`~xlsx_agent.read.strings.FIELD` mode the Markdown a document's text is
+        #: written from, ``None`` for a value that is its text.
         self.markdown = markdown
         #: The workbook's redaction (:mod:`xlsx_agent.redact`): applied to every text (the
         #: shared strings come redacted), a number format's code, and a formula's text,
@@ -1359,7 +1362,8 @@ class SheetReader:
         if not value.formula:
             value.issue = cached[1]
         if self.markdown and index is not None:   # it is: a string was found by it
-            value.markdown = self.strings.markdown(index)
+            value.markdown = self.strings.field(index) if self.markdown == FIELD \
+                else self.strings.markdown(index)
 
     def _looks(self, text: str) -> str | None:
         """``"number_as_text"`` or ``"date_as_text"`` when text looks like one, in the
@@ -1373,8 +1377,12 @@ class SheetReader:
     def _text(self, value: Value, text: str, runs: "tuple[Run, ...] | None" = None) -> None:
         if self.markdown:
             redact = self.redaction.text if self.redaction is not None else None
-            value.markdown = text_markdown(runs if runs is not None else (Run(text),),
-                                           redact) if text else ""
+            given = runs if runs is not None else (Run(text),)
+            if self.markdown == FIELD:
+                value.markdown = text_field(given, redact) \
+                    if text and (runs is not None or could_list(text)) else None
+            else:
+                value.markdown = text_markdown(given, redact) if text else ""
         if self.redaction is not None and text:
             text = self.redaction.text(text)
         value.v, value.t = text, "text"

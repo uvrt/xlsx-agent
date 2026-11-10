@@ -634,7 +634,7 @@ class Span:
 
     def read(self, workbook: "Workbook", area: Area, *, formats: bool = False,
              columns: "set[int] | None" = None,
-             markdown: bool = False) -> Iterator[list[Value]]:
+             markdown: "bool | str" = False) -> Iterator[list[Value]]:
         """The rows of ``area`` (its own rows and columns), each read from its sheet and
         given in its own place, its cell's address kept (:attr:`Value.origin
         <xlsx_agent.read.types.Value.origin>`).  ``columns``: its own columns to type."""
