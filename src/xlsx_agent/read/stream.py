@@ -46,8 +46,7 @@ from lxml import etree
 from ..xml import SAFE_OPTIONS, iterparse_xml
 from ooxml_edit.markdown import Run
 
-from .strings import (FIELD, SharedStrings, could_list, decode_xstring, item_runs, item_text,
-                      text_field, text_markdown)
+from .strings import RAW, SharedStrings, decode_xstring, item_runs, item_text, text_markdown
 from .styles import DATE_KINDS, NumberFormat, Styles
 
 from ..address import _letters, format_cell
@@ -865,8 +864,8 @@ class SheetReader:
         self.formats = formats
         #: Give each text value its Markdown too (:attr:`Value.markdown
         #: <xlsx_agent.read.types.Value.markdown>`, :mod:`xlsx_agent.markdown`); in the
-        #: :data:`~xlsx_agent.read.strings.FIELD` mode the Markdown a document's text is
-        #: written from, ``None`` for a value that is its text.
+        #: :data:`~xlsx_agent.read.strings.RAW` mode only what it is written from
+        #: (:attr:`Value.rich <xlsx_agent.read.types.Value.rich>`), nothing worked out.
         self.markdown = markdown
         #: The workbook's redaction (:mod:`xlsx_agent.redact`): applied to every text (the
         #: shared strings come redacted), a number format's code, and a formula's text,
@@ -1362,8 +1361,10 @@ class SheetReader:
         if not value.formula:
             value.issue = cached[1]
         if self.markdown and index is not None:   # it is: a string was found by it
-            value.markdown = self.strings.field(index) if self.markdown == FIELD \
-                else self.strings.markdown(index)
+            if self.markdown == RAW:
+                value.rich = index
+            else:
+                value.markdown = self.strings.markdown(index)
 
     def _looks(self, text: str) -> str | None:
         """``"number_as_text"`` or ``"date_as_text"`` when text looks like one, in the
@@ -1375,14 +1376,12 @@ class SheetReader:
         return None
 
     def _text(self, value: Value, text: str, runs: "tuple[Run, ...] | None" = None) -> None:
-        if self.markdown:
+        if self.markdown == RAW:
+            value.rich = runs
+        elif self.markdown:
             redact = self.redaction.text if self.redaction is not None else None
-            given = runs if runs is not None else (Run(text),)
-            if self.markdown == FIELD:
-                value.markdown = text_field(given, redact) \
-                    if text and (runs is not None or could_list(text)) else None
-            else:
-                value.markdown = text_markdown(given, redact) if text else ""
+            value.markdown = text_markdown(runs if runs is not None else (Run(text),),
+                                           redact) if text else ""
         if self.redaction is not None and text:
             text = self.redaction.text(text)
         value.v, value.t = text, "text"

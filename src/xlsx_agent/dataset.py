@@ -64,8 +64,11 @@ from __future__ import annotations
 import datetime as _dt
 import warnings
 from dataclasses import dataclass, replace
+import threading
+from collections.abc import Mapping
 from typing import Any, Iterable, Iterator, Sequence
 
+from ooxml_edit.markdown import Run, merge
 from ooxml_edit.sheets import Area, Cell, number_text
 from ooxml_edit.tools import DATASET_PREFIX, Dataset
 
@@ -75,7 +78,7 @@ from .address import (Address, AddressError, DatasetAddress, NameNotFound, Range
 from .clean import UNMATCHED, CleanedWarning, unmatched_warning
 from .profile import FIRST_ADDRESSES, Count
 from .read.regions import KeyIndex, RegionError, _shape, key_text
-from .read.strings import FIELD
+from .read.strings import RAW, could_list, text_field
 from .read.types import _MS_PER_DAY, TYPES, Value, _clock, looks_like_date
 
 #: What a dataset without an id (a script's :class:`Derived` made without ``id=``) is called
@@ -177,6 +180,105 @@ def _placed(value: Any) -> Any:
     return value
 
 
+class FieldMarkdown(Mapping):
+    """Round 48: the Markdown of a dataset's text values from cells (ooxml-edit's
+    ``Dataset.markdown``), worked out only when a value's is asked for -- a document writing
+    that one field as blocks -- and kept once worked out.
+
+    ``cells`` maps each value's ``(row, column)`` (from 0) to its cell -- an address
+    (``Notes!B2``) or ``(sheet, row, column)`` -- and the text the value holds; ``via`` to
+    another dataset's markdown and its place there (a dataset derived from one).  The cells
+    named are those that could have Markdown: nothing is read when the dataset is made.
+    The first value asked for reads every named cell's string in one pass per sheet
+    (:data:`~xlsx_agent.read.strings.RAW`: a shared string's index, nothing worked out);
+    each value's Markdown is then worked out on its own when asked for
+    (:meth:`~xlsx_agent.read.strings.SharedStrings.field`).  A cell whose text is no longer
+    the value's (changed since), or a read that fails, gives ``None``: the value is
+    written as its text.  Pickled, every value is worked out and it is a plain ``dict``."""
+
+    def __init__(self, workbook: Any, cells: "dict[tuple[int, int], tuple[Any, str]]",
+                 via: "dict[tuple[int, int], tuple[Any, tuple[int, int]]] | None" = None) -> None:
+        self.workbook = workbook
+        self.cells = cells
+        self.via = via or {}
+        self._found: dict[tuple[int, int], str | None] = {}
+        self._raw: "dict[tuple[int, int], tuple[Any, Any]] | None" = None
+        self._lock = threading.Lock()
+
+    def __getitem__(self, place: tuple[int, int]) -> str | None:
+        if place in self._found:
+            return self._found[place]
+        if place in self.via:
+            source, there = self.via[place]
+            found = source.get(there) if source else None
+            found = found if isinstance(found, str) else None
+        elif place in self.cells:
+            found = self._work_out(place)
+        else:
+            raise KeyError(place)
+        self._found[place] = found
+        return found
+
+    def __contains__(self, place: object) -> bool:      # without working it out
+        return place in self.cells or place in self.via
+
+    def __iter__(self) -> Iterator[tuple[int, int]]:
+        yield from self.cells
+        yield from (place for place in self.via if place not in self.cells)
+
+    def __len__(self) -> int:
+        return len(self.cells) + sum(1 for place in self.via if place not in self.cells)
+
+    def __reduce__(self) -> Any:
+        return dict, ({place: text for place in self if (text := self[place]) is not None},)
+
+    def _work_out(self, place: tuple[int, int]) -> str | None:
+        with self._lock:
+            if self._raw is None:
+                try:
+                    self._raw = self._read()
+                except Exception:  # noqa: BLE001 -- Markdown is an aid: the value's text then
+                    self._raw = {}
+        found = self._raw.get(place)
+        if found is None:
+            return None
+        strings, rich = found
+        if isinstance(rich, int):
+            return strings.field(rich)
+        text = self.cells[place][1]
+        redaction = getattr(self.workbook, "_redaction", None)
+        runs = rich if rich is not None else merge([Run(text)])
+        return text_field(runs, redaction.text if redaction is not None else None) \
+            if rich is not None or could_list(text) else None
+
+    def _read(self) -> "dict[tuple[int, int], tuple[Any, Any]]":
+        """Each named cell's string, as a read gives it (:data:`RAW`), when its text is still
+        the value's: one pass per sheet over the rows the cells span."""
+        wanted: dict[Any, dict[tuple[int, int], list[tuple[tuple[int, int], str]]]] = {}
+        for place, (where, text) in self.cells.items():
+            if isinstance(where, str):
+                found = parse_address(where)
+                if not isinstance(found, RangeAddress):
+                    continue
+                sheet, row, column = found.sheet, found.area.first.row, found.area.first.column
+            else:
+                sheet, row, column = where
+            wanted.setdefault(sheet, {}).setdefault((row, column), []).append((place, text))
+        out: dict[tuple[int, int], tuple[Any, Any]] = {}
+        strings = self.workbook.strings
+        for sheet, cells in wanted.items():
+            rows = [r for r, _ in cells]
+            columns = {c for _, c in cells}
+            area = Area(Cell(min(rows), min(columns)), Cell(max(rows), max(columns)))
+            for line in self.workbook._read(RangeAddress(sheet, area), columns=columns,
+                                            markdown=RAW):
+                for cell in line:
+                    for place, text in cells.get((cell.row, cell.column), ()):
+                        if cell.t == "text" and cell.v == text and not cell.cleaned:
+                            out[place] = (strings, cell.rich)
+        return out
+
+
 class DatasetTable:
     """A dataset as a table: what the derive engine reads (as it reads a
     :class:`~xlsx_agent.read.regions.Region`) and what ``xlsx_read`` pages through.
@@ -263,16 +365,9 @@ class DatasetTable:
         out = DatasetValue(sheet="", row=position, column=offset + 1, v=v, t=t,
                            issue=issue, dataset=self.id, name=self.columns[offset],
                            filled=self.filled_from.get((position, offset)))
-        if t == "text":
-            out.markdown = self.markdown_of(position, offset)
         if sources is not None:
             out.sources, out.more = cut_sources(self.cell_sources(position, offset), sources)
         return out
-
-    def markdown_of(self, position: int, offset: int) -> str | None:
-        """The Markdown the dataset holds for one text value (round 48: its cell's rich text
-        or list lines, ``Dataset.markdown``), ``None`` when the value is its text."""
-        return self.dataset.markdown_at(position - 1, offset)
 
     def cell_sources(self, position: int, offset: int) -> tuple[str, ...]:
         """The sources the dataset holds for one value, as given (``()``: none)."""
@@ -530,7 +625,8 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
     logical value a bool, an error its code, a blank ``None``.  A text cell with bold,
     italic or struck runs or list lines has its Markdown in ``markdown`` (round 48:
     :func:`xlsx_agent.markdown.field_markdown`), what a document writing that one value as
-    blocks writes; the value is still its text.  Nothing is coerced: a
+    blocks writes, worked out only when asked for (:class:`FieldMarkdown`); the value is
+    still its text.  Nothing is coerced: a
     number stored as text (``number_as_text``) stays text, a formula without a cached
     value stays blank.  Each column's type label is its values' one type, else ``None``:
     a deck or document tool writes a ``date`` (``datetime``, ``time``) column's ISO text in
@@ -589,7 +685,7 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
                           "smaller dataset", address=selection.address)
     found: dict[int, dict[int, Value]] = {}
     if positions:
-        for row in workbook._read(address, formats=True, markdown=FIELD):
+        for row in workbook.read(address, formats=True):
             for value in row:
                 found.setdefault(value.row, {})[value.column] = value
     keys, index = None, None
@@ -602,7 +698,8 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
             keys = index.keys
     rows: list[tuple[Any, ...]] = []
     sources: list[tuple[tuple[str, ...], ...]] = []
-    markdown: dict[tuple[int, int], str] = {}
+    markdown: dict[tuple[int, int], tuple[Any, str]] = {}
+    rich: bool | None = None
     seen: list[set[str]] = [set() for _ in columns]
     shown: list[dict[str | None, None]] = [{} for _ in columns]
     cleaned: list[str] = []
@@ -637,8 +734,11 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
             else:
                 values.append(value.v)
                 seen[n].add(value.t)
-                if value.t == "text" and value.markdown and not value.cleaned:
-                    markdown[(len(rows), n)] = value.markdown
+                if value.t == "text" and not value.cleaned and isinstance(value.v, str):
+                    if rich is None:
+                        rich = workbook.strings.maybe_rich
+                    if rich or could_list(value.v):
+                        markdown[(len(rows), n)] = (value.a, value.v)
                 if value.t in NUMBER_TYPES:
                     shown[n].setdefault(format_code(value.format), None)
             if keys is not None:
@@ -666,7 +766,8 @@ def table_dataset(workbook: Any, address: "str | TableAddress", *,
             unmatched_count, unmatched[0])), stacklevel=2)
     return Dataset(columns, tuple(rows), sources=tuple(sources), keys=1 if first_is_key else 0,
                    types=types, detail=detail, cache=cache or None,
-                   formats=tuple(one_format(codes) for codes in shown), markdown=markdown or None)
+                   formats=tuple(one_format(codes) for codes in shown),
+                   markdown=FieldMarkdown(workbook, markdown) if markdown else None)
 
 
 #: The types whose values a number format shows (round 36): what ``Dataset.formats`` says.

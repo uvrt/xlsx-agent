@@ -28,6 +28,11 @@ BODY = ("Doors need work:\n\n- hinges\n- **locks**\n  - front\n  - *back*\n- pai
         "1. first\n2. second")
 
 
+def worked(markdown) -> dict:
+    """A dataset's markdown, every value worked out: those that are Markdown."""
+    return {place: markdown[place] for place in markdown or {} if markdown[place] is not None}
+
+
 def field(text: str) -> str | None:
     return field_markdown((Run(text),))
 
@@ -174,15 +179,15 @@ def test_a_derive_keeps_the_markdown_of_values_from_one_cell():
     wb = _book()
     one = wb.derive("t:Notes", group_by=["Ref"],
                     measures=[{"fn": "first", "column": "Body", "as": "Body"}], id="one")
-    assert one.markdown == {(0, 1): field_markdown(cell_runs(BODY)), (1, 1): "- typed\n  - nested",
+    assert worked(one.markdown) == {(0, 1): field_markdown(cell_runs(BODY)), (1, 1): "- typed\n  - nested",
                             (3, 1): "*only* this"}
     # Several rows to one group: the value is one of several cells -- no Markdown read.
     many = wb.derive("t:Notes", measures=[{"fn": "first", "column": "Body", "as": "Body"}])
-    assert many.provenance[0]["Body"].count == 4 and many.markdown == {}
+    assert many.provenance[0]["Body"].count == 4 and worked(many.markdown) == {}
     # From a dataset: carried through by position.
     again = wb.derive(one, where={"Ref": {"in": ["N-2", "N-4"]}}, group_by=["Ref"],
                       measures=[{"fn": "first", "column": "Body", "as": "Body"}])
-    assert again.dataset().markdown == {(0, 1): "- typed\n  - nested", (1, 1): "*only* this"}
+    assert worked(again.dataset().markdown) == {(0, 1): "- typed\n  - nested", (1, 1): "*only* this"}
 
 
 def test_a_join_keeps_the_markdown_of_both_sides():
@@ -209,4 +214,52 @@ def test_a_workbook_without_rich_text_or_lists_is_not_read_again():
 
     wb._read = counted
     derived = wb.derive("t:T", group_by=["k"], measures=[{"fn": "first", "column": "v", "as": "v"}])
-    assert derived.markdown == {} and "field" not in calls
+    assert derived.markdown == {} and "raw" not in calls        # its own passes only
+    table = wb.dataset("t:T")
+    assert table.markdown is None and "raw" not in calls
+
+
+def test_markdown_is_worked_out_only_when_a_value_is_asked_for():
+    """Making the dataset reads nothing more; the first value asked for reads the named
+    cells' strings once (no Markdown worked out), and each value's Markdown is worked out
+    on its own, once.  Pickled, it is every value's, worked out."""
+    import pickle
+
+    from xlsx_agent.read import strings as strings_module
+
+    wb = _book()
+    calls, worked_out = [], []
+    original_read, original_field = wb._read, strings_module.text_field
+
+    def counted(*args, **kwargs):
+        calls.append(kwargs.get("markdown"))
+        return original_read(*args, **kwargs)
+
+    def converting(runs, redact=None):
+        worked_out.append(plain(runs))
+        return original_field(runs, redact)
+
+    wb._read = counted
+    strings_module.text_field = converting
+    try:
+        data = wb.derive("t:Notes", group_by=["Ref"],
+                         measures=[{"fn": "first", "column": "Body", "as": "Body"}]).dataset()
+        table = wb.dataset("t:Notes")
+        assert "raw" not in calls and worked_out == []
+        assert data.markdown_at(1, 1) == "- typed\n  - nested"
+        assert calls.count("raw") == 1 and len(worked_out) == 1
+        assert data.markdown_at(3, 1) == "*only* this" and data.markdown_at(1, 1)
+        assert calls.count("raw") == 1 and len(worked_out) == 2
+        assert table.row_slice(2, 2).markdown_at(0, 1) == "- typed\n  - nested"
+        assert table.markdown_at(2, 1) is None                     # a plain cell: its text
+        again = pickle.loads(pickle.dumps(data))
+        assert isinstance(again.markdown, dict) and again.markdown == worked(data.markdown)
+    finally:
+        strings_module.text_field = original_field
+
+
+def test_a_cell_changed_since_gives_no_markdown():
+    wb = _book()
+    data = wb.dataset("t:Notes")
+    wb.set_cells({"Notes!B3": "• another\n• list"})
+    assert data.rows[1][1] == "• typed\n    ◦ nested" and data.markdown_at(1, 1) is None

@@ -574,7 +574,7 @@ class Derived:
     formats: dict[str, "str | None"] = field(default_factory=dict)
     #: Round 48: the Markdown of each text value that is one cell's rich text or list lines
     #: (:func:`field_markdowns`), by (row, column) from 0: ooxml-edit's ``Dataset.markdown``.
-    markdown: dict[tuple[int, int], str] = field(default_factory=dict, repr=False)
+    markdown: "Mapping[tuple[int, int], str | None]" = field(default_factory=dict, repr=False)
 
     def dataset(self) -> "Dataset":
         """This result as an ooxml-edit :class:`~ooxml_edit.tools.Dataset`: the rows as
@@ -824,22 +824,23 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
 
 
 def field_markdowns(workbook: "Workbook | None", derived: Derived
-                    ) -> dict[tuple[int, int], str]:
+                    ) -> "Mapping[tuple[int, int], str | None]":
     """Round 48: the Markdown of each text value of ``derived`` that came from one cell
     whose text is more than its characters -- bold, italic or struck runs, lines that are
-    list items (:func:`xlsx_agent.markdown.field_markdown`) -- by (row, column) from 0.
+    list items (:func:`xlsx_agent.markdown.field_markdown`) -- by (row, column) from 0,
+    worked out only when asked for (:class:`~xlsx_agent.dataset.FieldMarkdown`): nothing
+    more is read here.
 
     A value with one source cell only: a row's own cell (a join's or fill's rows, a group
-    of one row's ``first``), not a measure over several.  Cells of a sheet are read in one
-    more pass over the rows they span, only when one of them could be such a cell (the
-    workbook has rich text, or a value has a line break or starts like a list item); a
-    value derived from a dataset or a join takes the Markdown its source held.  A cell
-    whose text is no longer the value's (changed since) gives none."""
-    from .markdown import _FIELD_ITEM
-    from .read.strings import FIELD
+    of one row's ``first``), not a measure over several.  The cells named are those that
+    could have Markdown (the workbook has rich text, or the value has a line break or
+    starts like a list item); a value derived from a dataset takes the Markdown its source
+    holds, a join's the cell it was read from."""
+    from .dataset import FieldMarkdown
+    from .read.strings import could_list
 
-    out: dict[tuple[int, int], str] = {}
-    wanted: dict[SheetRef, dict[tuple[int, int], list[tuple[int, int, str]]]] = {}
+    cells: dict[tuple[int, int], tuple[Any, str]] = {}
+    via: dict[tuple[int, int], tuple[Any, tuple[int, int]]] = {}
     rich: bool | None = None
     for i, (row, where) in enumerate(zip(derived.rows, derived.provenance)):
         for k, name in enumerate(derived.columns):
@@ -849,31 +850,29 @@ def field_markdowns(workbook: "Workbook | None", derived: Derived
             p = where.get(name)
             if p is None or p.count != 1 or len(p.runs) != 2 or p.runs[0] != p.runs[1]:
                 continue
-            if p.via is not None:
-                found = p.via.markdown_of(p.runs[0], p.column)
-                if found:
-                    out[(i, k)] = found
+            position = p.runs[0]
+            cell: Any = None
+            if isinstance(p.via, JoinedTable):
+                at = p.via.cells[position - 1][p.column].at
+                cell = at if at and not at.startswith("d:") else None
+            elif p.via is not None:
+                held = p.via.dataset.markdown
+                if held and (position - 1, p.column) in held:
+                    via[(i, k)] = (held, (position - 1, p.column))
                 continue
-            if workbook is None or not isinstance(p.sheet, SheetRef):
+            elif isinstance(p.sheet, SheetRef):
+                cell = (p.sheet, position, p.column)
+            if cell is None or workbook is None:
                 continue
-            if "\n" not in value and _FIELD_ITEM.match(value) is None:
+            if not could_list(value):
                 if rich is None:
                     rich = workbook.strings.maybe_rich
                 if not rich:
                     continue
-            wanted.setdefault(p.sheet, {}).setdefault((p.runs[0], p.column), []).append(
-                (i, k, value))
-    for sheet, cells in wanted.items():
-        assert workbook is not None     # a sheet's cells are wanted only with one
-        rows = [r for r, _ in cells]
-        columns = {c for _, c in cells}
-        area = Area(Cell(min(rows), min(columns)), Cell(max(rows), max(columns)))
-        for line in workbook._read(RangeAddress(sheet, area), columns=columns, markdown=FIELD):
-            for cell in line:
-                for i, k, text in cells.get((cell.row, cell.column), ()):
-                    if cell.markdown and cell.v == text and not cell.cleaned:
-                        out[(i, k)] = cell.markdown
-    return out
+            cells[(i, k)] = (cell, value)
+    if not cells and not via:
+        return {}
+    return FieldMarkdown(workbook, cells, via)
 
 
 def _row_sort_key(value: Value, date1904: bool) -> Any:

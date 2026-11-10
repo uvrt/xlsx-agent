@@ -19,10 +19,11 @@ list items.  The table is read a second time for it, only then.  With a redactio
 run is redacted; when that would not give the item's text redacted as a whole (a term
 across runs), the item is given as its redacted text, without its marks.
 
-A read in the :data:`FIELD` mode (round 48) gives an item the Markdown a document's text is
-written from instead (:func:`xlsx_agent.markdown.field_markdown`), ``None`` for an item
-that is its text; the table's rich items are noted on the first read, so a table without
-any is never read again for it.
+A read in the :data:`RAW` mode (round 48) gives a value only its item's index (or an
+inline string's runs), and :meth:`SharedStrings.field` the Markdown a document's text is
+written from (:func:`xlsx_agent.markdown.field_markdown`), ``None`` for an item that is its
+text, worked out when asked for; the table's rich items are noted on the first read, so a
+table without any is never read again for them.
 """
 
 from __future__ import annotations
@@ -45,9 +46,10 @@ _SI = tuple(f"{{{ns}}}si" for ns in NS_MAIN)
 
 _ESCAPE = re.compile(r"_x([0-9A-Fa-f]{4})_")
 
-#: The Markdown mode of a read that gives each text value the Markdown a document's text is
-#: written from (:func:`xlsx_agent.markdown.field_markdown`), not a cell's.
-FIELD = "field"
+#: The Markdown mode of a read that gives each text value only what its Markdown is worked
+#: out from, when asked for: its shared string's index, or an inline string's runs
+#: (:attr:`Value.rich <xlsx_agent.read.types.Value.rich>`).
+RAW = "raw"
 
 
 def decode_xstring(text: str) -> str:
@@ -113,7 +115,7 @@ def could_list(text: str) -> bool:
 
 def text_field(runs: "tuple[Run, ...]", redact=None) -> str | None:
     """Runs as the Markdown a document's text is written from, ``None`` when they are their
-    text (:data:`FIELD`), redacted by ``redact`` when given."""
+    text (:meth:`SharedStrings.field`), redacted by ``redact`` when given."""
     from ..markdown import field_markdown
 
     return field_markdown(_redacted(runs, redact))
@@ -164,7 +166,7 @@ class SharedStrings:
         self._rich: list[tuple[Run, ...] | None] | None = None
         self._markdown: dict[int, str] = {}
         #: Whether any item has rich runs (noted on the first read), and the field Markdown
-        #: given so far (:data:`FIELD`).
+        #: given so far (:meth:`field`).
         self._any_rich = False
         self._fields: dict[int, str | None] = {}
 
@@ -209,7 +211,7 @@ class SharedStrings:
 
     def field(self, index: int) -> str | None:
         """The ``index``-th item as the Markdown a document's text is written from, ``None``
-        when it is its text (:data:`FIELD`); ``IndexError`` past the end."""
+        when it is its text (:func:`xlsx_agent.markdown.field_markdown`); ``IndexError`` past the end."""
         if index in self._fields:
             return self._fields[index]
         text = self[index]
