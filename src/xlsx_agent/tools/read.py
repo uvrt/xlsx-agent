@@ -160,13 +160,13 @@ CALL_CURSOR = string("next_cursor of the previous page, with the same call.", op
                         "value; * is every row (t:Products/*/Price); or a dataset "
                         "(d:by_region), as tables. A cell or range inside one table's data "
                         "rows reads those whole table rows."),
-       "formats": boolean("Add format, the number format code. Default false.", optional=True),
-       "formulas": boolean("Add f, the formula text. Default false.", optional=True),
-       "comments": boolean("Add comment (author, text). Default false.", optional=True),
-       "hyperlinks": boolean("Add link (url or location). Default false.", optional=True),
-       "merges": boolean("List the merged areas over the rows. Default false.", optional=True),
+       "formats": boolean("Add format, the number format code.", optional=True),
+       "formulas": boolean("Add f, the formula text.", optional=True),
+       "comments": boolean("Add comment (author, text).", optional=True),
+       "hyperlinks": boolean("Add link (url or location).", optional=True),
+       "merges": boolean("List the merged areas over the rows.", optional=True),
        "validations": boolean("List data validations over the target (type, cells, list "
-                              "source). Default false.", optional=True),
+                              "source).", optional=True),
        "markdown": boolean("Text as Markdown (**bold**, lists). Default false.",
                            optional=True),
        "sources": boolean("d: only: add each value's source cells (8, more counted); "

@@ -26,6 +26,17 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.36 (unreleased) -- the loaded core back within its counted budget
+
+- The loaded core counted 7,010 tokens online with 0.1.35's `is_true`/`is_false`
+  (claude-sonnet-5-5, 2026-11-10), past the 7,000 budget. `xlsx_read`'s six opt-in flags
+  (`formats`, `formulas`, `comments`, `hyperlinks`, `merges`, `validations`) no longer say
+  "Default false.": each adds or lists something, and the tool's description says options
+  add them. `markdown` and `cells_only`, which change how cells read, keep it. Counted
+  online 7,010 -> 6,986; estimated, `xlsx_read` 698 -> 672, the core 4,950 -> 4,924, every
+  definition 7,104 -> 7,078 (the guards 4,925 and 7,080). Descriptions only; no behaviour
+  changed.
+
 ## 0.1.35 (unreleased) -- filters for a TRUE/FALSE column: is_true and is_false
 
 - **`is_true` and `is_false`** (production round 49, R95): two more filter tests in

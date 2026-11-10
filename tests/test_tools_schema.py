@@ -193,8 +193,11 @@ CORE_COUNTED_BUDGET = 7000
 #: every definition 7,082 -> 7,092; the core unchanged.
 #: Round 49, R95: is_true and is_false in the filters' op enum (xlsx_query and
 #: xlsx_derive, +6 each): the core 4,938 -> 4,950, every definition 7,092 -> 7,104.
-CORE_GUARD = 4950
-ALL_GUARD = 7105
+#: Then "Default false." dropped from xlsx_read's six opt-in flags (they add or list
+#: something; counted 7,010 -> 6,986 online, claude-sonnet-5-5, 2026-11-10): the core
+#: 4,950 -> 4,924, every definition 7,104 -> 7,078.
+CORE_GUARD = 4925
+ALL_GUARD = 7080
 
 
 @pytest.fixture(scope="module")
