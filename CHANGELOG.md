@@ -26,6 +26,39 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.34 (unreleased) -- a rich-text cell read as a dataset's text field comes back as Markdown
+
+- **A cell's lists and emphasis reach a document as lists and emphasis** (production round
+  48, R86). A text value of a dataset -- a derive's rows (`xlsx_derive`, `d:<id>`), or a
+  table's rows a document tool reads by `t:` -- whose cell holds more than its characters
+  now carries its Markdown beside it (ooxml-edit 0.105.0's `Dataset.markdown`): bold,
+  italic and strikethrough runs as `**`, `*` and `~~`; each line that is a list item -- as
+  the writer writes them (`•`, a number and `.` or `)`) or a bullet typed in Excel (`◦`,
+  `▪`, `-`; `markdown.FIELD_BULLETS`) -- a Markdown item, nested by its indentation; a
+  further line of an item after a hard break; a paragraph's lines kept by hard breaks only
+  where the cell broke them (`markdown.field_markdown`). docx-agent's
+  `word_insert_markdown` writes that one field (`from: d:notes/#3/Body`, or a reference
+  standing alone) as list items in the template's list styles, nested. The value itself
+  stays the cell's text: a reference inside a sentence, a table cell and a check of
+  numbers read it. A cell with no marks and no list line has no Markdown: its text is the
+  field, as before. Round trip (a property over made-up Markdown): Markdown -> the
+  writer's rich text -> dataset field gives the same Markdown, for what the writer holds
+  (`tests/test_field_markdown.py`); end to end into a Word document
+  (`tests/test_sources_document.py`).
+- Which values: one cell's own -- a table's or a join's rows, a group of one row's `first`
+  or `last` -- not a measure over several cells; derived from a dataset, the Markdown its
+  source holds. **Worked out only when asked for** (`dataset.FieldMarkdown`, a lazy
+  mapping): making the dataset names the cells that could have Markdown (the shared
+  strings have a rich item, or the value has a line break or starts like a list item) and
+  reads nothing more; the first value asked for reads those cells' strings in one pass per
+  sheet (`read.strings.RAW`: a shared string's index, nothing worked out), the shared
+  strings' rich runs are read then, and each value's Markdown is worked out on its own,
+  once. A cell changed since gives none (the value's text is written). Pickled, every
+  value is worked out (a plain `dict`). 431-row table, process CPU, best of 5 (before ->
+  after): derive plain 97.5 -> 100.6 ms, list lines 100.5 -> 104.0, rich 116.3 -> 120.6;
+  table read 16-17 -> 18 ms; on insert, the first field 10 ms (list lines) or 65 ms (rich:
+  the second read of the shared strings and the pass), every field of the 431 52 or 101 ms.
+
 ## 0.1.33 (unreleased) -- a sheet read from its compressed entry, never held whole
 
 - **Memory per workbook** (production round 46, lane Z): ooxml-edit 0.99.0 keeps every
@@ -1571,7 +1604,7 @@ each earlier version added is in that package's CHANGELOG. `pyproject.toml`'s ve
 the one this file's top version section names, and `xlsx_agent.__version__` the same
 (`tools/check_version.py`, run by CI's `build` job).
 
-- `ooxml-edit>=0.99.0`: the format-neutral editing core the siblings share (the OPC
+- `ooxml-edit>=0.105.0`: the format-neutral editing core the siblings share (the OPC
   package with parts as their original bytes, the safe parser, the history, the tool
   layer with workbooks a kind of the shared tools, the session's locale and datasets, the
   sources resolver hook, and `ooxml_edit.sheets`, the lossless cell writer the edits and
@@ -1586,7 +1619,8 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   set on their own (`Worksheet.set_style`, `set_row_height`, `set_row_style`, `cells_in`,
   `Styles.add_format`; round 44, R53); 0.96.0 the shared document properties
   (`ooxml_edit.properties`; round 44, R62); 0.99.0 parts kept as their compressed ZIP
-  entries until edited (`OpcPackage.part_entry`; round 46) -- the floor.
+  entries until edited (`OpcPackage.part_entry`; round 46); 0.105.0 `Dataset.markdown`, a
+  text value's Markdown beside it (round 48, R86) -- the floor.
 - `ooxml-common>=0.44.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
   widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, from
@@ -1598,6 +1632,9 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   table in one session (`tests/test_sources_deck.py`), and a deck's text checked against a
   workbook's values (`tests/test_numbers_deck.py`, pptx-agent 0.1.17); 0.2.0 is pptx2svg's
   first tagged version.
+- `docx-agent` (`test` extra only): a workbook's rich-text cell written into a Word
+  document by reference, as list items in its list styles (`tests/test_sources_document.py`,
+  docx-agent 0.1.81).
 - `ruff==0.17.2` and `mypy==2.4.0` (`dev` extra only, with the `test` requirements):
   pinned, as CI's `build` job installs them, so a new release changes nothing until both
   are raised together.

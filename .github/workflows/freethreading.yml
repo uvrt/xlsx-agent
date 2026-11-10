@@ -57,6 +57,8 @@ jobs:
           python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@main"
           python -m pip install "pptx2svg @ git+https://github.com/uvrt/pptx2svg@main"
           python -m pip install "pptx-agent @ git+https://github.com/uvrt/pptx-agent@main"
+          python -m pip install "docx2svg @ git+https://github.com/uvrt/docx2svg@main"
+          python -m pip install "docx-agent @ git+https://github.com/uvrt/docx-agent@main"
           python -m pip install -e .[test]
 
       - name: Importing the package leaves the GIL off

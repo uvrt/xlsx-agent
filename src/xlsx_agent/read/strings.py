@@ -18,6 +18,12 @@ strikethrough (``rPr`` ``b``, ``i``, ``strike``: :func:`ooxml_edit.sheets.rich_r
 list items.  The table is read a second time for it, only then.  With a redaction, each
 run is redacted; when that would not give the item's text redacted as a whole (a term
 across runs), the item is given as its redacted text, without its marks.
+
+A read in the :data:`RAW` mode (round 48) gives a value only its item's index (or an
+inline string's runs), and :meth:`SharedStrings.field` the Markdown a document's text is
+written from (:func:`xlsx_agent.markdown.field_markdown`), ``None`` for an item that is its
+text, worked out when asked for; the table's rich items are noted on the first read, so a
+table without any is never read again for them.
 """
 
 from __future__ import annotations
@@ -39,6 +45,11 @@ _R = frozenset(f"{{{ns}}}r" for ns in NS_MAIN)
 _SI = tuple(f"{{{ns}}}si" for ns in NS_MAIN)
 
 _ESCAPE = re.compile(r"_x([0-9A-Fa-f]{4})_")
+
+#: The Markdown mode of a read that gives each text value only what its Markdown is worked
+#: out from, when asked for: its shared string's index, or an inline string's runs
+#: (:attr:`Value.rich <xlsx_agent.read.types.Value.rich>`).
+RAW = "raw"
 
 
 def decode_xstring(text: str) -> str:
@@ -91,12 +102,34 @@ def text_markdown(runs: "tuple[Run, ...]", redact=None) -> str:
     """Runs as Markdown (see the module), redacted by ``redact`` when given."""
     from ..markdown import cell_markdown
 
-    if redact is not None:
-        whole = redact(plain(runs))
-        shown = merge(Run(redact(run.text) if run.text else run.text, run.bold, run.italic,
-                          run.strike) for run in runs)
-        runs = shown if plain(shown) == whole else merge([Run(whole)])
-    return cell_markdown(runs)
+    return cell_markdown(_redacted(runs, redact))
+
+
+def could_list(text: str) -> bool:
+    """Whether plain ``text`` may hold a list line (:func:`text_field` gives ``None`` for it
+    otherwise): a line break, or a start like a list item's."""
+    from ..markdown import _FIELD_ITEM
+
+    return "\n" in text or "\r" in text or _FIELD_ITEM.match(text) is not None
+
+
+def text_field(runs: "tuple[Run, ...]", redact=None) -> str | None:
+    """Runs as the Markdown a document's text is written from, ``None`` when they are their
+    text (:meth:`SharedStrings.field`), redacted by ``redact`` when given."""
+    from ..markdown import field_markdown
+
+    return field_markdown(_redacted(runs, redact))
+
+
+def _redacted(runs: "tuple[Run, ...]", redact=None) -> "tuple[Run, ...]":
+    """``runs`` with ``redact`` applied to each, or as one unmarked run of the whole text
+    redacted when that differs (a term across runs)."""
+    if redact is None:
+        return runs
+    whole = redact(plain(runs))
+    shown = merge(Run(redact(run.text) if run.text else run.text, run.bold, run.italic,
+                      run.strike) for run in runs)
+    return shown if plain(shown) == whole else merge([Run(whole)])
 
 
 def item_text(node: Element) -> str:
@@ -132,6 +165,10 @@ class SharedStrings:
         #: asked for, and the Markdown given so far.
         self._rich: list[tuple[Run, ...] | None] | None = None
         self._markdown: dict[int, str] = {}
+        #: Whether any item has rich runs (noted on the first read), and the field Markdown
+        #: given so far (:meth:`field`).
+        self._any_rich = False
+        self._fields: dict[int, str | None] = {}
 
     @property
     def items(self) -> list[str]:
@@ -163,6 +200,33 @@ class SharedStrings:
         self._markdown[index] = found
         return found
 
+    @property
+    def maybe_rich(self) -> bool:
+        """Whether a cell's text may have rich runs: the table has a rich item, or there is
+        no table (a cell's own inline text may)."""
+        if not self._data:
+            return True
+        self.items          # the first read notes them
+        return self._any_rich
+
+    def field(self, index: int) -> str | None:
+        """The ``index``-th item as the Markdown a document's text is written from, ``None``
+        when it is its text (:func:`xlsx_agent.markdown.field_markdown`); ``IndexError`` past the end."""
+        if index in self._fields:
+            return self._fields[index]
+        text = self[index]
+        runs = None
+        if self._any_rich:
+            if self._rich is None:
+                self._rich = self._read_rich()
+            runs = self._rich[index] if index < len(self._rich) else None
+        if runs is None:     # plain: redacted already
+            found = text_field(merge([Run(text)])) if text and could_list(text) else None
+        else:
+            found = text_field(runs, self._redact)
+        self._fields[index] = found
+        return found
+
     def _read_rich(self) -> "list[tuple[Run, ...] | None]":
         out: list[tuple[Run, ...] | None] = []
         if not self._data:
@@ -181,13 +245,17 @@ class SharedStrings:
             return []
         items: list[str] = []
         redact = self._redact
+        rich = False
         for _, node in iterparse_xml(self._data, tag=_SI):
             text = item_text(node)
             items.append(redact(text) if redact is not None and text else text)
+            if not rich:
+                rich = any(child.tag in _R for child in node)
             node.clear()
             parent = node.getparent()
             if parent is not None:
                 while node.getprevious() is not None:
                     del parent[0]
+        self._any_rich = rich
         return items
 

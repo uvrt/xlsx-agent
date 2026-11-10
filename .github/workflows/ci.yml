@@ -60,6 +60,9 @@ jobs:
           # Test only: a deck filled from a workbook's table (tests/test_sources_deck.py).
           python -m pip install "pptx2svg @ git+https://github.com/uvrt/pptx2svg@main"
           python -m pip install "pptx-agent @ git+https://github.com/uvrt/pptx-agent@main"
+          # Test only: a workbook's rich-text cell in a Word document (tests/test_sources_document.py).
+          python -m pip install "docx2svg @ git+https://github.com/uvrt/docx2svg@main"
+          python -m pip install "docx-agent @ git+https://github.com/uvrt/docx-agent@main"
           python -m pip install -e .[test]
 
       # A docstring's invalid escape ("\h") is a SyntaxWarning (3.12+; a DeprecationWarning
