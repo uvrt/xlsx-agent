@@ -331,8 +331,9 @@ sales.query(["Date", "Revenue"], where={"Region": {"eq": "North"}},
 #             matches=5, ...)
 ```
 
-Filters are `eq`, `in`, `gte`, `lte`, `contains`, `contains_any`, `words_gt`, `blank` and
-`not_blank`, combined with and; a filter on a column of the wrong type is refused naming the
+Filters are `eq`, `in`, `gte`, `lte`, `contains`, `contains_any`, `words_gt`, `blank`,
+`not_blank`, `is_true` and `is_false` (a TRUE or FALSE cell, no value:
+`{"Kept": {"is_true": True}}`), combined with and; a filter on a column of the wrong type is refused naming the
 column's type. `{"Note": {"words_gt": 150}}` finds the text cells longer than 150 words.
 `{"Code": {"in": ["AB.12", "CD.7"], "loose": True}}` compares text ignoring case and every
 white space character (`ab. 12` matches `AB.12`; `xlsx_agent.query.loose_text` says exactly
