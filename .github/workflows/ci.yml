@@ -56,13 +56,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@main"
-          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@main"
+          # TEMPORARY (r51B): ooxml-edit from its r51-derive-draft branch until that is merged.
+          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@r51-derive-draft"
           # Test only: a deck filled from a workbook's table (tests/test_sources_deck.py).
           python -m pip install "pptx2svg @ git+https://github.com/uvrt/pptx2svg@main"
           python -m pip install "pptx-agent @ git+https://github.com/uvrt/pptx-agent@main"
           # Test only: a workbook's rich-text cell in a Word document (tests/test_sources_document.py).
           python -m pip install "docx2svg @ git+https://github.com/uvrt/docx2svg@main"
-          python -m pip install "docx-agent @ git+https://github.com/uvrt/docx-agent@main"
+          # TEMPORARY (r51B): docx-agent from its r51-derive-draft branch until that is merged.
+          python -m pip install "docx-agent @ git+https://github.com/uvrt/docx-agent@r51-derive-draft"
           python -m pip install -e .[test]
 
       # A docstring's invalid escape ("\h") is a SyntaxWarning (3.12+; a DeprecationWarning
@@ -97,7 +99,8 @@ jobs:
       - name: Type check (mypy)
         run: |
           python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@main"
-          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@main"
+          # TEMPORARY (r51B): ooxml-edit from its r51-derive-draft branch until that is merged.
+          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@r51-derive-draft"
           python -m pip install "mypy==2.4.0"
           mypy
 
