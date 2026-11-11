@@ -44,13 +44,20 @@ the cells it came from, and it is marked with that column (:attr:`Provenance.fil
 :attr:`Derived.filled` counts the cells filled and those left blank, by reason.  Without
 ``group_by``, ``measures``, ``bins`` or ``pivot`` the result is the filled rows.
 
+**A filter** (round 51).  ``where`` alone -- no ``group_by``, ``measures``, ``bins``,
+``pivot`` or ``pivot_values`` -- keeps the rows that pass, every column, in the table's
+order, as a join's rows are kept (``sort`` and ``top`` apply; ``round`` is refused: values
+are cells as stored), each value's sources its own cell; at most :data:`MAX_ROWS` rows.
+Their count is ``measures=[{"fn": "count"}]`` (and :attr:`Derived.matched` either way).
+Before 0.1.37 such a derive gave one row, the count.
+
 **Groups.**  ``group_by`` names columns; a row's group is its cells in them, by type and
 value (``1`` and ``"1"`` are two groups; ``3`` and ``3.0`` one; text exactly, case
 counting, as ``eq`` matches; a date by its day, a datetime by its millisecond; a blank
 cell is a group of its own, shown as ``None``).  A row whose group cell is a formula
 without a cached value has no group: it is left out and counted
 (:attr:`Derived.left_out`), never guessed.  Groups come in the order first met in the
-table.  Without ``group_by`` the whole table is one row.
+table.  Without ``group_by`` the whole table is one row (``where`` alone: see above).
 
 **Measures**, each ``{"fn": ..., "column": ..., "as": ...}`` (``as`` defaults to ``fn``,
 or ``"fn column"``):
@@ -268,7 +275,7 @@ from .address import DatasetAddress, RangeAddress, SheetRef, TableAddress, parse
 from .clean import UNMATCHED
 from .dataset import DatasetTable, as_dataset
 from .fill import Filled, FilledTable, filled_table
-from .join import JOIN_KEYS, Joined, JoinedTable, joined_table
+from .join import JOIN_KEYS, Joined, JoinedTable, joined_table, rows_table
 from .profile import FIRST_ADDRESSES, Count, _add_partial, majority_type
 from .query import LOOSENED, QueryError, _Bad, _iso_key, _key, _operand, _tests
 from .read.regions import Region, RegionError, Span
@@ -662,7 +669,8 @@ def derive(workbook: "Workbook | None",
     to each row first (:mod:`xlsx_agent.join`); ``fill`` then gives blank cells another
     column's value of the same row (:mod:`xlsx_agent.fill`); ``pivot_values`` lists the
     pivot's columns, in order."""
-    if join is not None or fill is not None:
+    if join is not None or fill is not None \
+            or _filter_only(where, group_by, measures, bins, pivot, pivot_values):
         return _join(workbook, from_, join, where=where, group_by=group_by,
                      measures=measures, bins=bins, pivot=pivot, sort=sort, top=top,
                      round=round, coerce=coerce, id=id, pivot_values=pivot_values, fill=fill)
@@ -707,6 +715,14 @@ def _formats(workbook: "Workbook | None", region: "Region | DatasetTable", plan:
 # ------------------------------------------------------------------------------------------
 
 
+def _filter_only(where: Any, group_by: Any, measures: Any, bins: Any, pivot: Any,
+                 pivot_values: Any) -> bool:
+    """Whether a derive is ``where`` alone, nothing grouped or measured (round 51): a filter,
+    whose result is the rows it keeps (``measures=[{"fn": "count"}]`` counts them)."""
+    return bool(where) and group_by is None and measures is None and bins is None \
+        and pivot is None and pivot_values is None
+
+
 def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, group_by: Any,
           measures: Any, bins: Any, pivot: Any, sort: Any, top: Any, round: Any, coerce: Any,
           id: str | None, pivot_values: Any = None, fill: Any = None) -> Derived:
@@ -728,9 +744,11 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
         table = joined_table(workbook, left, right, join)
     table = filled_table(workbook, table, fill)
     if not isinstance(table, JoinedTable):          # no fill after all, and no join
-        return derive(workbook, table, where=where, group_by=group_by, measures=measures,
-                      bins=bins, pivot=pivot, sort=sort, top=top, round=round,
-                      coerce=coerce, id=id, pivot_values=pivot_values)
+        if not _filter_only(where, group_by, measures, bins, pivot, pivot_values):
+            return derive(workbook, table, where=where, group_by=group_by,
+                          measures=measures, bins=bins, pivot=pivot, sort=sort, top=top,
+                          round=round, coerce=coerce, id=id, pivot_values=pivot_values)
+        table = rows_table(workbook, table)        # where alone: the rows it keeps
     filled = tuple(table.filled) if isinstance(table, FilledTable) else ()
     if group_by is not None or measures is not None or bins is not None or pivot is not None \
             or pivot_values is not None:
@@ -739,7 +757,8 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
                          coerce=coerce, id=id, pivot_values=pivot_values)
         return replace(derived, joined=table.joined, filled=filled)
     if round is not None:
-        what = "a join" if join is not None else "a fill"
+        what = "a join" if join is not None else "a fill" if isinstance(table, FilledTable) \
+            else "where"
         raise DeriveError("bad_round", f"round rounds measures; {what} without group_by or "
                           "measures gives its rows' cells as stored", field="round")
     marks = table.marks if isinstance(table, FilledTable) else {}
@@ -797,13 +816,17 @@ def _join(workbook: "Workbook | None", from_: Any, join: Any, *, where: Any, gro
             raise DeriveError("bad_top", "top is a whole number of rows, 1 or more",
                               field="top")
         built = built[:top]
+    # where alone: a count of the rows is the other way out (round 51)
+    counted = "" if isinstance(table, FilledTable) or table.joined is not None \
+        else "; or count them: measures [{fn: count}]"
     if len(built) > MAX_ROWS:
         raise DeriveError("too_many_rows", f"{len(built)} rows, more than {MAX_ROWS}; "
-                          "give top or filter the rows (where)", field="top")
+                          f"give top or filter the rows (where){counted}", field="top")
     if len(built) * len(columns) > MAX_CELLS:
         raise DeriveError("too_many_cells", f"{len(built) * len(columns)} values, more than "
-                          f"{MAX_CELLS}; give top, filter the rows (where) or fewer joined "
-                          "columns", field="top")
+                          f"{MAX_CELLS}; give top, filter the rows (where)"
+                          + (" or fewer joined columns" if not counted else counted),
+                          field="top")
     rows = [values for values, _, _ in built]
     made = Derived(
         address=table.address.text, id=id, columns=tuple(columns),

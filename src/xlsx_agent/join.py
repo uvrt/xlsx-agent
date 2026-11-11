@@ -235,6 +235,33 @@ def joined_table(workbook: "Workbook | None", left: "Region | DatasetTable",
     return table
 
 
+def rows_table(workbook: "Workbook | None", side: "Region | DatasetTable") -> JoinedTable:
+    """``side``'s rows, every column, read as a join reads them, with nothing joined: what a
+    derive with ``where`` alone filters and keeps (round 51), each value's sources its own
+    cell (by key when the table's first column is a unique key, as a join's left side), a
+    dataset's value its own sources."""
+    from .dataset import column_formats
+    from .derive import DeriveError
+
+    rows, sources = _read(workbook, side)
+    held = len(rows) * len(side.columns)
+    if held > MAX_JOINED:
+        raise DeriveError("too_many_cells", f"{held} values to filter, more than "
+                          f"{MAX_JOINED}: filter a smaller table (a derived dataset), or "
+                          "count the matching rows (measures [{fn: count}])", field="where")
+    values = [[v if isinstance(v, JoinedValue) else _moved(v, p, o) for o, v in enumerate(row)]
+              for p, row in enumerate(rows, 1)]
+    if isinstance(side, DatasetTable):
+        keys = side.keys or 0
+    else:
+        key = _keyed(workbook, side)
+        keys = 1 if key is not None and side.columns[0] == key else 0
+    table = JoinedTable(list(side.columns), values, sources, side.address, keys,
+                        _date1904(workbook, side), cast(Any, None))
+    table.column_formats = column_formats(workbook, side, side.columns)
+    return table
+
+
 def _name(side: "Region | DatasetTable") -> str:
     if isinstance(side, DatasetTable):
         return side.id

@@ -32,6 +32,26 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.37 (unreleased) -- a derive with only `where` keeps the matching rows
+
+- **Changed result.** `xlsx_derive` (and `Workbook.derive`) with `where` alone -- no
+  `group_by`, `measures`, `bins`, `pivot`, `pivot_values`, `join` or `fill` -- returned one
+  row holding the count of the matching rows (the default measure). It now returns the
+  matching rows themselves, every column, in the table's order, as a join's or a fill's
+  rows are returned: `sort` and `top` apply, `round` is refused (the values are the cells
+  as stored), at most 1,000 rows, and each value's sources are its own cell (by key when
+  the table has one). A dataset (`d:`) filtered this way keeps its values' sources. The
+  count is `measures: [{fn: count}]` (one row, as before), and `matched` gives it in
+  either result. A filter of more than 1,000 rows, or more than 50,000 values, is refused
+  naming `top`, a narrower `where`, and that count; a table of more than 1,000,000 values
+  is refused with `too_many_cells` (filter a derived dataset, or count). No other result
+  changes: with `group_by`, `measures`, `bins` or `pivot` the derive is as it was, and so
+  is a derive with neither `where` nor any of them (the count of every row).
+- `xlsx_derive`'s description says `where` alone gives the rows and how to count them, and
+  no longer lists what the rows can be put through (its parameters say so). Counted online
+  6,986 -> 6,981 (claude-sonnet-5-5, 2026-11-11); estimated, `xlsx_derive` 1,292 -> 1,288,
+  the core 4,924 -> 4,920, every definition 7,078 -> 7,074 (the guards unchanged).
+
 ## 0.1.36 (unreleased) -- the loaded core back within its counted budget
 
 - The loaded core counted 7,010 tokens online with 0.1.35's `is_true`/`is_false`
