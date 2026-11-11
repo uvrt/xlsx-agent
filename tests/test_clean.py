@@ -379,7 +379,9 @@ def test_cleaning_changes_no_tool_definition():
 #: Round 49, R95: is_true and is_false in the filters' op enum, xlsx_query and xlsx_derive
 #: (+42).  Then xlsx_read's opt-in flags without "Default false." (round 49, the core
 #: counted 7,010 online, past 7,000; -90).
-XLSX_CHARS = 13_075
+#: Round 51, R104: xlsx_derive's description says where alone gives the rows and how to
+#: count them, its list of what the rows go through dropped (-14).
+XLSX_CHARS = 13_061
 
 
 def test_a_deck_table_from_a_cleaned_table_warns_in_the_tools_result():

@@ -196,6 +196,10 @@ CORE_COUNTED_BUDGET = 7000
 #: Then "Default false." dropped from xlsx_read's six opt-in flags (they add or list
 #: something; counted 7,010 -> 6,986 online, claude-sonnet-5-5, 2026-11-10): the core
 #: 4,950 -> 4,924, every definition 7,104 -> 7,078.
+#: Round 51, R104: xlsx_derive's description says where alone gives the rows and a count is
+#: measures [{fn: count}], its list of what the rows go through dropped (counted 6,986 ->
+#: 6,981 online, claude-sonnet-5-5, 2026-11-11): the core 4,924 -> 4,920, every definition
+#: 7,078 -> 7,074.
 CORE_GUARD = 4925
 ALL_GUARD = 7080
 

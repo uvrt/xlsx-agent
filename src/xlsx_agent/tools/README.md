@@ -326,6 +326,12 @@ in an `xlsx_read` of the dataset); `filled` in the result counts per fill the ce
 `coerced` and left blank (`unfilled`, by reason), with first addresses. Without
 `group_by`, `measures`, `bins` or `pivot` the filled rows are the dataset.
 
+**A filter** (round 51). `xlsx_derive` with `where` alone -- no `group_by`, `measures`,
+`bins`, `pivot`, `join` or `fill` -- keeps the matching rows as the dataset, every column,
+in the table's order (`sort` and `top` apply; at most 1,000 rows), each value with its own
+cell as source. To count them instead: `measures: [{fn: count}]` (`matched` gives it too).
+Before 0.1.37 it gave one row, the count.
+
 **Datasets (`d:`).** `xlsx_derive` keeps its figures in the session as a dataset,
 `d:<id>`: columns, rows, and beside every value the cells it came from. `xlsx_read` reads
 it back (`{"target": "d:by_region", "sources": true}`, no `doc` needed; `columns` picks
