@@ -459,6 +459,17 @@ label and `coerce=["date_as_text"]`. In a session the application keeps it with
 In the tool layer `xlsx_derive` keeps the dataset in the session as `d:by_region`, which
 `xlsx_read` reads (with `sources: true`) after its workbook is closed too.
 
+**A filter keeps its rows** (round 51).  `where` alone -- no `group_by`, `measures`, `bins`
+or `pivot` -- keeps the matching rows, every column, as a join's rows are kept; the count
+is one measure away:
+
+```python
+wb.derive("t:Items", where=[{"column": "Kept", "op": "is_true"}]).rows
+# [{'Code': 'K7-12.3', 'Kept': True, 'Qty': 3}, {'Code': 'K7-13.1', 'Kept': True, 'Qty': 5}]
+wb.derive("t:Items", where=[{"column": "Kept", "op": "is_true"}],
+          measures=[{"fn": "count"}]).rows    # [{'count': 2}]
+```
+
 **Dates stored as text through a dataset** (round 25, X3).  A `first` or `last` of a column
 whose dates are stored as text, grouped without `coerce`, is a `text` column; its ISO dates
 stay `date_as_text` in the dataset, so a derive from it refuses `max` with the way out and

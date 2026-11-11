@@ -31,6 +31,10 @@ dataset; the result's ``filled`` gives per fill the cells filled, ``coerced`` an
 left blank (``unfilled``, by reason), each with first addresses.  Without ``group_by``,
 ``measures``, ``bins`` or ``pivot`` the filled rows are the dataset.
 
+**where alone** (round 51): without ``group_by``, ``measures``, ``bins``, ``pivot``,
+``join`` or ``fill``, the rows ``where`` keeps are the dataset, every column (``sort`` and
+``top`` apply); ``measures: [{fn: count}]`` counts them instead, as the description says.
+
 What the result gives: the dataset's id and source, its columns, types and key columns,
 the rounding, the counts (``matched``, ``used``, ``groups``), what was left out and why
 (``excluded`` per measure, ``left_out`` per column, by reason, with first addresses),
@@ -134,11 +138,11 @@ def _about(entry: Any) -> dict[str, Any]:
 
 
 @tool("xlsx_derive",
-      "Figures computed here, never by you, from a table's or dataset's rows, joined, "
-      "filtered, grouped, binned or pivoted. min/max of dates are dates; first/last by row order. Kept "
-      "as dataset d:<id> (xlsx_read reads it; derive from it again); every value "
-      "lists its source cells; cells left out are counted by reason. join/fill without "
-      "group_by, measures, bins, pivot: the rows (where, sort, top apply).",
+      "Figures computed here, never by you, from a table's or dataset's rows. min/max of "
+      "dates are dates; first/last by row order. Kept as dataset d:<id> (xlsx_read reads "
+      "it; derive from it again); every value lists its source cells; cells left out are "
+      "counted by reason. where/join/fill without group_by, measures, bins, pivot: the rows "
+      "(sort, top apply; a count: measures [{fn: count}]).",
       {"doc": string("Document id; not needed for a dataset (d:).", optional=True),
        "from": string("Table or region (t:Products), or dataset (d:by_region)."),
        "id": string("Dataset id: by_region (letters, digits, _ . -)."),
