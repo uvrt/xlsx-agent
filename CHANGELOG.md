@@ -7,6 +7,12 @@ has the detail of every milestone. Why each dependency is needed at its version:
 
 ## Unreleased
 
+- Tests: a batch deriving from the workbook (a join and a group) then syncing a Word table
+  from the dataset runs on a draft of the Word document (ooxml-edit 0.108.0, round 51 R105):
+  the same answers, report, workbook and datasets as under both locks; a workbook change
+  while it is prepared prepares it again; a short 4-thread run replays serially.
+  tests/test_derive_sync_draft.py. No library code changed.
+
 - The loaded core's online budget is now 6,800 tokens as count-tokens counts them (raised
   from 6,500 by the user on 2026-11-05, keeping `read_batch` in the core): round 32, R15
   took the core 6,431 -> 6,678 counted online (claude-sonnet-5-5). Tests only; no tool
