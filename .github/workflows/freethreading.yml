@@ -54,13 +54,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --pre "lxml>=7.0.0b1"
           python -m pip install "ooxml-common @ git+https://github.com/uvrt/ooxml-common@main"
-          # TEMPORARY (r51B): ooxml-edit from its r51-derive-draft branch until that is merged.
-          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@r51-derive-draft"
+          python -m pip install "ooxml-edit @ git+https://github.com/uvrt/ooxml-edit@main"
           python -m pip install "pptx2svg @ git+https://github.com/uvrt/pptx2svg@main"
           python -m pip install "pptx-agent @ git+https://github.com/uvrt/pptx-agent@main"
           python -m pip install "docx2svg @ git+https://github.com/uvrt/docx2svg@main"
-          # TEMPORARY (r51B): docx-agent from its r51-derive-draft branch until that is merged.
-          python -m pip install "docx-agent @ git+https://github.com/uvrt/docx-agent@r51-derive-draft"
+          python -m pip install "docx-agent @ git+https://github.com/uvrt/docx-agent@main"
           python -m pip install -e .[test]
 
       - name: Importing the package leaves the GIL off
