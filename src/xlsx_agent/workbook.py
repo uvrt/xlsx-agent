@@ -111,6 +111,7 @@ from .xml import iterparse_xml
 
 if TYPE_CHECKING:
     from .trace import TraceResult
+    from .record import Recorded
     from .edit import Editor, EditReport, SaveReport
     from .edit.cells import Written
     from .edit.filters import FilterChange, HiddenChange
@@ -1424,6 +1425,17 @@ class Workbook:
         return derive(self, from_, where=where, group_by=group_by, measures=measures,
                       bins=bins, pivot=pivot, sort=sort, top=top, round=round,
                       coerce=coerce, id=id, join=join, pivot_values=pivot_values, fill=fill)
+
+    def record_values(self, table: "str | TableAddress", *, key: str, source: str,
+                      column: str, values: "Sequence[Mapping[str, Any]]") -> "Recorded":
+        """Values the caller judged from the ``source`` column of ``table``'s rows, one per
+        key (``[{"key", "value", "note"?}]``), kept as a dataset of the key, ``column`` and
+        ``note``, each value's source the cell it was judged from; the rows with source text
+        and no value listed (round 53, R108).  See :mod:`xlsx_agent.record`."""
+        from .record import record_values
+
+        return record_values(self, table, key=key, source=source, column=column,
+                             values=values)
 
     # -- comparing -------------------------------------------------------------------------
 

@@ -32,6 +32,30 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.38 (unreleased) -- values judged from text, kept as a traced dataset
+
+- **New tool** (round 53, R108), deferred in its own group `xlsx_record`:
+  `xlsx_record_values` {`doc`, `table`, `key`, `source`, `column`, `id`, `values`:
+  [{`key`, `value`, `note`?}]} keeps values the caller judged from a column's text (a
+  `notes` column worded many ways) as `d:<id>`: one row per key recorded, in the table's
+  row order, columns the key column, `column` and `note`; the key's source its own cell,
+  the value's and the note's the source cell of its row (by key where the table has a key
+  column, else the cell's address), so `xlsx_read` with `sources`, `xlsx_derive`,
+  `xlsx_trace` (to the row judged), a document's `{{d:<id>/<key>/<column>}}` and a table
+  sync use it as a derive's dataset; it goes stale when the workbook changes. Refused before
+  anything is kept, every problem of the call at once by its place in `values` and the row
+  by position: a key no row has (keys matched exactly; the rows whose key is loosely equal
+  by ooxml-edit's `loose_key` given in `like` and as `valid_options`), a key twice, a value
+  whose source cell is empty (blank or white space), an empty value, a key column where two
+  rows share a key, an output `column` named as the key column or `note`. The result:
+  `recorded`, `counts` per value, `not_recorded` (rows with source text and no value:
+  `count`, the first 50 keys and the `xlsx_read` that gives their key and text), `no_key`
+  (source text without a key, by position), `replaced` with a warning when the id held a
+  dataset; values not echoed. Library: `Workbook.record_values` (`xlsx_agent.record`,
+  `Recorded`, `RecordError`). The core unchanged (6,981 counted online); the definition is
+  309 estimated, 411 counted online when loaded (claude-sonnet-5-5, 2026-11-12); every
+  definition 7,074 -> 7,373 estimated (guard 7,380); not strict.
+
 ## 0.1.37 (unreleased) -- a derive with only `where` keeps the matching rows
 
 - **Changed result.** `xlsx_derive` (and `Workbook.derive`) with `where` alone -- no

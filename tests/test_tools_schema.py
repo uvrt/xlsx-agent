@@ -200,8 +200,10 @@ CORE_COUNTED_BUDGET = 7000
 #: measures [{fn: count}], its list of what the rows go through dropped (counted 6,986 ->
 #: 6,981 online, claude-sonnet-5-5, 2026-11-11): the core 4,924 -> 4,920, every definition
 #: 7,078 -> 7,074.
+#: Round 53, R108: the deferred xlsx_record_values (its own group, xlsx_record; not strict),
+#: every definition 7,074 -> 7,373; the core unchanged.
 CORE_GUARD = 4925
-ALL_GUARD = 7080
+ALL_GUARD = 7380
 
 
 @pytest.fixture(scope="module")
@@ -261,7 +263,8 @@ def test_the_groups_are_the_roadmaps():
                       "shared_misc": {"close_document", "read_blob"},
                       "xlsx_edit": {"xlsx_set_cells", "xlsx_write_table", "xlsx_manage_sheets"},
                       "xlsx_format": {"xlsx_format"},
-                      "xlsx_trace": {"xlsx_trace"}}
+                      "xlsx_trace": {"xlsx_trace"},
+                      "xlsx_record": {"xlsx_record_values"}}
 
 
 def test_find_text_is_sent_without_a_decks_or_documents_parameters(box):

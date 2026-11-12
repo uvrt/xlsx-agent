@@ -70,7 +70,10 @@ application's (X4): ``policy(session, {"cells": [...], "tables": [...]})`` befor
 session opens a workbook (:mod:`xlsx_agent.edit.policy`; ``{"cells": []}`` lets nothing be
 written), ``narrow(session, ...)`` to narrow it later; ``describe`` shows it
 (``writable``).  From 0.1.12 the deferred ``xlsx_trace`` group holds ``xlsx_trace``
-(:mod:`.trace`): rows of a table or dataset, each with the rows it rests on and why.
+(:mod:`.trace`): rows of a table or dataset, each with the rows it rests on and why.  From
+0.1.38 the deferred ``xlsx_record`` group holds ``xlsx_record_values`` (:mod:`.record`):
+values the model judged from a column's text, one per row by key, kept as ``d:<id>``, each
+value's source the cell judged.
 Without a policy, the session writes as its ``edit`` role allows; a protected
 sheet is never written.  Every formula value read carries
 its cache status (``cache``: ``cached_unverified``, ``invalidated`` once the workbook was
@@ -92,6 +95,7 @@ from .edit import TOOLS as EDIT_TOOLS
 from .formatting import TOOLS as FORMATTING_TOOLS
 from .query import TOOLS as QUERY_TOOLS
 from .read import TOOLS as READ_TOOLS
+from .record import TOOLS as RECORD_TOOLS
 from .shared import TOOLS as SHARED_TOOLS
 from .sheets import TOOLS as SHEET_TOOLS
 from .trace import TOOLS as TRACE_TOOLS
@@ -103,11 +107,14 @@ GROUPS = [*_shared.GROUPS,
           ToolGroup("xlsx_format", "Excel: format cells (font, fill, border, alignment, number "
                     "format), column widths and AutoFit, row heights, freeze panes, gridlines."),
           ToolGroup("xlsx_trace", "Excel: trace rows to the rows they rest on (sources, keys "
-                    "their text names, rows listing them).")]
+                    "their text names, rows listing them)."),
+          ToolGroup("xlsx_record", "Excel: keep values you judged from a column's text, one "
+                    "per row by key, as a dataset traced to the cells judged.")]
 
 #: Every tool a workbook has, the shared ones included, in the order they are offered.
 TOOLS = [*SHARED_TOOLS, *READ_TOOLS, *QUERY_TOOLS, *DERIVE_TOOLS, *COMPARE_TOOLS,
-         *VALIDATE_TOOLS, *EDIT_TOOLS, *SHEET_TOOLS, *FORMATTING_TOOLS, *TRACE_TOOLS]
+         *VALIDATE_TOOLS, *EDIT_TOOLS, *SHEET_TOOLS, *FORMATTING_TOOLS, *TRACE_TOOLS,
+         *RECORD_TOOLS]
 
 CORE_TOOLS = [t.name for t in TOOLS if t.group == CORE]
 

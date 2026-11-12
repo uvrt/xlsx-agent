@@ -280,6 +280,7 @@ changed no definition): the loaded core, 9 definitions with the tool-use prompt,
 | --- | --- | --- | --- | --- |
 | `save_document`, `undo`, `batch` (shared) | core | as in the siblings; `format`: `xlsx`, `xlsm`, `xltx` | name, size, validation report; never content | a `.xlsm` saved as `.xlsx` is refused while it has a VBA project |
 | `xlsx_set_cells` | `xlsx_edit` | `doc`, `cells`: an `address` and exactly one of `text`, `number`, `bool`, `date` (with an optional `format`), `formula`, `blank` (typed fields: the definitions' subset has no type union, and a value is never inferred from its spelling); `replace_formulas` (default false); X4: an `address` by row key (`t:stock/P-7/Quantity`), each cell's `expect` (a type) and `expect_value` (the value as read), `revision`; X6: each cell's `row` (the free capacity row the application allocates to a key no row has; X4's `new_rows`, the next free row, removed from the tool) | `written`, `changed`, each cell's `old` type (at most 50 listed), `released` (shared groups handed on), `calculation` (`invalidated`: every formula's cache), `new_rows` (their key cells), `invalid` and `unchecked` (X5: cells written against a resolvable data validation, or under one that cannot be checked; a warning); refusals with every problem by code and address, `held` types for unmet expectations | 5,000 cells per call; every refusal before any change -- the host's write policy, a protected sheet, keys, capacity, expectations, revision (X4); sets `fullCalcOnLoad` on the first write (built in E3, X3) |
+| `xlsx_record_values` (round 53) | `xlsx_record` | `doc`, `table`, `key`, `source` (the column judged), `column` (the values' name), `id`, `values` [{`key`, `value`, `note`}] | `d:<id>`: key, `column`, `note` per key recorded, each value's source the cell judged; `counts`, `not_recorded`, `no_key`, `replaced` | refused before keeping: unknown or repeated keys, an empty source cell or value, shared keys in the key column; 50 keys listed |
 | `xlsx_write_table` | `xlsx_edit` | `doc`, `at` (a new sheet or an empty area), `data` or `from: "d:<id>"`, `header`, `style`, `filters`, `banding`, `name`, `ref` | a real Excel table; its address | refuses to overwrite non-empty cells; text over 32,767 characters is split across continuation rows, each listed, never cut silently |
 | `xlsx_manage_sheets` | `xlsx_edit` | `doc`, `action` (`add`, `rename`, `clear`, `delete`, `hide`, `unhide`), `sheet`, `name`, `position`, `force` | the sheets after; `rewritten`, `not_rewritten`, `removed` | `rename` rewrites every reference to the sheet (formulas, names, charts, validation, conditional formats, pivot caches); `delete` is refused while anything refers to the sheet, and lists what does (`force`: `#REF!`, as Excel); `clear` is Excel's Clear All, references kept (built in E5, round 44; `move` not built) |
 | `xlsx_validation` | `xlsx_edit` | `doc`, `target`, drop-down list (values or a range) or a value rule | the rules on the target | an inline list within the length Excel accepts (measured in E6), longer lists as a range |
@@ -1248,6 +1249,24 @@ says so. Definitions: `xlsx_derive` 1,292 -> 1,288 estimated (the description's 
 what the rows can be put through dropped: the parameters say it), the core 4,924 -> 4,920
 (counted online 6,986 -> 6,981, claude-sonnet-5-5, 2026-11-11), every definition 7,078 ->
 7,074; not strict.
+
+**Values judged from text** (production feedback, round 53, R108; 0.1.38). An agent reads
+a column of free text (a `notes` column, worded many ways, in two languages, with bold runs)
+and decides a value per row (`done`, `partly done`); without a tool it typed those values
+into a report with nothing tying each to the cell it judged. `xlsx_record_values`
+(deferred group `xlsx_record`; `Workbook.record_values`, `xlsx_agent.record`) keeps them as
+`d:<id>`: a row per key recorded, in the table's order, columns the key column, `column`
+and `note` (`keys` 1); the value's source is the cell judged, the key's its own cell, so
+the dataset reads, derives, traces (`xlsx_trace` reaches the row judged) and goes into
+decks and documents like a derive's. Refused before anything is kept (design rule 2, every
+problem at once, by place in `values` and row by position, never by content): an unknown
+key (exact match; loosely equal keys by ooxml-edit's `loose_key` suggested as rows), a key
+twice, a value from an empty source cell, an empty value, a key column with shared keys,
+an output column named as the key or `note`. Listed, not refused: `not_recorded` (source
+text without a value; the first 50 keys and the read that gives them), `no_key`. The same
+id replaces the dataset and says so. Not built (kept small, the main session's decision):
+loose key matching, and adding to a recorded dataset in a later call. The core unchanged;
+309 estimated (411 counted online when loaded); every definition 7,074 -> 7,373; not strict.
 
 *A sheet formatted to its last row* (production feedback, round 46, R73, 2026-11-09).
 A sheet of 200,000 rows of values formatted down to row 1,048,576 (each row below the
