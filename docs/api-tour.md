@@ -541,6 +541,22 @@ with a letter and a digit, or, in a table keyed by dotted numbers, its keys with
 its key. The tool `xlsx_trace` also traces a dataset's rows to their source rows, within a
 size budget, listing what did not fit (`xlsx_agent.tools.trace`).
 
+## Values judged from text
+
+```python
+recorded = wb.record_values("t:Shelf", key="Ref", source="notes", column="outcome",
+                            values=[{"key": "S-01", "value": "done"},
+                                    {"key": "S-04", "value": "done", "note": "French"}])
+recorded.dataset            # Ref, outcome, note: a row per key, the table's order
+recorded.not_recorded       # (key, source cell) of the rows with notes and no value
+```
+
+The values are the caller's judgement of each row's text; the library keeps it honest:
+each value's source is the cell it was judged from, unknown and repeated keys and empty
+source cells are refused (`RecordError`, every problem at once), and the rows whose text got
+no value are listed. In a tool session, `xlsx_record_values` keeps it as `d:<id>`, which
+reads, derives, traces and goes into decks and documents like a derive's dataset.
+
 ## Workbook tables into slides and documents
 
 A table's rows as an ooxml-edit `Dataset` -- what a deck or document tool places when given
