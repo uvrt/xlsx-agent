@@ -557,6 +557,20 @@ source cells are refused (`RecordError`, every problem at once), and the rows wh
 no value are listed. In a tool session, `xlsx_record_values` keeps it as `d:<id>`, which
 reads, derives, traces and goes into decks and documents like a derive's dataset.
 
+A key is matched among the rows with text in `source` (round 54): a section heading or a
+spacer row repeating an item's reference is left out, and only a key two rows with text
+hold is refused. `type="number"` keeps numbers (a grade 1-5 a derive averages), and
+`add_to=recorded.dataset` adds a later call's values to an earlier one's:
+
+```python
+first = wb.record_values("t:Shelf", key="Ref", source="notes", column="grade",
+                         type="number", values=[{"key": "S-04", "value": 4}])
+more = wb.record_values("t:Shelf", key="Ref", source="notes", column="grade",
+                        type="number", values=[{"key": "S-05", "value": "3"}],
+                        add_to=first.dataset)
+more.added, more.recorded   # 1, 2
+```
+
 ## Workbook tables into slides and documents
 
 A table's rows as an ooxml-edit `Dataset` -- what a deck or document tool places when given

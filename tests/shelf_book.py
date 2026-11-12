@@ -41,3 +41,20 @@ JUDGED = [
     {"key": "S-05", "value": "partly done", "note": "French: en partie"},
     {"key": "S-08", "value": "done", "note": "bold 'All done'"},
 ]
+
+
+#: Round 54, R113: a "section" heading row and an "item" row share each reference (only the
+#: item row has notes), and a blank spacer row repeats one; a grade 1-5 is judged per item.
+SECTIONS = [
+    ["S-04", "Section: dividers", None],
+    ["S-04", "dividers", "Livré et installé, all bays. Grade 4 of 5"],
+    [None, None, None],
+    ["S-05", "Section: end caps", None],
+    ["S-05", "end caps", "Partial delivery; grade 3"],
+    ["S-05", None, None],
+    ["S-06", "Section: baskets", None],
+    ["S-06", "baskets", Rich((Run("Not started", bold=True), Run(": grade 1")))],
+    ["S-07", "hooks", "All fitted (5)"],
+    ["S-08", "Section: mirrors", "   "],
+    ["S-08", "mirrors", "Two of three hung, grade 3.5"],
+]
