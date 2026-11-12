@@ -10,6 +10,13 @@ key matched as its digits), 2 (every refusal names each problem by place, the ro
 position and the loosely equal keys' rows), 3 (recording the same values again is no error),
 4 (``not_recorded`` and ``counts`` capped, the rest counted, with the read that gives them),
 5 (one call for every row).
+
+Round 54 (R113 and the answers to round 53): a "section" heading row and an "item" row
+sharing a reference, a spacer row repeating one (``SECTIONS``); rules 1 (rows without text
+sharing a key left out, numbers as text, add to nothing), 2 (a shared key named with both
+rows, a near miss with its key text, add's mismatch saying what differs, a stale add), 3 (a
+key sent again with its value under add), 4 (a query for the rows left where a key repeats),
+5 (two chunks with add).
 """
 
 from __future__ import annotations
@@ -19,7 +26,7 @@ import json
 import pytest
 from build import WorkbookBuilder
 from ooxml_edit.tools import Toolbox
-from shelf_book import JUDGED, ROWS, shelf_book
+from shelf_book import JUDGED, ROWS, SECTIONS, shelf_book
 
 from xlsx_agent import RecordError, Workbook
 from xlsx_agent.tools import FORMAT, GROUPS, TOOLS
@@ -97,15 +104,89 @@ def test_rows_with_text_and_no_key_are_listed_by_position():
     assert recorded.not_recorded == (("S-010", "t:Shelf/shelf liners/notes"),)
 
 
-def test_a_key_column_where_two_rows_share_a_key_is_refused_with_the_rows():
+def test_a_key_two_rows_with_text_hold_is_refused_when_named_with_both_rows():
+    """Round 54, R113: duplicates are judged among rows with source text only; a key named
+    that two such rows hold is refused by item, naming both rows; the others are kept."""
     rows = [r[:] for r in ROWS]
     rows[9][0] = "S-01"
     wb = Workbook.open(shelf_book(rows).to_bytes())
     with pytest.raises(RecordError) as caught:
         wb.record_values("t:Shelf", key="Ref", source="notes", column="outcome",
                          values=JUDGED)
-    assert caught.value.code == "duplicate_keys" and caught.value.field == "key"
-    assert caught.value.valid_options == ["t:Shelf/#1/Ref", "t:Shelf/#10/Ref"]
+    assert caught.value.code == "key_shared" and caught.value.field == "values"
+    assert caught.value.problems == [{"code": "key_shared", "item": 0, "key": "S-01",
+                                      "rows": ["t:Shelf/#1/Ref", "t:Shelf/#10/Ref"]}]
+    assert "S-01" not in caught.value.message
+    recorded = wb.record_values("t:Shelf", key="Ref", source="notes", column="outcome",
+                                values=JUDGED[1:])
+    assert recorded.recorded == 5 and recorded.shared == ("t:Shelf/#1", "t:Shelf/#10")
+    assert [k for k, _ in recorded.not_recorded] == ["S-01", "S-09", "S-01"]
+
+
+def test_heading_and_spacer_rows_repeating_a_key_are_left_out():
+    """R113: a section heading and a spacer row share an item's reference; only the item row
+    has notes, so the key names it; the rows left out are counted in a note."""
+    wb = Workbook.open(shelf_book(SECTIONS).to_bytes())
+    recorded = wb.record_values("t:Shelf", key="Ref", source="notes", column="grade",
+                                values=[{"key": "S-04", "value": "4"},
+                                        {"key": "S-05", "value": "3"},
+                                        {"key": "S-08", "value": "3.5"}])
+    data = recorded.dataset
+    assert [row[:2] for row in data.rows] == [("S-04", "4"), ("S-05", "3"), ("S-08", "3.5")]
+    # each value sourced by the item row's notes (the key column repeats: by address)
+    assert [src[1] for src in data.sources] == [("Shelf!C3",), ("Shelf!C6",), ("Shelf!C12",)]
+    assert recorded.ignored == ("t:Shelf/#1", "t:Shelf/#4", "t:Shelf/#6", "t:Shelf/#10")
+    assert recorded.notes == ("4 row(s) without text in notes share a key with a row "
+                              "recorded: left out (keys are matched among rows with text)",)
+    assert recorded.not_recorded == (("S-06", "Shelf!C9"), ("S-07", "Shelf!C10"))
+    assert recorded.repeated == {"S-06"} and recorded.shared == ()
+
+
+# -- adding, numbers (round 54) ----------------------------------------------------------------
+
+
+def test_add_to_extends_same_value_again_is_no_error_another_is_refused():
+    wb = Workbook.open(shelf_book().to_bytes())
+    first = wb.record_values("t:Shelf", key="Ref", source="notes", column="outcome",
+                             values=JUDGED[:3])
+    more = wb.record_values("t:Shelf", key="Ref", source="notes", column="outcome",
+                            values=[*JUDGED[3:], {"key": "S-01", "value": "done"}],
+                            add_to=first.dataset)
+    assert more.recorded == 6 and more.added == 3 and more.kept == 2
+    assert more.dataset.rows == wb.record_values(
+        "t:Shelf", key="Ref", source="notes", column="outcome", values=JUDGED).dataset.rows
+    with pytest.raises(RecordError) as caught:
+        wb.record_values("t:Shelf", key="Ref", source="notes", column="outcome",
+                         values=[{"key": "S-02", "value": "done"}], add_to=more.dataset)
+    assert caught.value.problems == [{"code": "already_recorded", "item": 0, "key": "S-02",
+                                      "row": "t:Shelf/#2/Ref"}]
+    for wrong, said in ((dict(column="result"), "column 'outcome' (this call 'result')"),
+                        (dict(type="number"), "type 'text' (this call 'number')")):
+        arguments = {"key": "Ref", "source": "notes", "column": "outcome", **wrong}
+        with pytest.raises(RecordError) as caught:
+            wb.record_values("t:Shelf", values=[{"key": "S-09", "value": "1"}],
+                             add_to=first.dataset, **arguments)
+        assert caught.value.code == "add_mismatch" and said in caught.value.message
+
+
+def test_type_number_takes_numbers_and_plain_number_text_only():
+    wb = Workbook.open(shelf_book(SECTIONS).to_bytes())
+    recorded = wb.record_values("t:Shelf", key="Ref", source="notes", column="grade",
+                                type="number", values=[
+                                    {"key": "S-04", "value": 4}, {"key": "S-05", "value": "3"},
+                                    {"key": "S-06", "value": 1.0},
+                                    {"key": "S-08", "value": " 3.5 "}])
+    assert [row[1] for row in recorded.dataset.rows] == [4, 3, 1.0, 3.5]
+    assert recorded.dataset.types[1] == "number"
+    with pytest.raises(RecordError) as caught:
+        wb.record_values("t:Shelf", key="Ref", source="notes", column="grade", type="number",
+                         values=[{"key": "S-04", "value": "four"},
+                                 {"key": "S-05", "value": "3,5"},
+                                 {"key": "S-06", "value": True},
+                                 {"key": "S-07", "value": "1 000"},
+                                 {"key": "S-08", "value": ""}])
+    assert [p["code"] for p in caught.value.problems] == ["not_number"] * 4 + ["empty_value"]
+    assert "four" not in caught.value.message
 
 
 # -- the tool ----------------------------------------------------------------------------------
@@ -171,7 +252,8 @@ def test_recording_again_replaces_and_says_so_and_an_edit_makes_it_stale(box):
     ok(record(box, session, JUDGED))
     again = ok(record(box, session, JUDGED[:2]))
     assert again.data["replaced"] is True and again.data["recorded"] == 2
-    assert again.warnings == ["d:outcome replaced: it holds this call's values only"]
+    assert again.warnings == ["d:outcome replaced: it holds this call's values only (add: "
+                              "true adds to it)"]
     assert again.data["not_recorded"]["count"] == 6
     ok(box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "cells": [
         {"address": "Shelf!C3", "text": "All labels printed. Outcome: done"}]}))
@@ -194,12 +276,13 @@ def test_every_problem_is_refused_at_once_by_place_with_the_rows_to_read(box):
     assert error.code == "not_found" and error.field == "values"
     assert error.details["code"] == "unknown_key"
     assert error.details["problems"] == [
-        {"code": "unknown_key", "item": 0, "like": ["t:Shelf/#1/Ref"]},
+        {"code": "unknown_key", "item": 0, "like": [{"row": "t:Shelf/#1/Ref", "key": "S-01"}]},
         {"code": "key_twice", "item": 2, "row": "t:Shelf/#2/Ref", "first": 1},
         {"code": "empty_source", "item": 3, "row": "t:Shelf/#6/notes"},
         {"code": "empty_source", "item": 4, "row": "t:Shelf/#7/notes"},
         {"code": "empty_value", "item": 5, "row": "t:Shelf/#9/Ref"},
-        {"code": "unknown_key", "item": 6, "like": ["t:Shelf/#10/Ref"]},
+        {"code": "unknown_key", "item": 6,
+         "like": [{"row": "t:Shelf/#10/Ref", "key": "S-010"}]},
         {"code": "unknown_key", "item": 7, "like": []}]
     assert error.valid_options == ["t:Shelf/#1/Ref", "t:Shelf/#10/Ref"]
     assert "values[0], values[6], values[7]" in error.message
@@ -226,8 +309,8 @@ def test_a_taken_column_name_and_an_unknown_column_are_refused(box):
     sheet.table("Shelf", "A1:B3", ["Ref", "notes"])
     other = _session(box, duplicated.to_bytes())
     refused = record(box, other, [{"key": "S-1", "value": "done"}])
-    assert refused.error.code == "refused" and refused.error.details["code"] == "duplicate_keys"
-    assert refused.error.valid_options == ["t:Shelf/#1/Ref", "t:Shelf/#2/Ref"]
+    assert refused.error.code == "refused" and refused.error.details["code"] == "key_shared"
+    assert refused.error.details["problems"][0]["rows"] == ["t:Shelf/#1/Ref", "t:Shelf/#2/Ref"]
 
 
 def test_intent_a_column_address_and_a_whole_number_key(box):
@@ -284,3 +367,103 @@ def test_a_recorded_value_goes_into_a_word_document_by_reference():
         texts = [document.paragraph(b).text for b in made.data["blocks"]]
         assert texts == ["Dividers: done (French: terminé)."]
         assert json.dumps(made.data["facts"], ensure_ascii=False).count("Shelf!C5") >= 1
+
+
+# -- round 54: repeated keys, add, numbers, near-miss keys (the tool) --------------------------
+
+
+def test_a_workbook_repeating_keys_on_headings_records_and_reads_what_was_left(box):
+    """R113 (rule 1, 4): before, the whole call was refused duplicate_keys; now each named key
+    finds the one row with notes. The rows left to judge come with a call that reads them --
+    a query, since a key shared with a heading names no one row."""
+    session = _session(box, shelf_book(SECTIONS).to_bytes())
+    result = ok(record(box, session, [{"key": "S-04", "value": "4"},
+                                      {"key": "S-05", "value": "3"}], column="grade",
+                       id="grade"))
+    assert result.data["recorded"] == 2
+    assert result.warnings == ["3 row(s) without text in notes share a key with a row "
+                               "recorded: left out (keys are matched among rows with text)"]
+    left = result.data["not_recorded"]
+    assert left["keys"] == ["S-06", "S-07", "S-08"] and "read" not in left
+    query = ok(box.dispatch(session, "xlsx_query", left["query"]))
+    # (not_blank: the S-08 heading whose notes are white space only comes too)
+    assert [[c["a"] for c in row] for row in query.data["rows"]] == [
+        ["Shelf!A9", "Shelf!C9"], ["Shelf!A10", "Shelf!C10"], ["Shelf!A11", "Shelf!C11"],
+        ["Shelf!A12", "Shelf!C12"]]
+    traced = ok(box.dispatch(session, "xlsx_trace", {"doc": "d1", "rows": ["d:grade/S-05"]}))
+    assert traced.data["traced"][0]["links"][0]["row"] == "t:Shelf/#5"
+    assert not any(text in result.summary for text in CONTENT)
+
+
+def test_add_in_two_chunks_and_a_conflict_named_by_key(box):
+    """Add mode: the second chunk extends d:grade; a key sent again with its value is no error
+    (rule 3); with another value it is refused naming the key; add to nothing says so."""
+    session = _session(box, shelf_book(SECTIONS).to_bytes())
+    first = ok(record(box, session, [{"key": "S-04", "value": 4}, {"key": "S-05", "value": 3}],
+                      column="grade", id="grade", type="number", add=True))
+    assert first.warnings[0] == "add: there is no d:grade yet; recorded as a new dataset"
+    second = ok(record(box, session, [{"key": "S-06", "value": 1}, {"key": "S-07", "value": 5},
+                                      {"key": "S-04", "value": 4}],
+                       column="grade", id="grade", type="number", add=True))
+    assert second.data["recorded"] == 4 and second.data["added"] == 2
+    assert "replaced" not in second.data and "not_recorded" in second.data
+    read = ok(box.dispatch(session, "xlsx_read", {"target": "d:grade"}))
+    assert [[c["v"] for c in row][:2] for row in read.data["rows"]] == [
+        ["S-04", 4], ["S-05", 3], ["S-06", 1], ["S-07", 5]]
+    clash = record(box, session, [{"key": "S-04", "value": 2}], column="grade", id="grade",
+                   type="number", add=True)
+    assert clash.error.code == "refused"
+    assert clash.error.details["problems"] == [{"code": "already_recorded", "item": 0,
+                                                "key": "S-04", "row": "t:Shelf/#2/Ref"}]
+    assert "S-04" not in clash.error.message
+    other = record(box, session, [{"key": "S-08", "value": 3.5}], column="grade", id="grade",
+                   add=True)            # type text this time
+    assert other.error.code == "refused" and other.error.field == "add"
+    assert other.error.details["code"] == "add_mismatch"
+    ok(box.dispatch(session, "xlsx_derive", {"from": "d:grade", "id": "by_grade",
+                                             "group_by": ["grade"]}))
+    not_ours = record(box, session, [{"key": "S-08", "value": 3}], column="grade",
+                      id="by_grade", type="number", add=True)
+    assert not_ours.error.details["code"] == "add_mismatch"
+    assert ok(box.dispatch(session, "xlsx_read", {"target": "d:grade"})).total == 4
+
+
+def test_number_values_are_averaged_by_derive(box):
+    session = _session(box, shelf_book(SECTIONS).to_bytes())
+    ok(record(box, session, [{"key": "S-04", "value": 4}, {"key": "S-05", "value": "3"},
+                             {"key": "S-06", "value": 1}, {"key": "S-07", "value": 5},
+                             {"key": "S-08", "value": 3.5}],
+              column="grade", id="grade", type="number"))
+    mean = ok(box.dispatch(session, "xlsx_derive", {
+        "from": "d:grade", "id": "mean", "measures": [{"fn": "mean", "column": "grade"}]}))
+    cell = mean.data["rows"][0][0]
+    assert cell["v"] == 3.3 and cell["t"] == "number"
+    assert cell["sources"] == ["Shelf!C3", "Shelf!C6", "Shelf!C9:C10", "Shelf!C12"]
+    wrong = record(box, session, [{"key": "S-04", "value": "four"}, {"key": "S-05", "value": True}],
+                   column="grade", id="grade", type="number")
+    assert wrong.error.code == "invalid_arguments"
+
+
+def test_a_near_miss_gives_the_key_as_held(box):
+    """The answer to round 53: a refused key's near misses carry the key text (key cells only)
+    in the result the model reads; the message and summary keep to places."""
+    session = _session(box, shelf_book(SECTIONS).to_bytes())
+    refused = record(box, session, [{"key": "s 7", "value": "5"}, {"key": "S-004", "value": "4"}],
+                     column="grade", id="grade")
+    assert refused.error.details["problems"] == [
+        {"code": "unknown_key", "item": 0, "like": [{"row": "t:Shelf/#9/Ref", "key": "S-07"}]},
+        {"code": "unknown_key", "item": 1, "like": [{"row": "t:Shelf/#2/Ref", "key": "S-04"}]}]
+    assert refused.error.valid_options == ["t:Shelf/#9/Ref", "t:Shelf/#2/Ref"]
+    assert not any(text in refused.error.message for text in CONTENT)
+
+
+def test_add_after_a_recorded_key_changed_in_the_workbook_is_refused_with_the_way_out(box):
+    session = _session(box, shelf_book(SECTIONS).to_bytes())
+    ok(record(box, session, [{"key": "S-04", "value": 4}], column="grade", id="grade",
+              type="number"))
+    ok(box.dispatch(session, "xlsx_set_cells", {"doc": "d1", "cells": [
+        {"address": "Shelf!A3", "text": "S-44"}]}))
+    stale = record(box, session, [{"key": "S-05", "value": 3}], column="grade", id="grade",
+                   type="number", add=True)
+    assert stale.error.code == "refused" and stale.error.details["code"] == "add_stale"
+    assert "without add" in stale.error.message

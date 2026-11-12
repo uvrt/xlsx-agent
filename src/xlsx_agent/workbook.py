@@ -1427,15 +1427,18 @@ class Workbook:
                       coerce=coerce, id=id, join=join, pivot_values=pivot_values, fill=fill)
 
     def record_values(self, table: "str | TableAddress", *, key: str, source: str,
-                      column: str, values: "Sequence[Mapping[str, Any]]") -> "Recorded":
+                      column: str, values: "Sequence[Mapping[str, Any]]",
+                      type: str = "text", add_to: "Dataset | None" = None) -> "Recorded":
         """Values the caller judged from the ``source`` column of ``table``'s rows, one per
         key (``[{"key", "value", "note"?}]``), kept as a dataset of the key, ``column`` and
         ``note``, each value's source the cell it was judged from; the rows with source text
-        and no value listed (round 53, R108).  See :mod:`xlsx_agent.record`."""
+        and no value listed (round 53, R108).  ``type="number"`` takes numbers only;
+        ``add_to``, a dataset recorded so before, is extended (round 54).  See
+        :mod:`xlsx_agent.record`."""
         from .record import record_values
 
         return record_values(self, table, key=key, source=source, column=column,
-                             values=values)
+                             values=values, type=type, add_to=add_to)
 
     # -- comparing -------------------------------------------------------------------------
 

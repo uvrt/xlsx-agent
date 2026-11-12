@@ -37,7 +37,7 @@ on Azure OpenAI's Responses API.
 | `xlsx_edit` (E3, E4, E5) | `xlsx_set_cells`, `xlsx_write_table`, `xlsx_manage_sheets` |
 | `xlsx_format` (E7) | `xlsx_format`: font, fill, border, alignment, number format, locked, `like` or a named `style`, column `width` or `fit` (Excel's AutoFit, measured), row `height`, `freeze`, `gridlines` |
 | `xlsx_trace` (round 31) | `xlsx_trace`: rows of a table or dataset, each with the rows it rests on and why (`source`, `names` by key, `lists` its key), every value in full, within a size budget, what did not fit listed |
-| `xlsx_record` (round 53) | `xlsx_record_values`: values you judged from a column's text, one per row by key, kept as `d:<id>` (key, the values' column, `note`), each value's source the cell judged; unknown or repeated keys and empty source cells refused before keeping, rows with text and no value listed (`not_recorded`) |
+| `xlsx_record` (round 53) | `xlsx_record_values`: values you judged from a column's text, one per row by key, kept as `d:<id>` (key, the values' column, `note`), each value's source the cell judged; keys matched among rows with text (a heading or spacer row repeating a key is left out; round 54), unknown or repeated keys and empty source cells refused before keeping, rows with text and no value listed (`not_recorded`); `add: true` adds to the dataset, `type: "number"` keeps numbers |
 
 `describe` and `find_text` are the shared tools with the workbook's handlers: one
 definition for decks, documents and workbooks alike. `describe` of any document also

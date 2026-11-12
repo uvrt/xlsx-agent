@@ -32,6 +32,36 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.39 (unreleased) -- recorded values: repeated keys, adding, numbers
+
+- **Repeated keys** (round 54, R113): `xlsx_record_values` (and `Workbook.record_values`)
+  judges duplicate keys among the rows with text in `source` only. A section heading, a
+  subtotal or a spacer row repeating an item's reference no longer refuses the call
+  (`duplicate_keys`, gone): the key names the one row with text, and the rows without
+  text sharing it are left out, counted in a warning. A key named that two rows with text
+  hold is refused for that item (`key_shared`, both rows by position, the key in the
+  problem); such rows are listed in `shared_keys`. Where a not-recorded key is held by
+  another row too, `not_recorded` gives an `xlsx_query` call (key in the keys, source not
+  blank) in place of the `xlsx_read` of a key set, which the repeated key makes ambiguous.
+- **`add: true`** (`add_to=` in the library): the call's values are added to `d:<id>`
+  rather than replacing it (`added`). Same table, key, source, column and type, else
+  refused (`add_mismatch`, saying which differs); a key already recorded sent with the
+  same value is no error (rule 3), with another value refused naming the key
+  (`already_recorded`); `add` to an id not yet kept records it, with a warning; a key
+  recorded earlier that no longer names one row with text refuses the call (`add_stale`).
+  Replace stays the default.
+- **`type: "number"`**: each value a JSON number or text that is a plain number (`3`,
+  `"2.5"`, `"-1e3"`; no grouping, no decimal comma), refused per value otherwise
+  (`not_number`); kept in a `number` column, so `xlsx_derive` averages it. `value` is a
+  string or a number (ooxml-edit 0.113.0's `orNumber`; the provider sees a string).
+- **Near-miss keys with their text**: an unknown key's `like` is now
+  `[{"row": "t:Shelf/#4/Ref", "key": "S-04"}]` -- the key as its cell holds it, key cells
+  only -- in the result the model reads; the message and summary still name places only.
+  `valid_options` stay the rows.
+- Requires ooxml-edit 0.113.0. The core unchanged (6,981 online); the definition 411 ->
+  487 counted online when loaded (claude-sonnet-5-5, 2026-11-12), every definition
+  7,373 -> 7,427 estimated (guard 7,430); not strict.
+
 ## 0.1.38 (unreleased) -- values judged from text, kept as a traced dataset
 
 - **New tool** (round 53, R108), deferred in its own group `xlsx_record`:
@@ -1693,7 +1723,7 @@ each earlier version added is in that package's CHANGELOG. `pyproject.toml`'s ve
 the one this file's top version section names, and `xlsx_agent.__version__` the same
 (`tools/check_version.py`, run by CI's `build` job).
 
-- `ooxml-edit>=0.105.0`: the format-neutral editing core the siblings share (the OPC
+- `ooxml-edit>=0.113.0`: the format-neutral editing core the siblings share (the OPC
   package with parts as their original bytes, the safe parser, the history, the tool
   layer with workbooks a kind of the shared tools, the session's locale and datasets, the
   sources resolver hook, and `ooxml_edit.sheets`, the lossless cell writer the edits and
@@ -1709,7 +1739,8 @@ the one this file's top version section names, and `xlsx_agent.__version__` the 
   `Styles.add_format`; round 44, R53); 0.96.0 the shared document properties
   (`ooxml_edit.properties`; round 44, R62); 0.99.0 parts kept as their compressed ZIP
   entries until edited (`OpcPackage.part_entry`; round 46); 0.105.0 `Dataset.markdown`, a
-  text value's Markdown beside it (round 48, R86) -- the floor.
+  text value's Markdown beside it (round 48, R86); 0.113.0 `orNumber`, a string parameter
+  that takes a number too (`xlsx_record_values`' `value`, round 54) -- the floor.
 - `ooxml-common>=0.44.0`: standard library only, named for what is imported from it
   directly: the package kinds (`xlsx`, `xlsm`, `xltx`, `xltm`), themes and measured text
   widths, from 0.15.0 the shared locale (`locales.Locale`), the reader's locale, from

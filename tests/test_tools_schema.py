@@ -202,8 +202,10 @@ CORE_COUNTED_BUDGET = 7000
 #: 7,078 -> 7,074.
 #: Round 53, R108: the deferred xlsx_record_values (its own group, xlsx_record; not strict),
 #: every definition 7,074 -> 7,373; the core unchanged.
+#: Round 54, R113: xlsx_record_values gains type and add, its value a string or a number
+#: (orNumber): every definition 7,373 -> 7,427; the core unchanged.
 CORE_GUARD = 4925
-ALL_GUARD = 7380
+ALL_GUARD = 7430
 
 
 @pytest.fixture(scope="module")
