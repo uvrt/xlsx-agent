@@ -32,6 +32,25 @@ has the detail of every milestone. Why each dependency is needed at its version:
   5,754 -> 5,815 (guards 4,785 -> 4,845 and 5,755 -> 5,820); a reviewer's core 4,629 ->
   4,690.
 
+## 0.1.40 (unreleased) -- a shared key refuses its value only
+
+- **A shared key no longer refuses the call** (round 55, R118): 0.1.39's
+  `xlsx_record_values` refused the whole call when one value named a key two or more rows
+  with text hold (`nothing was recorded ...: key held by two or more rows with text to
+  judge (1): values[28]`), although its notes and 0.1.39's entry below said that item
+  alone was refused. The cause: the per-item check added its `key_shared` problem to the
+  call's problem list, and any problem in that list refuses the call. Now that value alone
+  is not recorded and the rest are: the result's `refused` lists it as a refusal's
+  `details.problems` would (`{"code": "key_shared", "item": 28, "key", "rows":
+  ["t:Parts/#54/Ref", "t:Parts/#55/Ref", "t:Parts/#56/Ref"]}`; at most 50, the rest in
+  `refused_more`), a warning names its place in `values` and the way out, and the summary
+  counts it; `Workbook.record_values` gives it as `Recorded.refused`. Also with
+  `add: true` (place in that call's `values`). A call that is refused for another problem
+  still names a shared key among its problems (every problem at once), and a call whose
+  every value names a shared key is refused (`key_shared`): nothing would be recorded.
+  The notes and docstrings that said otherwise are corrected. `not_recorded`'s query names
+  a key held by several rows once. No tool definition changed.
+
 ## 0.1.39 (unreleased) -- recorded values: repeated keys, adding, numbers
 
 - **Repeated keys** (round 54, R113): `xlsx_record_values` (and `Workbook.record_values`)
