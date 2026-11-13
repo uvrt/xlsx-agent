@@ -558,8 +558,9 @@ no value are listed. In a tool session, `xlsx_record_values` keeps it as `d:<id>
 reads, derives, traces and goes into decks and documents like a derive's dataset.
 
 A key is matched among the rows with text in `source` (round 54): a section heading or a
-spacer row repeating an item's reference is left out, and only a key two rows with text
-hold is refused. `type="number"` keeps numbers (a grade 1-5 a derive averages), and
+spacer row repeating an item's reference is left out. A key two or more rows with text
+hold names no one row: that value alone is not recorded (round 55) -- it is in
+`recorded.refused`, its rows named -- and the rest of the call is. `type="number"` keeps numbers (a grade 1-5 a derive averages), and
 `add_to=recorded.dataset` adds a later call's values to an earlier one's:
 
 ```python

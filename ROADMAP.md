@@ -1290,6 +1290,15 @@ core unchanged (6,981 online); the definition 411 -> 487 counted online when loa
 (claude-sonnet-5-5, 2026-11-12); every definition 7,373 -> 7,427 estimated (guard 7,430);
 not strict.
 
+**A shared key refuses its value only** (production feedback, round 55, R118; 0.1.40). On
+0.1.39 one value naming a key that three rows with text hold refused a 40-value call
+whole (`key_shared`, values[28]), although round 54's notes said the item alone was
+refused: the check put its problem in the call's problem list, which refuses the call.
+Now that value is listed in the result's `refused` (the refusal's problem shape: code,
+place in `values`, key, rows) with a warning giving its place and the way out, and the
+other 39 are recorded; also with `add: true`. A call refused for another problem names the
+shared key with the rest; a call of shared keys only is refused. No definition changed.
+
 *A sheet formatted to its last row* (production feedback, round 46, R73, 2026-11-09).
 A sheet of 200,000 rows of values formatted down to row 1,048,576 (each row below the
 values holding only styles: `<c r="B9" s="3"/>` cells, or a styled empty row) took a full

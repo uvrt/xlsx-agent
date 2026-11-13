@@ -19,24 +19,28 @@ that ``xlsx_derive`` averages; ``value`` is a string or a number to the dispatch
 
 **Repeated keys** (round 54, R113): keys are matched among the rows with text in
 ``source``; a heading or spacer row repeating a key is left out (a warning counts them).  A
-key named that two rows with text hold is refused naming both rows; such rows are listed in
+key named that two or more rows with text hold names no one row: that value alone is not
+recorded and the rest of the call is (round 55, R118, rule 5) -- ``refused`` lists it as a
+refusal's ``details.problems`` would (``{"code": "key_shared", "item", "key", "rows"}``, by
+place in ``values``), a warning names its place and the way out; such rows are listed in
 ``shared_keys``.
 
 **Refused, nothing kept** (rule 2): a key no row has (keys are matched exactly; the rows
 whose key is loosely equal by ooxml-edit's ``loose_key`` are given in ``like`` as
 ``{"row", "key"}`` -- the key as its cell holds it, to send so -- and their rows as
-``valid_options``), a key twice, a key two rows with text hold, a value from an empty
-source cell, an empty value, a value not a number (``type: "number"``), a key recorded
-earlier with another value (``add``); every problem of the call at once in
-``details.problems``, by place in ``values``.
+``valid_options``), a key twice, a value from an empty source cell, an empty value, a value
+not a number (``type: "number"``), a key recorded earlier with another value (``add``);
+every problem of the call at once in ``details.problems``, by place in ``values`` -- a
+shared key's too, and a call whose every value names a shared key.
 
 **The result** (rule 4): ``recorded``, ``counts`` per value (at most :data:`LISTED`
 values, the rest counted in ``counts_more``), ``not_recorded`` -- the rows with text in the
 source column and no value: ``count``, the first :data:`LISTED` ``keys`` and ``read``, the
 ``xlsx_read`` call that gives their key and text (a key set; the rest of them counted, ask
 again after recording), or ``query``, an ``xlsx_query`` call, where another row holds one of
-those keys too -- ``no_key``, rows with source text but no key, by position, and
-``shared_keys``.  The values themselves are not echoed: ``xlsx_read`` of ``d:<id>`` reads
+those keys too -- ``no_key``, rows with source text but no key, by position,
+``shared_keys``, and ``refused`` (at most :data:`LISTED`, the rest counted in
+``refused_more``).  The values themselves are not echoed: ``xlsx_read`` of ``d:<id>`` reads
 them.
 
 **Content.**  The result carries keys and the values given (a refusal's problems the key
@@ -53,7 +57,7 @@ from ooxml_edit.tools import (DATASET_PREFIX, Result, ToolError, array, boolean,
                               tool)
 
 from ..address import DatasetAddress, TableAddress, parse_address
-from ..record import RecordError, record_values
+from ..record import RecordError, record_values, shared_way
 from .derive import workbook_of
 from .docformat import handler
 from .read import DOC
@@ -137,7 +141,8 @@ def xlsx_record_values(call: Any, doc: str, table: str, key: str, source: str, c
             # a key another row holds too (a heading, a spacer) names no one row to read:
             # the rows with text and those keys, by a query (round 54, R113)
             listed["query"] = {"doc": doc, "table": recorded.address, "columns": columns,
-                               "where": [{"column": recorded.key, "op": "in", "values": keys},
+                               "where": [{"column": recorded.key, "op": "in",
+                                          "values": list(dict.fromkeys(keys))},
                                          {"column": recorded.source, "op": "not_blank"}]}
         else:
             listed["read"] = {"doc": doc, "target": (replace(whole, keys=tuple(keys))
@@ -150,8 +155,21 @@ def xlsx_record_values(call: Any, doc: str, table: str, key: str, source: str, c
     if recorded.shared:
         data["shared_keys"] = {"count": len(recorded.shared),
                                "rows": list(recorded.shared[:LISTED])}
+    refused = recorded.refused
+    if refused:
+        # Per item (round 55, R118): the rest of the call is recorded.
+        data["refused"] = [dict(p) for p in refused[:LISTED]]
+        if len(refused) > LISTED:
+            data["refused_more"] = len(refused) - LISTED
+        places = ", ".join(f"values[{p['item']}]" for p in refused[:LISTED])
+        more = f" and {len(refused) - LISTED} more" if len(refused) > LISTED else ""
+        warnings.append(f"{len(refused)} value(s) not recorded, each key held by two or more "
+                        f"rows with text to judge: {places}{more}; the rest are recorded. "
+                        + shared_way("each refused item's", recorded.source))
     data["read"] = {"target": DatasetAddress(id).text, "sources": True}
     summary = f"Recorded {recorded.recorded} value(s) as {name} from {recorded.address}"
+    if refused:
+        summary += f"; {len(refused)} value(s) refused (refused)"
     if missing:
         summary += f"; {len(missing)} row(s) with text in {recorded.source} not recorded"
     return Result(summary=summary, data=data, total=recorded.recorded, warnings=warnings)

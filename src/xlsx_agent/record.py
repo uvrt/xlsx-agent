@@ -8,6 +8,7 @@ R108): what ``xlsx_record_values`` keeps as ``d:<id>``::
     recorded.dataset            # columns (Ref, outcome, note), a row per key recorded
     recorded.dataset.sources[0][1]    # ("t:Shelf/S-01/notes",): the cell judged
     recorded.not_recorded       # rows with text in notes and no value given
+    recorded.refused            # values not recorded, each with why (a key two rows hold)
 
 An agent reads a column of free text (``notes``, worded many ways), decides a value for
 each row (``done``, ``partly done``) and wants it kept like any figure: in a dataset whose
@@ -29,9 +30,12 @@ type), which ``add_to`` must match.
 **Repeated keys** (round 54, R113).  Workbooks repeat a reference on a section heading, a
 subtotal or a spacer row beside the item row that holds the text.  A key is matched among
 the rows with text in ``source`` only: rows without text that share it are left out (counted
-in :attr:`Recorded.notes`, listed in :attr:`Recorded.ignored`); a key named that two rows
-with text hold is refused (``key_shared``, both rows named), and those rows are listed in
-:attr:`Recorded.shared` -- the rest of the call is never refused for them.
+in :attr:`Recorded.notes`, listed in :attr:`Recorded.ignored`).  A key named that two or
+more rows with text hold names no one row: that value alone is not recorded -- refused on
+its own in :attr:`Recorded.refused` (``key_shared``, the rows named, as a refusal's
+problems are) -- and the rest of the call is recorded (round 55, R118); such rows are listed
+in :attr:`Recorded.shared`.  Only a call with nothing else to record, or one refused for
+another problem, names it among the refusal's problems (every problem at once).
 
 **Numbers** (round 54).  ``type="number"`` takes JSON numbers and strings that are plain
 numbers as code writes them (``3``, ``2.5``, ``-1e3``: no grouping, no decimal comma), kept
@@ -46,17 +50,19 @@ key it holds that no longer names one row with text (the workbook changed) refus
 call (``add_stale``): record every value again without it.
 
 **Refused before anything is kept** (:class:`RecordError`, every problem of the call at
-once, each named by its place in ``values`` and the row by position): a key no row has
+once -- a shared key's too -- each named by its place in ``values`` and the row by
+position): a key no row has
 (``unknown_key``; the rows whose key is loosely equal -- ooxml-edit's
 :func:`~ooxml_edit.tools.loose_key`: case, white space, separators, leading zeros -- are
 suggested as ``{"row": "t:Shelf/#4/Ref", "key": "S-04"}``, the key as its cell holds it), a
-key given twice (``key_twice``), a key two rows with text hold (``key_shared``), a value
+key given twice (``key_twice``), a value
 whose source cell is empty (``empty_source``: nothing was there to judge), an empty value
 (``empty_value``: leave the key out instead), a value that is not a number
 (``not_number``), a key recorded earlier with another value (``already_recorded``).  The
 problems carry key cells' text (the model reads them); the message names places and rows
 only, never a key, a value or source text.  The output ``column`` may not be the key
-column's name or ``note``.
+column's name or ``note``.  A call whose every value names a shared key is refused too
+(``key_shared``): nothing would be recorded.
 
 **Listed, never refused.**  :attr:`Recorded.not_recorded`: the rows whose source cell holds
 text (anything but blank or white space) and got no value, by key, in row order
@@ -105,7 +111,8 @@ class RecordError(ValueError):
     ``row`` the table row by position) with ``like`` (``[{"row", "key"}]``, rows whose key
     is loosely equal and that key) for an unknown key, ``rows`` for a shared key and
     ``key`` for a shared or already recorded one; ``valid_options`` the rows to read.  The
-    message names places and rows, never a key or a value."""
+    message names places and rows, never a key or a value.  A shared key alone refuses no
+    call that records something else: it is :attr:`Recorded.refused` then."""
 
     def __init__(self, code: str, message: str, *, field: str = "values",
                  problems: Sequence[Mapping[str, Any]] = (),
@@ -128,7 +135,9 @@ class Recorded:
     ``added`` the keys new to the dataset and ``kept`` those kept from ``add_to``;
     ``shared`` the rows with text whose key another such row holds, ``ignored`` the rows
     without text that share a recorded key (both by position), ``repeated`` the keys of
-    ``not_recorded`` another row holds too."""
+    ``not_recorded`` another row holds too; ``refused`` the values not recorded while the
+    rest were, each as a :class:`RecordError` problem is (``{"code": "key_shared", "item",
+    "key", "rows"}``), in the order given."""
 
     dataset: Dataset
     address: str
@@ -144,6 +153,7 @@ class Recorded:
     shared: tuple[str, ...] = ()
     ignored: tuple[str, ...] = ()
     repeated: frozenset[str] = frozenset()
+    refused: tuple[Mapping[str, Any], ...] = ()
 
     @property
     def recorded(self) -> int:
@@ -242,6 +252,8 @@ def record_values(workbook: "Workbook", table: "str | TableAddress", *, key: str
         return replace(address, position=position, column=name).text
 
     problems: list[dict[str, Any]] = []
+    # A shared key refuses its value only, the rest is recorded (round 55, R118).
+    shared_items: list[dict[str, Any]] = []
     given: dict[int, tuple[Any, str | None]] = {}       # position -> (value, note)
     item_of: dict[int, int] = {}
     ignored: list[int] = []
@@ -255,8 +267,8 @@ def record_values(workbook: "Workbook", table: "str | TableAddress", *, key: str
         note = _text(item.get("note"))
         found = with_text.get(wanted, []) if wanted is not None else []
         if len(found) > 1:
-            problems.append({"code": "key_shared", "item": n, "key": wanted,
-                             "rows": [row(p, key_name) for p in found[:SUGGESTED]]})
+            shared_items.append({"code": "key_shared", "item": n, "key": wanted,
+                                 "rows": [row(p, key_name) for p in found[:SUGGESTED]]})
             continue
         if not found:
             if wanted is not None and wanted in every:
@@ -308,8 +320,10 @@ def record_values(workbook: "Workbook", table: "str | TableAddress", *, key: str
                              "row": row(position, key_name)})
             continue
         given[position] = (value, None if _blank(note) else note)
-    if problems:
-        raise _refusal(problems, address.text, key_name, source_name)
+    if problems or (shared_items and not given):
+        # Refused: every problem at once, the shared keys' too, in the order given.
+        everything = sorted(problems + shared_items, key=lambda p: p["item"])
+        raise _refusal(everything, address.text, key_name, source_name)
     added = len(given)
     kept = 0
     if earlier:
@@ -361,7 +375,8 @@ def record_values(workbook: "Workbook", table: "str | TableAddress", *, key: str
                     tuple(not_recorded), tuple(no_key), counts, tuple(notes),
                     added=added, kept=kept, shared=shared,
                     ignored=tuple(replace(address, position=p).text for p in sorted(ignored)),
-                    repeated=frozenset(k for k, _ in not_recorded if len(every[k]) > 1))
+                    repeated=frozenset(k for k, _ in not_recorded if len(every[k]) > 1),
+                    refused=tuple(shared_items))
 
 
 def _mismatch(detail: Mapping[str, Any] | None, made: Mapping[str, Any]) -> str:
@@ -394,6 +409,13 @@ _SAID = {"unknown_key": "unknown key", "key_twice": "key given twice",
          "bad_item": "not an object {key, value, note}"}
 
 
+def shared_way(where: str, source: str) -> str:
+    """The way out for a key two or more rows with text hold (rule 2); ``where`` the list
+    whose ``rows`` name them (a refusal's ``problems'``, a result's ``refused``)."""
+    return (f"{where} rows are the rows holding the key with text in {source!r}: give each "
+            "its own key in the workbook, or leave the key out")
+
+
 def _refusal(problems: list[dict[str, Any]], table: str, key: str,
              source: str) -> RecordError:
     """One refusal naming every problem by kind and place (rule 2), the way out each."""
@@ -413,8 +435,7 @@ def _refusal(problems: list[dict[str, Any]], table: str, key: str,
     if "empty_source" in kinds:
         ways.append(f"leave out the keys whose {source!r} is empty")
     if "key_shared" in kinds:
-        ways.append(f"problems' rows are the rows holding the key with text in {source!r}: "
-                    "give each its own key in the workbook, or leave the key out")
+        ways.append(shared_way("problems'", source))
     if "not_number" in kinds:
         ways.append("type number takes numbers: 3, 2.5, or text written so (\"2.5\")")
     if "already_recorded" in kinds:

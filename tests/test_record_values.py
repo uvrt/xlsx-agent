@@ -17,6 +17,12 @@ sharing a key left out, numbers as text, add to nothing), 2 (a shared key named 
 rows, a near miss with its key text, add's mismatch saying what differs, a stale add), 3 (a
 key sent again with its value under add), 4 (a query for the rows left where a key repeats),
 5 (two chunks with add).
+
+Round 55 (R118): a key two or more rows with text hold refuses that value only, the rest of
+the call recorded (``_parts_book``: 60 rows, three sharing a key, a 40-value call with the
+shared key at values[28], replacing and with add); rules 2 (the refused value by place with
+its rows and the way out), 4 (``refused`` capped and counted), 5 (one call, the exception
+listed).
 """
 
 from __future__ import annotations
@@ -104,23 +110,36 @@ def test_rows_with_text_and_no_key_are_listed_by_position():
     assert recorded.not_recorded == (("S-010", "t:Shelf/shelf liners/notes"),)
 
 
-def test_a_key_two_rows_with_text_hold_is_refused_when_named_with_both_rows():
-    """Round 54, R113: duplicates are judged among rows with source text only; a key named
-    that two such rows hold is refused by item, naming both rows; the others are kept."""
+def test_a_key_two_rows_with_text_hold_refuses_that_value_only_naming_both_rows():
+    """Round 54, R113, made per item in round 55 (R118): duplicates are judged among rows
+    with source text only; a key named that two such rows hold names no one row, so that
+    value alone is refused (``refused``, both rows named) and the others are recorded."""
     rows = [r[:] for r in ROWS]
     rows[9][0] = "S-01"
     wb = Workbook.open(shelf_book(rows).to_bytes())
-    with pytest.raises(RecordError) as caught:
-        wb.record_values("t:Shelf", key="Ref", source="notes", column="outcome",
-                         values=JUDGED)
-    assert caught.value.code == "key_shared" and caught.value.field == "values"
-    assert caught.value.problems == [{"code": "key_shared", "item": 0, "key": "S-01",
-                                      "rows": ["t:Shelf/#1/Ref", "t:Shelf/#10/Ref"]}]
-    assert "S-01" not in caught.value.message
     recorded = wb.record_values("t:Shelf", key="Ref", source="notes", column="outcome",
-                                values=JUDGED[1:])
+                                values=JUDGED)
+    assert recorded.refused == ({"code": "key_shared", "item": 0, "key": "S-01",
+                                 "rows": ["t:Shelf/#1/Ref", "t:Shelf/#10/Ref"]},)
     assert recorded.recorded == 5 and recorded.shared == ("t:Shelf/#1", "t:Shelf/#10")
     assert [k for k, _ in recorded.not_recorded] == ["S-01", "S-09", "S-01"]
+    # without the shared key: the same rows recorded, nothing refused
+    again = wb.record_values("t:Shelf", key="Ref", source="notes", column="outcome",
+                             values=JUDGED[1:])
+    assert again.dataset.rows == recorded.dataset.rows and again.refused == ()
+    # a call whose every value names a shared key records nothing: refused, rows named
+    with pytest.raises(RecordError) as caught:
+        wb.record_values("t:Shelf", key="Ref", source="notes", column="outcome",
+                         values=JUDGED[:1])
+    assert caught.value.code == "key_shared" and caught.value.field == "values"
+    assert caught.value.problems == list(recorded.refused)
+    assert "S-01" not in caught.value.message
+    # refused for another problem, the shared key is named with it (every problem at once)
+    with pytest.raises(RecordError) as caught:
+        wb.record_values("t:Shelf", key="Ref", source="notes", column="outcome",
+                         values=[*JUDGED, {"key": "X-99", "value": "done"}])
+    assert [(p["code"], p["item"]) for p in caught.value.problems] == [
+        ("key_shared", 0), ("unknown_key", 6)]
 
 
 def test_heading_and_spacer_rows_repeating_a_key_are_left_out():
@@ -467,3 +486,93 @@ def test_add_after_a_recorded_key_changed_in_the_workbook_is_refused_with_the_wa
                    type="number", add=True)
     assert stale.error.code == "refused" and stale.error.details["code"] == "add_stale"
     assert "without add" in stale.error.message
+
+
+# -- round 55, R118: a shared key refuses its value only ---------------------------------------
+
+
+def _parts_book() -> bytes:
+    """A made-up 'Parts' table of 60 rows, each with notes; rows #54, #55 and #56 share the
+    key P-54 (the shape of the call refused in production: three rows with text, one key)."""
+    rows: list[list[object]] = [["Ref", "Bin", "notes"]]
+    for n in range(1, 61):
+        rows.append(["P-54" if n in (54, 55, 56) else f"P-{n:02d}", f"bin {n}",
+                     f"checked, item {n}"])
+    out = WorkbookBuilder()
+    sheet = out.sheet("Parts")
+    sheet.rows("A1", rows)
+    sheet.table("Parts", "A1:C61", ["Ref", "Bin", "notes"])
+    return out.to_bytes()
+
+
+#: 40 values, the 29th (values[28]) on the shared key.
+PARTS = [{"key": k, "value": "done"} for k in
+         [f"P-{n:02d}" for n in range(1, 29)] + ["P-54"] + [f"P-{n:02d}" for n in range(29, 40)]]
+PARTS_CALL = {"table": "t:Parts", "key": "Ref", "source": "notes", "column": "outcome",
+              "id": "outcome"}
+SHARED = {"code": "key_shared", "item": 28, "key": "P-54",
+          "rows": ["t:Parts/#54/Ref", "t:Parts/#55/Ref", "t:Parts/#56/Ref"]}
+
+
+def test_a_shared_key_in_a_40_value_call_refuses_that_value_and_records_the_rest(box):
+    """R118 (rules 2, 5): on 0.1.39 the whole call was refused ("nothing was recorded",
+    key_shared, values[28]); now the other 39 values are recorded, values[28] is in
+    ``refused`` as a refusal's problem would be, naming its three rows, and a warning says
+    where it is and the way out -- by place, never by key."""
+    assert len(PARTS) == 40 and PARTS[28]["key"] == "P-54"
+    session = _session(box, _parts_book())
+    result = ok(record(box, session, PARTS, **PARTS_CALL))
+    assert result.data["recorded"] == 39 and result.data["refused"] == [SHARED]
+    assert result.data["shared_keys"] == {"count": 3, "rows": ["t:Parts/#54", "t:Parts/#55",
+                                                                "t:Parts/#56"]}
+    assert result.warnings == [
+        "1 value(s) not recorded, each key held by two or more rows with text to judge: "
+        "values[28]; the rest are recorded. each refused item's rows are the rows holding the "
+        "key with text in 'notes': give each its own key in the workbook, or leave the key out"]
+    assert "1 value(s) refused" in result.summary
+    assert not any("P-" in text for text in [result.summary, *result.warnings])
+    read = ok(box.dispatch(session, "xlsx_read", {"target": "d:outcome"}))
+    keys = [row[0]["v"] for row in read.data["rows"]]
+    assert len(keys) == 39 and "P-54" not in keys
+    # the shared rows are left to judge, and the query that reads them names the key once
+    left = result.data["not_recorded"]
+    assert left["keys"].count("P-54") == 3
+    assert left["query"]["where"][0]["values"].count("P-54") == 1
+
+
+def test_a_shared_key_with_add_refuses_that_value_and_adds_the_rest(box):
+    """R118 with add: true: the second chunk holds the shared key (its values[8]); the rest
+    of the chunk is added to the first, the shared key refused by its place in this call."""
+    session = _session(box, _parts_book())
+    first = ok(record(box, session, PARTS[:20], **PARTS_CALL))
+    assert first.data["recorded"] == 20 and "refused" not in first.data
+    second = ok(record(box, session, PARTS[20:], add=True, **PARTS_CALL))
+    assert second.data["recorded"] == 39 and second.data["added"] == 19
+    assert second.data["refused"] == [{**SHARED, "item": 8}]
+    assert "values[8]" in second.warnings[0]
+    # the shared key alone, added: nothing to record, so refused, its rows named
+    alone = record(box, session, [PARTS[28]], add=True, **PARTS_CALL)
+    assert alone.error.code == "refused" and alone.error.details["code"] == "key_shared"
+    assert alone.error.details["problems"] == [{**SHARED, "item": 0}]
+    assert "nothing was recorded" in alone.error.message
+    assert ok(box.dispatch(session, "xlsx_read", {"target": "d:outcome"})).total == 39
+
+
+def test_refused_values_are_capped_and_counted(box):
+    """Rule 4: ``refused`` lists at most LISTED values, the rest counted."""
+    rows: list[list[object]] = [["Ref", "notes"]]
+    for n in range(LISTED + 3):
+        rows += [[f"K{n}", "a"], [f"K{n}", "b"]]
+    rows.append(["single", "c"])
+    out = WorkbookBuilder()
+    sheet = out.sheet("Pairs")
+    sheet.rows("A1", rows)
+    sheet.table("Pairs", f"A1:B{len(rows)}", ["Ref", "notes"])
+    session = _session(box, out.to_bytes())
+    values = [{"key": f"K{n}", "value": "x"} for n in range(LISTED + 3)]
+    result = ok(record(box, session, [*values, {"key": "single", "value": "x"}],
+                       table="t:Pairs", key="Ref", source="notes", column="outcome",
+                       id="pairs"))
+    assert result.data["recorded"] == 1
+    assert len(result.data["refused"]) == LISTED and result.data["refused_more"] == 3
+    assert "and 3 more" in result.warnings[-1]
